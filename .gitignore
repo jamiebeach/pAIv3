@@ -1,0 +1,5 @@
+*.fasl
+*.sqlite3*
+/state/
+/private/
+dist/

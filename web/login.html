@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b0f14">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<script src="/viewport.js" defer></script>
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/pwa-icon.svg" type="image/svg+xml">
+<title>Sign in to pAI</title>
+<style>
+  :root { color-scheme: dark; --bg:#0b0f14; --panel:#10151c; --border:#223042; --text:#e6edf3; --dim:#8b98a5; --accent:#5fb3ff; --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
+  * { box-sizing: border-box; }
+  html, body { width:100%; height:100vh; margin:0; overflow:hidden; background:var(--bg); color:var(--text); font-family:var(--mono); }
+  body { position:fixed; inset:0; display:grid; place-items:center; overflow:auto; padding:calc(20px + env(safe-area-inset-top)) calc(20px + env(safe-area-inset-right)) calc(20px + env(safe-area-inset-bottom)) calc(20px + env(safe-area-inset-left)); }
+  main { width:min(100%, 390px); padding:24px; border:1px solid var(--border); border-radius:12px; background:var(--panel); box-shadow:0 18px 60px rgba(0,0,0,.35); }
+  h1 { margin:0 0 8px; font-size:18px; }
+  p { margin:0 0 20px; color:var(--dim); font-size:12px; line-height:1.5; }
+  label { display:block; margin:12px 0 5px; color:var(--dim); font-size:11px; }
+  input, button { width:100%; min-height:44px; border-radius:8px; font:16px var(--mono); }
+  input { border:1px solid var(--border); background:var(--bg); color:var(--text); padding:9px 11px; }
+  input:focus { outline:none; border-color:var(--accent); }
+  button { margin-top:18px; border:0; background:var(--accent); color:#04121e; font-weight:700; cursor:pointer; }
+  button:disabled { opacity:.55; cursor:default; }
+  .alt { background:transparent; color:var(--accent); border:1px solid var(--border); }
+  .hidden { display:none; }
+  #status { min-height:18px; margin-top:12px; color:#ff9b9b; font-size:11px; }
+</style>
+</head>
+<body>
+<main>
+  <h1 id="title">pAI</h1>
+  <p id="lead">Sign in with this device's passkey.</p>
+  <section id="signin" class="hidden">
+    <button id="signin-btn" type="button">Sign in with passkey</button>
+    <button id="use-code" class="alt" type="button">Use a recovery code</button>
+  </section>
+  <section id="enrol" class="hidden">
+    <div id="code-row" class="hidden">
+      <label for="code">Recovery code</label>
+      <input id="code" autocomplete="one-time-code" autocapitalize="characters" spellcheck="false">
+    </div>
+    <label for="device">Name for this device</label>
+    <input id="device" value="" placeholder="iPhone, laptop…">
+    <button id="enrol-btn" type="button">Create a passkey on this device</button>
+    <button id="back" class="alt hidden" type="button">Back</button>
+  </section>
+  <div id="status" role="status" aria-live="polite"></div>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+const status = $('status');
+const hdrs = {'Content-Type':'application/json', 'X-PAI-Client':'pwa'};
+const b64u = buf => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+const unb64u = s => Uint8Array.from(atob(s.replace(/-/g,'+').replace(/_/g,'/') + '==='.slice((s.length+3)%4)), c => c.charCodeAt(0));
+async function post(url, body) {
+  const r = await fetch(url, {method:'POST', headers:hdrs, credentials:'same-origin', body:JSON.stringify(body||{})});
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || ('HTTP ' + r.status));
+  return j;
+}
+function show(id) { for (const s of ['signin','enrol']) $(s).classList.toggle('hidden', s !== id); status.textContent = ''; }
+function fail(e) { status.textContent = (e && e.name === 'NotAllowedError') ? 'Cancelled.' : (e.message || String(e)); for (const b of document.querySelectorAll('button')) b.disabled = false; }
+function busy() { status.textContent = ''; for (const b of document.querySelectorAll('button')) b.disabled = true; }
+
+let known = [];
+async function signIn(only) {
+  busy();
+  try {
+    const c = await post('/v1/auth/challenge', {purpose:'login'});
+    const ids = only ? [only] : known;
+    const cred = await navigator.credentials.get({publicKey:{challenge:unb64u(c.challenge), rpId:c.rp_id, userVerification:'required', timeout:60000,
+      allowCredentials: ids.map(id => ({type:'public-key', id:unb64u(id)}))}});
+    await post('/v1/auth/login', {credential_id:b64u(cred.rawId), challenge:c.challenge,
+      client_data_json:b64u(cred.response.clientDataJSON), authenticator_data:b64u(cred.response.authenticatorData),
+      signature:b64u(cred.response.signature)});
+    location.replace(new URLSearchParams(location.search).get('next') || '/terminal');
+  } catch (e) { fail(e); }
+}
+
+async function enrol(withCode) {
+  busy();
+  try {
+    let grant = null;
+    if (withCode) grant = (await post('/v1/auth/recover', {code:$('code').value.trim()})).recovery_grant;
+    const c = await post('/v1/auth/challenge', {purpose:'register'});
+    const name = $('device').value.trim() || 'device';
+    const cred = await navigator.credentials.create({publicKey:{
+      challenge:unb64u(c.challenge), rp:{id:c.rp_id, name:document.title.replace('Sign in to ','')},
+      // Agents on one machine share a host name, so the agent's name tells their passkeys apart.
+      user:{id:crypto.getRandomValues(new Uint8Array(16)), name:`${$('title').textContent} operator`,
+            displayName:`${$('title').textContent} · Operator`},
+      pubKeyCredParams:[{type:'public-key', alg:-7}],
+      authenticatorSelection:{residentKey:'required', userVerification:'required'},
+      attestation:'none', timeout:60000}});
+    const made = await post('/v1/auth/register', {name, challenge:c.challenge, recovery_grant:grant || undefined,
+      client_data_json:b64u(cred.response.clientDataJSON), attestation_object:b64u(cred.response.attestationObject)});
+    status.textContent = 'Passkey created. Signing in…';
+    await signIn(made.credential_id);
+  } catch (e) { fail(e); }
+}
+
+$('signin-btn').onclick = () => signIn();
+$('use-code').onclick = () => { show('enrol'); $('code-row').classList.remove('hidden'); $('back').classList.remove('hidden'); $('enrol-btn').dataset.code = '1'; };
+$('back').onclick = () => show('signin');
+$('enrol-btn').onclick = () => enrol($('enrol-btn').dataset.code === '1');
+
+(async () => {
+  try {
+    const r = await fetch('/v1/auth/state', {credentials:'same-origin'});
+    const st = await r.json();
+    document.title = 'Sign in to ' + (st.agent || 'pAI');
+    $('title').textContent = st.agent || 'pAI';
+    if (!window.PublicKeyCredential) { status.textContent = 'This browser cannot use passkeys.'; return; }
+    if (st.signed_in) { location.replace('/terminal'); return; }
+    known = st.credentials || [];
+    if (st.devices === 0 && st.bootstrap) {
+      $('lead').textContent = 'No device is set up yet. Create a passkey on this device to become its operator.';
+      show('enrol');
+    } else if (st.devices === 0) {
+      $('lead').textContent = 'No device is set up yet. The first passkey must be created on the machine running the agent, or with a recovery code.';
+      show('enrol'); $('code-row').classList.remove('hidden'); $('enrol-btn').dataset.code = '1';
+    } else {
+      show('signin');
+    }
+  } catch (e) { fail(e); }
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b0f14">
+<title>pAI Affect</title>
+<script src="/app-shell.js" defer></script>
+<script src="/viewport.js" defer></script>
+<script src="/affect.js" defer></script>
+<style>
+:root{--bg:#0b0f14;--panel:#10151c;--panel2:#151c25;--border:#223042;--text:#e6edf3;--dim:#8b98a5;--accent:#5fb3ff;--good:#55d6a0;--warn:#f5c76b;--bad:#ff7b88;--mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+*{box-sizing:border-box}
+html,body{margin:0;min-height:100%;background:var(--bg);color:var(--text);font-family:var(--mono)}
+header{position:sticky;top:0;z-index:20;padding:calc(8px + env(safe-area-inset-top)) 14px 8px;border-bottom:1px solid var(--border);background:rgba(11,15,20,.95);display:flex;justify-content:space-between;align-items:center}
+h1{font-size:13px;margin:0;color:var(--dim)}
+h2{font-size:13px;margin:0 0 8px;color:var(--accent)}
+main{width:min(900px,100%);margin:auto;padding:14px}
+.intro,.hint{color:var(--dim);font:12px/1.55 var(--mono);margin:0 0 10px}
+.status,.panel{padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:var(--panel);margin-bottom:12px;font-size:12px;line-height:1.5}
+.error{color:var(--bad)}
+.good{color:var(--good)}
+.warn{color:var(--warn)}
+.modes{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:8px 0}
+button,select{width:100%;min-height:44px;font:13px var(--mono);background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:8px;cursor:pointer}
+button:hover,select:hover{border-color:var(--accent)}
+button[aria-pressed="true"]{border-color:var(--accent);color:var(--accent);background:#10202f}
+button.stop{border-color:var(--bad);color:var(--bad);margin-top:8px}
+button:disabled{opacity:.5;cursor:default}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:6px 0}
+.kv{display:grid;grid-template-columns:minmax(120px,40%) 1fr;gap:4px 10px;margin:0}
+.kv dt{color:var(--dim)}
+.kv dd{margin:0;overflow-wrap:anywhere}
+ul{list-style:none;margin:6px 0 0;padding:0}
+li{padding:6px 0;border-top:1px solid var(--border);overflow-wrap:anywhere}
+li:first-child{border-top:0}
+.sentence{white-space:pre-wrap;border-left:2px solid var(--border);padding-left:8px;margin:4px 0 0;color:var(--text)}
+@media(max-width:560px){.modes{grid-template-columns:1fr}.kv{grid-template-columns:1fr}}
+</style>
+</head>
+<body><header><h1>PAI AFFECT</h1><div class="btns"></div></header><main>
+<p class="intro">Affect here means operational strain from tool failures and repeated attempts. It only adds a short fixed sentence to the agent's context. It never changes tools, permissions, budgets or identity, and it states no feelings.</p>
+<div id="instance" class="status" aria-label="Instance"></div>
+<div id="status" class="status" role="status" aria-live="polite">Loading…</div>
+
+<section class="panel" aria-label="Mode">
+  <h2>Mode</h2>
+  <div class="modes" role="group" aria-label="Affect mode">
+    <button id="mode-off" type="button" aria-pressed="false">Off</button>
+    <button id="mode-shadow" type="button" aria-pressed="false">Shadow</button>
+    <button id="mode-tone" type="button" aria-pressed="false">Active</button>
+  </div>
+  <p id="mode-help" class="hint"></p>
+  <button id="disable-now" class="stop" type="button">Disable now</button>
+  <div class="row">
+    <button id="pause-toggle" type="button">Pause all affect</button>
+  </div>
+</section>
+
+<section class="panel" aria-label="Strength">
+  <h2>Strength</h2>
+  <p class="hint">The strongest influence Active mode may apply.</p>
+  <select id="max-level" aria-label="Maximum strength">
+    <option value="careful">Careful only (gentle, say what is uncertain)</option>
+    <option value="repeating">Careful, and change approach after repeated failures</option>
+  </select>
+</section>
+
+<section class="panel" aria-label="Current state">
+  <h2>Current state</h2>
+  <dl id="state" class="kv"></dl>
+  <h2 style="margin-top:12px">Evidence</h2>
+  <p class="hint">The most recent tool outcomes that moved the state, by event id.</p>
+  <ul id="evidence"></ul>
+  <div id="recovery" hidden>
+    <p class="hint warn">The stored state cannot be used (<span id="recovery-reason"></span>), so nothing is applied. Resetting forgets the recorded strain and restarts tracking from now. It does not read history.</p>
+    <button id="reset-state" class="stop" type="button">Reset affect state</button>
+  </div>
+</section>
+
+<section class="panel" aria-label="What the agent is given">
+  <h2>What the agent is given</h2>
+  <div id="audiences"></div>
+</section>
+
+<section class="panel" aria-label="Recent influence">
+  <h2>Recent influence</h2>
+  <p class="hint">Turns that received a sentence (Active) or would have (Shadow). Newest last.</p>
+  <ul id="recent"></ul>
+</section>
+
+<div class="row"><button id="refresh" type="button">Refresh</button></div>
+</main></body></html>
