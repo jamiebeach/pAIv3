@@ -43,6 +43,7 @@
                  (:file "graph-read")
                  (:file "graph-form")
                  (:file "graph-recover")
+                 (:file "graph-correct")
                  (:file "episodes")
                  (:file "experience")
                  (:file "settings-tools")))

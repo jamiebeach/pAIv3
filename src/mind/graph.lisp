@@ -192,7 +192,10 @@
 (define-event-type "graph.entity.aliased"
   :schema (("entity_id" :string) ("alias" :string)))
 (define-event-type "graph.entity.merged"
-  :schema (("entity_id" :string) ("into" :string) ("reason" :string)))
+  :schema (("entity_id" :string) ("into" :string) ("reason" :string) ("source_event_id" :integer :optional)))
+(define-event-type "graph.entity.moved"
+  ;; An operator's correction: the entity belongs in another world (a work, or real).
+  :schema (("entity_id" :string) ("world" :string) ("reason" :string) ("source_event_id" :integer :optional)))
 (define-event-type "graph.fact.admitted"
   :schema (("fact_id" :string) ("subject" :string) ("predicate" :string) ("object" :string)
            ("temporal" :object) ("derivation" :string) ("evidence" :array) ("lineage" :array)
@@ -200,7 +203,7 @@
 (define-event-type "graph.fact.supported"
   :schema (("fact_id" :string) ("evidence" :array)))
 (define-event-type "graph.fact.retracted"
-  :schema (("fact_id" :string) ("reason" :string)))
+  :schema (("fact_id" :string) ("reason" :string) ("source_event_id" :integer :optional)))
 (define-event-type "graph.reset"
   :schema (("reason" :string)))
 
@@ -254,13 +257,25 @@
          ;; The record of what was there stays in the ledger; the graph starts again.
          (dolist (table '("graph_evidence" "graph_facts" "graph_names" "graph_names_fts" "graph_entities"))
            (sql-exec db (format nil "DELETE FROM ~a" table))))
+        ((string= type "graph.entity.moved")
+         ;; Its facts follow it where the other end is already in that world;
+         ;; a fact saying which work it appears in stays real.
+         (let ((id (f "entity_id")) (world (f "world")))
+           (sql-exec db "UPDATE graph_entities SET world=?2 WHERE id=?1" id world)
+           (dolist (r (append (sql-rows db "SELECT id,object FROM graph_facts WHERE subject=?1 AND status=?2 LIMIT 500" id "active")
+                              (sql-rows db "SELECT id,subject FROM graph_facts WHERE object=?1 AND status=?2 LIMIT 500" id "active")))
+             (let ((fact-predicate (sql-value db "SELECT predicate FROM graph_facts WHERE id=?1 LIMIT 1" (first r)))
+                   (other-world (sql-value db "SELECT world FROM graph_entities WHERE id=?1 LIMIT 1" (second r))))
+               (when (and (not (member fact-predicate +world-crossing-predicates+ :test #'equal))
+                          (or (equal (second r) id) (equal other-world world)))
+                 (sql-exec db "UPDATE graph_facts SET world=?2 WHERE id=?1" (first r) world))))))
         ((string= type "graph.fact.retracted")
          (sql-exec db "UPDATE graph_facts SET status='retracted',retracted_reason=?2 WHERE id=?1" (f "fact_id") (f "reason")))))))
 
 (define-projection "graph"
   :kind :inline
   :version 3                            ; 2: names in full text; 3: worlds
-  :consumes ("graph.entity.formed" "graph.entity.aliased" "graph.entity.merged"
+  :consumes ("graph.entity.formed" "graph.entity.aliased" "graph.entity.merged" "graph.entity.moved"
              "graph.fact.admitted" "graph.fact.supported" "graph.fact.retracted" "graph.reset")
   :tables ("CREATE TABLE IF NOT EXISTS graph_entities (id TEXT PRIMARY KEY, kind TEXT NOT NULL, name TEXT NOT NULL, summary TEXT, classifications TEXT, status TEXT NOT NULL, merged_into TEXT, origin_agent TEXT NOT NULL, path TEXT NOT NULL, lineage TEXT NOT NULL, created_at TEXT NOT NULL, world TEXT NOT NULL)"
            "CREATE INDEX IF NOT EXISTS graph_entities_status ON graph_entities(status,kind)"
