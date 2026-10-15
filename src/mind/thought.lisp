@@ -237,7 +237,10 @@ assistant message; a long tool result shows its first part and how to page."
                      messages)
                (setf text nil calls '()))))
       (loop for (kind part step-text tool call-id arguments) in (thought-steps kernel id)
-            do (cond ((string= kind "model")
+            do (cond ((string= kind "nudge")
+                      (flush)
+                      (push (obj "role" "user" "content" step-text) messages))
+                     ((string= kind "model")
                       (when (and (zerop part) (or calls text)) (flush))
                       (setf text (if (zerop part) step-text (concatenate 'string text step-text))))
                      ((string= kind "tool_call")
@@ -267,9 +270,49 @@ assistant message; a long tool result shows its first part and how to page."
   (cond ((awaiting-p messages) (wait mind))
         ((spent-p mind) (rest-here mind messages))
         (t (let ((reply (consult mind (%with-low-allowance-note mind messages))))
-             (if (obj-get reply "tool_calls")
-                 (recur mind (append messages (list reply) (act mind reply)))
-                 (answer mind reply))))))
+             (cond ((obj-get reply "tool_calls")
+                    (recur mind (append messages (list reply) (act mind reply))))
+                   ((%announces-more-p (obj-get reply "content" "") messages)
+                    (nudge mind reply))
+                   (t (answer mind reply)))))))
+
+;;; Some models end a turn by saying what they will do next ("Now let me
+;;; check...") without the tool call that would do it. Once a thought, such a
+;;; reply is said as an interim note and the thought is asked to go on.
+
+(defparameter +nudge+
+  "You said what you would do next but made no tool call, so nothing happened. Do it now with the tool, or, if you are done, give your answer.")
+
+(defparameter +announcing-openers+
+  '("let me " "now let me" "now i'll" "now i will" "i'll check" "i will check" "i'll look" "i'll read" "next, i" "next i'll"
+    "checking " "now checking" "going to check" "i'm going to" "now the " "first, let me" "now i need to" "i need to check")
+  "How a reply that announces more work tends to start its last sentence.")
+
+(defun %last-sentence (text)
+  (let* ((s (string-trim '(#\Space #\Newline #\Tab) text))
+         (cut (position-if (lambda (c) (member c '(#\. #\! #\? #\Newline))) s :end (max 0 (1- (length s))) :from-end t)))
+    (string-downcase (string-trim '(#\Space #\Newline #\Tab #\* #\-) (if cut (subseq s (1+ cut)) s)))))
+
+(defun %announces-more-p (text messages)
+  "True when TEXT ends by announcing a step it did not take, and this thought
+has not already been nudged."
+  (and (stringp text) (plusp (length text))
+       (notany (lambda (m) (equal +nudge+ (obj-get m "content"))) messages)
+       (let ((last (%last-sentence text)))
+         (and (plusp (length last))
+              (not (uiop:string-prefix-p "let me know" last))
+              (or (char= #\: (char last (1- (length last))))
+                  (some (lambda (opener) (uiop:string-prefix-p opener last)) +announcing-openers+))))))
+
+(defun nudge (mind reply)
+  "Say REPLY as an interim note, then ask the thought to do what it announced."
+  (let* ((kernel (mind-kernel mind)) (thought (mind-thought mind)) (id (getf thought :id))
+         (text (obj-get reply "content" "")))
+    (when (and (string= "responding" (getf thought :origin)) (getf thought :channel))
+      (deliver-reply kernel :channel (getf thought :channel) :audience (getf thought :audience)
+                            :text text :in-reply-to id :interim t))
+    (%record-text kernel id "nudge" +nudge+)
+    (recur mind nil)))
 
 (defun think-step (kernel work)
   "The trampoline: one bounce of THINK for the thought WORK names."

@@ -390,4 +390,27 @@
         (is (search "cut off" (sql-value (kernel-db k) "SELECT rendered FROM working_dialogue WHERE kind=?1 ORDER BY event_id DESC LIMIT 1" "reply"))
             "the operator sees it was cut off")))))
 
+(deftest a-reply-that-announces-a-step-it-did-not-take-is-nudged-once
+  (with-thinking (k)
+    (setf *script* (list (obj "role" "assistant" "content" "Updates landed. Now let me check what changed in the source.")
+                         (obj "role" "assistant" "content" "Nothing new needs me; all good.")))
+    (let ((turn (receive-turn k :channel "web" :audience "operator" :speaker "Sam" :text "Updates landed"
+                                :origin (obj "principal_type" "operator"))))
+      (request-thought k "responding" "Updates landed" :channel "web" :source-event-id (event-id turn)))
+    (run-until-idle k)
+    (is (search "made no tool call" (json-encode (first *seen-messages*))) "the second call carries the nudge")
+    (is (equal '("Updates landed. Now let me check what changed in the source." "Nothing new needs me; all good.")
+               (mapcar (lambda (r) (subseq (first r) (+ 4 (search "Me: " (first r)))))
+                       (sql-rows (kernel-db k) "SELECT rendered FROM working_dialogue WHERE kind=?1 ORDER BY event_id LIMIT 5" "reply")))
+        "the announcement is said as a note, then the answer")))
+
+(deftest an-ordinary-ending-is-not-nudged
+  (with-thinking (k)
+    (setf *script* (list (obj "role" "assistant" "content" "Here is the summary. Let me know if you want more.")))
+    (let ((turn (receive-turn k :channel "web" :audience "operator" :speaker "Sam" :text "Summarise"
+                                :origin (obj "principal_type" "operator"))))
+      (request-thought k "responding" "Summarise" :channel "web" :source-event-id (event-id turn)))
+    (run-until-idle k)
+    (is (= 1 (length *seen-messages*)) "one call, no nudge")))
+
 (run-suite "mind-thought")
