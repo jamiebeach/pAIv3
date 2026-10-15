@@ -10,7 +10,8 @@
            ("audience" :string)        ; "operator" or "person:<id>" or "peer:<id>"
            ("speaker" :string)         ; display name of the verified principal
            ("text" :string)
-           ("origin" :object)))        ; verified origin attestation (spec §16.5)
+           ("origin" :object)          ; verified origin attestation (spec §16.5)
+           ("images" :array :optional))) ; ids of images kept in the blob store
 
 (define-event-type "reply.delivered"
   :schema (("channel" :string)
@@ -42,9 +43,11 @@
          (speaker (cond ((string= type "turn.received") (obj-get p "speaker"))
                         ((string= type "notice.posted") "Notice")
                         (t "Me")))
-         (text (if (eq t (obj-get p "interrupted"))
-                   (concatenate 'string (obj-get p "text") " [interrupted]")
-                   (obj-get p "text")))
+         (text (cond ((eq t (obj-get p "interrupted"))
+                      (concatenate 'string (obj-get p "text") " [interrupted]"))
+                     ((obj-get p "images")
+                      (format nil "~a [~d image~:p attached]" (obj-get p "text") (length (obj-get p "images"))))
+                     (t (obj-get p "text"))))
          (rendered (%render event speaker text)))
     (sql-exec db "INSERT INTO working_dialogue(event_id,audience,channel,speaker,kind,rendered,tokens,at,reply_to) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9)"
               (event-id event) (obj-get p "audience") (obj-get p "channel") speaker
@@ -61,12 +64,12 @@
 
 ;;; Writing
 
-(defun receive-turn (kernel &key channel audience speaker text origin)
+(defun receive-turn (kernel &key channel audience speaker text origin images)
   "Record a verified inbound turn. ORIGIN is the attestation from the
 channel adapter; it is stored, never inferred from TEXT."
   (append! kernel "turn.received"
            (obj "channel" channel "audience" audience "speaker" speaker
-                "text" text "origin" (or origin (obj)))))
+                "text" text "origin" (or origin (obj)) "images" images)))
 
 (defun deliver-reply (kernel &key channel audience text in-reply-to interrupted interim)
   (append! kernel "reply.delivered"

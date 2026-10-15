@@ -101,7 +101,8 @@ PASSPHRASE or RECOVERY-CODE are used when given. Returns an AGENT-HANDLE."
                (open-secrets secrets)
                (make-agent-handle
                 :dir dir :lock-db lock :secrets-db secrets
-                :blobs-db (db-open (store-path dir "blobs") :key (store-key dir root "blobs") :create nil)
+                :blobs-db (setf pai-v3.mind::*image-store*
+                                (db-open (store-path dir "blobs") :key (store-key dir root "blobs") :create nil))
                 :kernel (open-kernel (store-path dir "ledger") :agent-id (obj-get config "agent_id")
                                                               :key (store-key dir root "ledger")
                                                               :create nil))))
@@ -110,6 +111,7 @@ PASSPHRASE or RECOVERY-CODE are used when given. Returns an AGENT-HANDLE."
 (defun close-agent (handle)
   (close-secrets)
   (db-close (agent-handle-secrets-db handle))
+  (setf pai-v3.mind::*image-store* nil)
   (db-close (agent-handle-blobs-db handle))
   (close-kernel (agent-handle-kernel handle))
   (db-close (agent-handle-lock-db handle))

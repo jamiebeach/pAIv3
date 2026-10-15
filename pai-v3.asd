@@ -22,6 +22,7 @@
                  (:file "tokens")
                  (:file "dialogue")
                  (:file "provider")
+                 (:file "images")
                  (:file "llm")
                  (:file "tools")
                  (:file "thought")

@@ -16,6 +16,7 @@
   (local nil)                             ; base-url is a configured local server
   (connect-timeout 10) (read-timeout 120)
   (max-tokens 4096) (temperature nil)
+  (vision nil)                            ; the model can see images
   (microusd-per-1k-prompt 0) (microusd-per-1k-completion 0)  ; when no reported cost
   (transport #'http-transport))
 
@@ -107,7 +108,10 @@
 (defun %messages-chars (messages)
   (loop for m in messages
         for c = (obj-get m "content")
-        sum (if (stringp c) (length c) 0)))
+        sum (cond ((stringp c) (length c))
+                  ;; Parts: count the text, not an image's encoding.
+                  ((listp c) (loop for part in c sum (length (obj-get part "text" ""))))
+                  (t 0))))
 
 (defun %microusd (profile usage prompt completion)
   (let ((cost (obj-get usage "cost")))

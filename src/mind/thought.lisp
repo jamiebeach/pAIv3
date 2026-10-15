@@ -444,13 +444,21 @@ TOOLS NIL asks for an answer with no tools offered."
          (frame (funcall *assemble-thought-context* kernel thought (tool-index-text tools hand)))
          (spoken (make-string-output-stream))
          (streaming (and (string= "responding" (getf thought :origin)) (getf thought :channel)))
-         (all (append frame messages))
+         (images (turn-images kernel thought))
+         (profile (let ((p (profile-for kernel (%purpose thought) (funcall *route-signals* kernel thought))))
+                    ;; A turn with images asks for a model that can see, if one is routed.
+                    (if (and images (not (provider-profile-vision p)))
+                        (let ((v (ignore-errors (profile-for kernel "vision" (funcall *route-signals* kernel thought)))))
+                          (if (and v (provider-profile-vision v)) v p))
+                        p)))
+         (all (let ((all (append frame messages)))
+                (if images (with-images kernel all images profile) all)))
          (result
            (handler-case
                (let ((*progress-hook* (lambda (detail) (%activity-detail thought "progress" detail))))
                  (%activity thought "model-request" "message_count" (length all)
                             "message_characters" (%messages-chars all))
-                 (complete kernel (profile-for kernel (%purpose thought) (funcall *route-signals* kernel thought))
+                 (complete kernel profile
                          all
                          :tools (and hand (tool-specs hand))
                          :work-id (getf (mind-work mind) :id)

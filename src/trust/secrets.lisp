@@ -164,6 +164,14 @@ public point (uncompressed octets); the private part never leaves here."
     (loop while (< i n)
           do (let ((block-start (and (char= (char text i) #\-) (search "-----BEGIN " text :start2 i :end2 (min n (+ i 11))))))
                (cond
+                 ;; An image's base64 can look like a key prefix by chance;
+                 ;; scrubbing it would corrupt the image, so it passes as is.
+                 ((and (char= (char text i) #\d) (< (+ i 11) n) (string= "data:image/" text :start2 i :end2 (+ i 11))
+                       (search ";base64," text :start2 i :end2 (min n (+ i 48))))
+                  (let* ((start (+ 8 (search ";base64," text :start2 i :end2 (min n (+ i 48)))))
+                         (end (or (position-if-not (lambda (c) (or (alphanumericp c) (find c "+/="))) text :start start) n)))
+                    (write-string text out :start i :end end)
+                    (setf i end)))
                  ((and block-start (= block-start i)
                        (search "PRIVATE KEY-----" text :start2 i :end2 (min n (+ i 80))))
                   (let ((end (search "-----END " text :start2 i)))

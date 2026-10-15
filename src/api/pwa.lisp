@@ -113,7 +113,11 @@ assets. Returns the compiler's output."
            (text (obj-get payload "text" ""))
            (ts (parse-iso8601 at)))
       (cond ((string= kind "turn")
-             (obj "id" id "ts" ts "type" "user" "data" (obj "text" text)))
+             (let ((data (obj "text" text)))
+               (when (obj-get payload "images")
+                 (setf (gethash "images" data)
+                       (mapcar (lambda (i) (format nil "/api/v2/images/~a" i)) (obj-get payload "images"))))
+               (obj "id" id "ts" ts "type" "user" "data" data)))
             ((string= kind "notice")
              (obj "id" id "ts" ts "type" "notice"
                   "data" (obj "event_id" id "text" text "at" ts
@@ -402,6 +406,15 @@ localhost), the URL to send it to; passkeys only work at the agent's origin."
                                         "not_ready" (not-ready-warning k)))))
                t))
 
+      ((and (eq method :get) (uiop:string-prefix-p "/api/v2/images/" path))
+       (values (let ((row (and (%signed-in agent) (pai-v3.mind::image-row k (subseq path 15)))))
+                 (if row
+                     (progn (setf (hunchentoot:content-type*) (first row)
+                                  (hunchentoot:header-out "Cache-Control") "private, max-age=86400")
+                            (second row))
+                     (reply 404 (obj "error" "no such image"))))
+               t))
+
       ((and (eq method :get) (string= path "/v1/auth/state"))
        (values (reply 200 (obj "agent" (kernel-agent-id k)
                                "devices" (length (active-devices k))
@@ -459,15 +472,19 @@ localhost), the URL to send it to; passkeys only work at the agent's origin."
                        (reply 401 (obj "error" "not signed in"))
                        (let* ((b (body-json))
                               (text (string-trim '(#\Space #\Newline #\Tab) (obj-get b "message" ""))))
-                         (cond ((plusp (length (obj-get b "images")))
-                                (reply 400 (obj "error" "Images are not accepted yet.")))
-                               ((zerop (length text)) (reply 400 (obj "error" "Nothing to send.")))
+                         (cond ((> (length (obj-get b "images")) pai-v3.mind::*images-per-turn*)
+                                (reply 400 (obj "error" (format nil "At most ~d images at a time." pai-v3.mind::*images-per-turn*))))
+                               ((and (zerop (length text)) (null (obj-get b "images"))) (reply 400 (obj "error" "Nothing to send.")))
                                ((char= #\/ (char text 0))
                                 (broadcast agent "command" (obj "text" text "reply" (terminal-command k text (session-token))))
                                 (reply 200 (obj "ok" t "command" text)))
                                (t
-                                (let* ((turn (receive-turn k :channel "web" :audience "operator" :speaker "Operator"
-                                                             :text text
+                                (let* ((images (handler-case
+                                                   (mapcar (lambda (url) (pai-v3.mind::store-image k url)) (obj-get b "images"))
+                                                 (error (e) (return-from %pwa-route
+                                                              (values (reply 400 (obj "error" (princ-to-string e))) t)))))
+                                       (turn (receive-turn k :channel "web" :audience "operator" :speaker "Operator"
+                                                             :text (if (zerop (length text)) "(an image)" text) :images images
                                                              :origin (progn (setf (gethash "channel" origin) "web") origin)))
                                        (thought (request-thought k "responding" "The operator spoke."
                                                                  :channel "web" :source-event-id (event-id turn))))
