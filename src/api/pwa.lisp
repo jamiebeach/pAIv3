@@ -343,6 +343,13 @@ localhost), the URL to send it to; passkeys only work at the agent's origin."
       ;; Peers sign their requests; an operator session never stands in.
       ((fleet-path-p path) (values (fleet-route agent method path) t))
 
+      ((uiop:string-prefix-p "/api/notifications/" path)
+       (values (let ((origin (%signed-in agent)))
+                 (cond ((null origin) (reply 401 (obj "error" "not signed in")))
+                       ((and (eq method :post) (not (same-origin-p agent))) (reply 403 (obj "error" (%refusal agent))))
+                       (t (notify-route agent method path origin))))
+               t))
+
       ((and (eq method :get) (or (string= path "/login") (assoc path +pages+ :test #'string=))
             (%canonical-redirect agent path))
        (values (hunchentoot:redirect (%canonical-redirect agent path)) t))

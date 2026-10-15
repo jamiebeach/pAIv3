@@ -70,6 +70,7 @@
     :serial t
     :components ((:file "server")
                  (:file "fleet")
+                 (:file "notify")
                  (:file "pwa")))
    (:module "src/cli"
     :serial t

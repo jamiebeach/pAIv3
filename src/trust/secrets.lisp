@@ -96,6 +96,34 @@ constant time. A malformed signature is simply not valid."
                                                      (ironclad:hex-string-to-byte-array signature-hex))
            (error () nil)))))
 
+(defun %es256-parts (name)
+  (let ((entry (find name (bt:with-lock-held (*secrets-lock*) *secret-cache*) :key #'first :test #'string=)))
+    (when entry
+      (let ((colon (position #\: (second entry))))
+        (and colon (list (ironclad:hex-string-to-byte-array (subseq (second entry) 0 colon))
+                         (ironclad:hex-string-to-byte-array (subseq (second entry) (1+ colon)))))))))
+
+(defun ensure-es256-secret (name hosts)
+  "Make secret NAME a new P-256 signing key unless it exists. Returns its
+public point (uncompressed octets); the private part never leaves here."
+  (or (second (%es256-parts name))
+      (multiple-value-bind (private public) (ironclad:generate-key-pair :secp256r1)
+        (let ((d (getf (ironclad:destructure-private-key private) :x))
+              (q (getf (ironclad:destructure-public-key public) :y)))
+          (set-secret name (format nil "~a:~a" (ironclad:byte-array-to-hex-string d) (ironclad:byte-array-to-hex-string q)) hosts)
+          q))))
+
+(defun secret-es256-public (name)
+  "The public point of signing key NAME, or NIL."
+  (second (%es256-parts name)))
+
+(defun secret-es256-sign (name message)
+  "ES256 (raw r||s) signature of MESSAGE (a string) with signing key NAME."
+  (let ((parts (%es256-parts name)))
+    (unless parts (error 'keyring-error :message (format nil "There is no signing key ~a." name)))
+    (ironclad:sign-message (ironclad:make-private-key :secp256r1 :x (first parts) :y (second parts))
+                           (ironclad:digest-sequence :sha256 (babel:string-to-octets message :encoding :utf-8)))))
+
 (defun secret-names ()
   "Secrets as (name hosts updated-at); never values."
   (and *secrets-db*
