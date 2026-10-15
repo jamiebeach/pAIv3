@@ -18,7 +18,7 @@
    #:event-caused-by #:event-root-id #:event-agent-id #:event-payload
    ;; kernel
    #:kernel #:open-kernel #:close-kernel #:kernel-db #:kernel-agent-id
-   #:append! #:append-batch! #:event-by-id #:ledger-head
+   #:append! #:append-batch! #:event-by-id #:ledger-head #:latest-event-ids
    ;; projections
    #:define-projection #:find-projection #:projection-status
    #:projections-not-ready #:not-ready-warning

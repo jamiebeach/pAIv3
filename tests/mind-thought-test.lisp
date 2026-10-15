@@ -361,4 +361,33 @@
         (is (= 6000 (length (obj-get (second tool-messages) "content"))) "the third part, on request"))
       (is (equal "ended" (getf (thought-row k id) :status))))))
 
+(deftest a-reply-cut-off-by-the-output-limit-says-so
+  (with-clock
+    (with-temp-kernel (k)
+      (let* ((sent nil)
+             (*thought-provider*
+               (make-provider-profile
+                :name "test" :base-url "http://fake" :model "m" :reasoning (obj "max_tokens" 2000)
+                :transport (lambda (url headers body &key stream-fn timeout)
+                             (declare (ignore url headers timeout))
+                             (setf sent (json-parse body))
+                             (let ((usage (obj "prompt_tokens" 5 "completion_tokens" 4096)))
+                               (if stream-fn
+                                   (progn (funcall stream-fn (json-encode (obj "choices" (list (obj "delta" (obj "content" "Good timing. Two habits before I")
+                                                                                                    "finish_reason" "length"))
+                                                                               "usage" usage)))
+                                          (values 200 nil ""))
+                                   (values 200 nil (json-encode (obj "choices" (list (obj "message" (obj "role" "assistant" "content" "Good timing. Two habits before I")
+                                                                                          "finish_reason" "length"))
+                                                                     "usage" usage))))))))
+             (*budget* (list :daily-microusd 100000000 :operator-reserve 0.2)))
+        (advance 43200)
+        (let ((turn (receive-turn k :channel "web" :audience "operator" :speaker "Sam" :text "Hello"
+                                    :origin (obj "principal_type" "operator"))))
+          (request-thought k "responding" "Hello" :channel "web" :source-event-id (event-id turn)))
+        (run-until-idle k)
+        (is (equal 2000 (obj-get (obj-get sent "reasoning") "max_tokens")) "the thinking budget is sent")
+        (is (search "cut off" (sql-value (kernel-db k) "SELECT rendered FROM working_dialogue WHERE kind=?1 ORDER BY event_id DESC LIMIT 1" "reply"))
+            "the operator sees it was cut off")))))
+
 (run-suite "mind-thought")

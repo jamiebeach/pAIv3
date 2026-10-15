@@ -109,6 +109,12 @@ quarantines that event for that projection; the append still commits."
                       id (kernel-agent-id kernel))))
     (and row (%row->event row))))
 
+(defun latest-event-ids (kernel type limit)
+  "Ids of the newest LIMIT events of TYPE, newest first. For inspection."
+  (mapcar #'first (sql-rows (kernel-db kernel)
+                            "SELECT event_id FROM pai_events WHERE agent_id=?1 AND event_type=?2 ORDER BY storage_sequence DESC LIMIT ?3"
+                            (kernel-agent-id kernel) type limit)))
+
 (defun %events-after (kernel after-seq types limit)
   "Kernel-internal cursor read: events of TYPES after AFTER-SEQ, in order, at
 most LIMIT. One indexed query per type, merged, so work stays bounded by

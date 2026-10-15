@@ -400,7 +400,11 @@ trampoline rebuilds them on the next bounce; recurring is re-queuing."
 
 (defun answer (mind reply)
   (let* ((kernel (mind-kernel mind)) (thought (mind-thought mind))
-         (text (obj-get reply "content" "")))
+         (text (let ((text (obj-get reply "content" "")))
+                 ;; A reply the output limit cut off says so, rather than passing as whole.
+                 (if (equal "length" (obj-get reply "finish_reason"))
+                     (format nil "~a … [cut off: I reached my output limit before finishing]" text)
+                     text))))
     (%activity thought "reply-ready")
     (when (and (string= "responding" (getf thought :origin)) (getf thought :channel))
       (deliver-reply kernel :channel (getf thought :channel) :audience (getf thought :audience)
@@ -508,7 +512,8 @@ TOOLS NIL asks for an answer with no tools offered."
                             :text text :in-reply-to id :interim t))
     (if calls
         (obj "role" "assistant" "content" (if (plusp (length text)) text :null) "tool_calls" calls)
-        (obj "role" "assistant" "content" text))))
+        ;; The finish reason travels to ANSWER, which marks a reply the limit cut off.
+        (obj "role" "assistant" "content" text "finish_reason" (obj-get result "finish_reason")))))
 
 ;;; Acting
 

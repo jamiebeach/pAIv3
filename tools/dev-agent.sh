@@ -6,6 +6,8 @@
 #   tools/dev-agent.sh create          make the container (run once)
 #   tools/dev-agent.sh sync            copy the source in and reload it live
 #   tools/dev-agent.sh sync --restart  copy the source in and restart
+#   tools/dev-agent.sh peek <what> [n]  read the running agent: dialogue,
+#                                        calls (raw model responses) or thoughts
 #   tools/dev-agent.sh pai <command>   run the pai CLI from source while the
 #                                        agent is stopped (reads stdin)
 #   tools/dev-agent.sh rebuild <name>...  stop the agent, rebuild those
@@ -73,6 +75,11 @@ case "${1:-}" in
       *) echo "NOT READY: $health"; echo "Fix with: tools/dev-agent.sh rebuild <name>..."; exit 1 ;;
     esac
     ;;
+  peek)
+    # Read recent state of the running agent: dialogue, calls or thoughts.
+    docker exec "$name" curl -s "http://127.0.0.1:8090/v1/dev/peek?what=${2:-dialogue}&limit=${3:-6}"
+    echo
+    ;;
   pai)
     shift
     docker run --rm -i -e HOME=/home/pai -w /home/pai -v "$volume:/home/pai" "$image" \
@@ -100,5 +107,5 @@ case "${1:-}" in
     wait_up && echo "Started $name again."
     ;;
   *)
-    sed -n '2,21p' "$0"; exit 2 ;;
+    sed -n '2,23p' "$0"; exit 2 ;;
 esac

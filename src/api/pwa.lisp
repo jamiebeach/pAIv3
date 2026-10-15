@@ -69,6 +69,30 @@ becomes a stimulus (pai-v3.mind:coding-agent-message)."
                         (reply 200 (obj "ok" t "from" name "thought_id"
                                         (pai-v3.mind:coding-agent-message kernel name text :bead bead))))))))))
 
+(defun dev-peek (kernel what limit)
+  "Recent state for a coding agent on a dev agent: dialogue, model calls
+(their raw responses), thoughts or concerns. Read-only and bounded."
+  (let ((db (kernel-db kernel)) (limit (max 1 (min 50 limit))) (o (obj "what" what)))
+    (flet ((rows (sql &rest args) (apply #'sql-rows db sql args))
+           (clip (s n) (if (and (stringp s) (> (length s) n)) (subseq s 0 n) s)))
+      (setf (gethash "items" o)
+            (cond ((equal what "dialogue")
+                   (mapcar (lambda (r) (obj "event_id" (first r) "kind" (second r) "text" (clip (third r) 3000)))
+                           (reverse (rows "SELECT event_id,kind,rendered FROM working_dialogue WHERE audience=?1 ORDER BY event_id DESC LIMIT ?2" "operator" limit))))
+                  ((equal what "calls")
+                   (mapcar (lambda (r) (obj "call_event_id" (first r) "at" (second r)
+                                            "response" (or (ignore-errors (json-parse (third r))) (clip (third r) 6000))))
+                           (loop for id in (latest-event-ids kernel "provider.call.completed" limit)
+                                 for r = (sql-row db "SELECT call_event_id,at,response FROM model_captures WHERE call_event_id=?1 LIMIT 1" id)
+                                 when r collect r)))
+                  ((equal what "thoughts")
+                   (mapcar (lambda (r) (obj "id" (first r) "origin" (second r) "audience" (third r) "status" (fourth r)
+                                            "steps" (fifth r) "outcome" (clip (sixth r) 500) "reason" (clip (seventh r) 500)))
+                           (rows "SELECT id,origin,audience,status,steps,outcome,reason FROM thoughts WHERE status IN (?1,?2,?3,?4,?5,?6) ORDER BY id DESC LIMIT ?7"
+                                 "queued" "requested" "running" "ended" "failed" "interrupted" limit)))
+                  (t (list "what is dialogue, calls or thoughts"))))
+      o)))
+
 (defun live-reload ()
   "Load whatever source changed since the last load, then re-read the PWA
 assets. Returns the compiler's output."
@@ -394,6 +418,17 @@ localhost), the URL to send it to; passkeys only work at the agent's origin."
                       (reply 403 (obj "error" "live reload is answered only from this machine")))
                      (t (handler-case (reply 200 (obj "ok" t "output" (live-reload) "not_ready" (not-ready-warning k)))
                           (error (e) (reply 500 (obj "ok" :false "error" (princ-to-string e)))))))
+               t))
+
+      ((and (eq method :get) (string= path "/v1/dev/peek"))
+       ;; For the coding agent on a dev agent: read recent state while it runs.
+       ;; Same gate as reload: the dev setting, and only from this machine.
+       (values (cond ((not (eq t (setting k "dev.live_reload")))
+                      (reply 404 (obj "error" "no such route")))
+                     ((not (loopback-request-p))
+                      (reply 403 (obj "error" "peek is answered only from this machine")))
+                     (t (reply 200 (dev-peek k (hunchentoot:get-parameter "what")
+                                             (or (ignore-errors (parse-integer (hunchentoot:get-parameter "limit"))) 6)))))
                t))
 
       ((and (eq method :get) (string= path "/v1/dev/health"))

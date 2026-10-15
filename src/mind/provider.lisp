@@ -17,6 +17,7 @@
   (connect-timeout 10) (read-timeout 120)
   (max-tokens 4096) (temperature nil)
   (vision nil)                            ; the model can see images
+  (reasoning nil)                         ; passed through, e.g. {"max_tokens": 4000}: bounds thinking so a reply has room
   (microusd-per-1k-prompt 0) (microusd-per-1k-completion 0)  ; when no reported cost
   (transport #'http-transport))
 
@@ -168,6 +169,7 @@ signals PROVIDER-FAILURE with a class on failure."
                                  "tools" tools
                                  "max_tokens" (provider-profile-max-tokens profile)
                                  "temperature" (provider-profile-temperature profile)
+                                 "reasoning" (provider-profile-reasoning profile)
                                  "stream" (if on-delta t :false)
                                  "usage" (obj "include" t))))
          (headers (list (cons "Content-Type" "application/json")
