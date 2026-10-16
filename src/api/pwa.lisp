@@ -72,7 +72,7 @@ becomes a stimulus (pai-v3.mind:coding-agent-message)."
 (defun dev-peek (kernel what limit)
   "Recent state for a coding agent on a dev agent: dialogue, model calls
 (their raw responses), thoughts or concerns. Read-only and bounded."
-  (let ((db (kernel-db kernel)) (limit (max 1 (min 50 limit))) (o (obj "what" what)))
+  (let ((db (kernel-db kernel)) (limit (if (equal what "request") limit (max 1 (min 50 limit)))) (o (obj "what" what)))
     (flet ((rows (sql &rest args) (apply #'sql-rows db sql args))
            (clip (s n) (if (and (stringp s) (> (length s) n)) (subseq s 0 n) s)))
       (setf (gethash "items" o)
@@ -85,6 +85,15 @@ becomes a stimulus (pai-v3.mind:coding-agent-message)."
                            (loop for id in (latest-event-ids kernel "provider.call.completed" limit)
                                  for r = (sql-row db "SELECT call_event_id,at,response FROM model_captures WHERE call_event_id=?1 LIMIT 1" id)
                                  when r collect r)))
+                  ((equal what "request")
+                   ;; The exact messages one call was sent: limit is its call event id.
+                   (let ((r (sql-row db "SELECT request FROM model_captures WHERE call_event_id=?1 LIMIT 1" limit)))
+                     (if r
+                         (let ((parsed (ignore-errors (json-parse (first r)))))
+                           (mapcar (lambda (m) (obj "role" (obj-get m "role")
+                                                    "content" (let ((c (obj-get m "content"))) (if (stringp c) c (json-encode c)))))
+                                   (obj-get parsed "messages")))
+                         (list "no capture for that call"))))
                   ((equal what "failures")
                    (loop for id in (latest-event-ids kernel "provider.call.failed" limit)
                          for r = (sql-row db "SELECT call_event_id,at,response FROM model_captures WHERE call_event_id=?1 LIMIT 1" id)

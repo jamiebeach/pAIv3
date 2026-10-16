@@ -84,4 +84,20 @@
         (is (equal "ok" (obj-get (find "concerns" slots :key (lambda (s) (obj-get s "slot")) :test #'equal) "status"))
             "an open concern reaches the context")))))
 
+(deftest a-reply-is-asked-with-the-operators-words-and-a-transcript-in-order
+  (with-temp-kernel (k)
+    (receive-turn k :channel "web" :audience "operator" :speaker "Sam" :text "first message"
+                    :origin (obj "principal_type" "operator"))
+    (deliver-reply k :channel "web" :audience "operator" :text "first answer")
+    (let* ((turn (receive-turn k :channel "web" :audience "operator" :speaker "Sam" :text "Do you see my kids in your graph?"
+                                 :origin (obj "principal_type" "operator")))
+           (id (request-thought k "responding" "The operator spoke." :channel "web" :source-event-id (event-id turn)))
+           (messages (funcall pai-v3.mind::*assemble-thought-context* k (thought-row k id) nil))
+           (last (car (last messages)))
+           (now (obj-get (second messages) "content")))
+      (is (equal "user" (obj-get last "role")))
+      (is (search "Do you see my kids in your graph?" (obj-get last "content")) "the task is the operator's words")
+      (is (< (search "first message" now) (search "first answer" now) (search "Do you see my kids" now))
+          "the conversation reads oldest to newest"))))
+
 (run-suite "mind-context")

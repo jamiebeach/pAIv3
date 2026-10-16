@@ -33,7 +33,7 @@ list of (text tokens) rows, most relevant first.")
           (:summary   :max 3000  :source :summary   :title "Earlier, in summary")
           (:conclusions :max 1200 :source :conclusions :title "What I have concluded lately (newer than the summary)")
           (:activity  :max 24000 :source :activity  :title "What I have been doing")
-          (:dialogue  :max 4000  :source :dialogue  :title "Conversation")
+          (:dialogue  :max 4000  :source :dialogue  :title "Conversation" :order :oldest-first)
           (:recall    :max 5000  :source :recall    :title "What I remember")
           (:knowledge :max 1500  :source :knowledge :title "What I know")
           (:scheduled :max 500   :source :scheduled :title "Coming up")
@@ -46,7 +46,7 @@ list of (text tokens) rows, most relevant first.")
           (:summary   :max 2000  :source :summary   :title "Earlier, in summary")
           (:conclusions :max 800 :source :conclusions :title "What I have concluded lately (newer than the summary)")
           (:activity  :max 8000  :source :activity  :title "What I have been doing")
-          (:dialogue  :max 2000  :source :dialogue  :title "Recent conversation")
+          (:dialogue  :max 2000  :source :dialogue  :title "Recent conversation" :order :oldest-first)
           (:recall    :max 3000  :source :recall    :title "What I remember")
           (:knowledge :max 1000  :source :knowledge :title "What I know")
           (:concerns  :max 600   :source :concerns  :title "What I am looking into")
@@ -104,8 +104,11 @@ list of (text tokens) rows, most relevant first.")
             (incf total tokens)
             (push (obj "slot" "tools" "count" 1 "tokens" tokens "status" "ok") manifest)))
         (dolist (slot profile)
-          (destructuring-bind (name &key max source title) slot
+          (destructuring-bind (name &key max source title order) slot
             (multiple-value-bind (texts used status) (%fill kernel source request max)
+              ;; A source gives its newest rows first, so the budget drops the
+              ;; oldest; a transcript still reads oldest to newest.
+              (when (eq order :oldest-first) (setf texts (reverse texts)))
               (incf total used)
               (push (obj "slot" (string-downcase (symbol-name name)) "count" (length texts)
                          "tokens" used "status" status)
@@ -151,4 +154,10 @@ A message with no tool call ends your turn. Never end one by saying what you wil
                                 :tools-text (if (string= "responding" (getf thought :origin))
                                                 (format nil "~a~@[~%~%~a~]" +speaking-while-working+ tools-text)
                                                 (format nil "A message with no tool call ends this thought. Never end one by saying what you will do next: make the tool call in the same message, or finish.~@[~%~%~a~]" tools-text))
-                                :task (format nil "~a" (getf thought :reason))))))
+                                ;; Answering a turn, the task is the operator's own words, as
+                                ;; the last user message, where any chat model looks for them.
+                                :task (or (and (string= "responding" (getf thought :origin))
+                                               (getf thought :source-event-id)
+                                               (sql-value (kernel-db kernel) "SELECT rendered FROM working_dialogue WHERE event_id=?1 LIMIT 1"
+                                                          (getf thought :source-event-id)))
+                                          (format nil "~a" (getf thought :reason)))))))
