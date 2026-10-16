@@ -179,6 +179,13 @@ collapsed, lower-case."
               (end (position-if-not (lambda (c) (or (alphanumericp c))) trimmed)))
          (subseq trimmed 0 (or end (length trimmed))))))
 
+(defun %resolve-end (kernel specs ref)
+  "REF's entity spec; an id of a known entity is recorded as one, so the
+rest of the checks treat it like a declared, matched entity."
+  (or (gethash ref specs)
+      (let ((e (and (stringp ref) (graph-entity kernel ref))))
+        (and e (equal "active" (fifth e)) (setf (gethash ref specs) (list :id (first e)))))))
+
 (defun apply-formation (kernel turns proposal)
   "Check every proposed fact on its own and record what passes. An entity is
 formed only when a fact that uses it passes every check, so a dropped fact
@@ -238,8 +245,10 @@ Returns (values entities-formed entities-matched admitted supported dropped)."
                (source (gethash label sources))
                (quote (obj-get f "quote"))
                (statement (obj-get f "statement"))
-               (s (gethash (obj-get f "subject") specs))
-               (o (gethash (obj-get f "object") specs))
+               ;; An end is a ref this proposal declared, or the id of an entity
+               ;; already in the graph, which a model may name directly.
+               (s (%resolve-end kernel specs (obj-get f "subject")))
+               (o (%resolve-end kernel specs (obj-get f "object")))
                (predicate (obj-get f "predicate"))
                (world (world-key (obj-get f "world"))))
           (cond

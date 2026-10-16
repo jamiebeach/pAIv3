@@ -153,4 +153,18 @@
       (pai-v3.mind::reset-graph k "test")
       (is (zerop (pai-v3.mind::%formed-through k)) "a reset means the conversation is read again"))))
 
+(deftest a-fact-may-name-a-known-entity-by-its-id
+  (with-formation (k)
+    (let* ((sam (form-entity k :kind "person" :name "Sam" :lineage (list (lineage-hop "beta" "formed"))))
+           (turn (say k "Phoebe is my dog."))
+           (s (format nil "S~d" (event-id turn))))
+      (let ((*thought-provider*
+              (proposal-provider
+               (obj "entities" (list (obj "ref" "e1" "name" "Phoebe" "kind" "organism"))
+                    "facts" (list (obj "subject" sam "predicate" "companion_of" "object" "e1"
+                                       "statement" "Phoebe is Sam's dog." "source" s "quote" "Phoebe is my dog"))))))
+        (form-graph k (list :id nil)))
+      (is (find "companion_of" (entity-facts k sam) :key #'third :test #'equal)
+          "the known entity's id resolves; the fact is kept"))))
+
 (run-suite "mind-graph-form")
