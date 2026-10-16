@@ -85,12 +85,17 @@ becomes a stimulus (pai-v3.mind:coding-agent-message)."
                            (loop for id in (latest-event-ids kernel "provider.call.completed" limit)
                                  for r = (sql-row db "SELECT call_event_id,at,response FROM model_captures WHERE call_event_id=?1 LIMIT 1" id)
                                  when r collect r)))
+                  ((equal what "failures")
+                   (loop for id in (latest-event-ids kernel "provider.call.failed" limit)
+                         for r = (sql-row db "SELECT call_event_id,at,response FROM model_captures WHERE call_event_id=?1 LIMIT 1" id)
+                         collect (obj "call_event_id" id "at" (second r)
+                                      "response" (and r (or (ignore-errors (json-parse (third r))) (clip (third r) 6000))))))
                   ((equal what "thoughts")
                    (mapcar (lambda (r) (obj "id" (first r) "origin" (second r) "audience" (third r) "status" (fourth r)
                                             "steps" (fifth r) "outcome" (clip (sixth r) 500) "reason" (clip (seventh r) 500)))
                            (rows "SELECT id,origin,audience,status,steps,outcome,reason FROM thoughts WHERE status IN (?1,?2,?3,?4,?5,?6) ORDER BY id DESC LIMIT ?7"
                                  "queued" "requested" "running" "ended" "failed" "interrupted" limit)))
-                  (t (list "what is dialogue, calls or thoughts"))))
+                  (t (list "what is dialogue, calls, failures or thoughts"))))
       o)))
 
 (defun live-reload ()

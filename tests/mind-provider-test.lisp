@@ -126,4 +126,11 @@
                       (provider-failure (f) (princ-to-string f)))))
         (is (search "empty response (finish: length · 4096 completion tokens, 4096 reasoning" reason) reason)))))
 
+(deftest a-stream-read-as-latin-1-is-decoded-as-utf-8
+  (let ((garbled (babel:octets-to-string (babel:string-to-octets "Sam — café ✓" :encoding :utf-8) :encoding :latin-1)))
+    (is (equal "Sam — café ✓" (pai-v3.mind::%utf-8-line garbled)) "re-decoded")
+    (is (equal "plain ascii" (pai-v3.mind::%utf-8-line "plain ascii")))
+    (is (equal "already — right" (pai-v3.mind::%utf-8-line "already — right")) "a correctly read line is left alone")
+    (is (equal "café" (pai-v3.mind::%utf-8-line "café")) "Latin-1 text that is not UTF-8 is left alone")))
+
 (run-suite "mind-provider")

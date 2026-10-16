@@ -54,6 +54,15 @@
 
 ;;; Transport
 
+(defun %utf-8-line (line)
+  "LINE as UTF-8. An event stream with no charset is read as Latin-1, which
+turns every multi-byte character into two or three wrong ones; re-decode
+such a line, and leave one that was read correctly alone."
+  (if (every (lambda (c) (< (char-code c) 256)) line)
+      (handler-case (babel:octets-to-string (babel:string-to-octets line :encoding :latin-1) :encoding :utf-8)
+        (error () line))
+      line))
+
 (defun http-transport (url headers body &key stream-fn (timeout 120) allow-private)
   "Post through the kernel's one outbound transport (spec §17)."
   (if stream-fn
@@ -63,8 +72,9 @@
         (unwind-protect
              (if (eql status 200)
                  (progn
-                   (loop for line = (read-line stream nil)
-                         while line
+                   (loop for raw = (read-line stream nil)
+                         while raw
+                         for line = (%utf-8-line raw)
                          when (and (> (length line) 6) (string= "data: " line :end2 6))
                            do (let ((data (string-trim '(#\Return) (subseq line 6))))
                                 (unless (string= data "[DONE]")
@@ -176,18 +186,25 @@ signals PROVIDER-FAILURE with a class on failure."
                         (cons "Authorization" (list :secret (provider-profile-secret profile) "Bearer ~a"))))
          (content (make-string-output-stream))
          (tool-calls '()) (finish nil) (usage (obj)) (stream-error nil)
+         (raw '()) (raw-count 0)          ; the last chunks as sent, kept for a failure
          (generation (incf *progress-generation*))
          (output-chars 0) (reasoning-chars 0) (argument-chars 0))
     (labels ((ms () (round (* 1000 (- (get-internal-real-time) start))
                            internal-time-units-per-second))
              (fail (class status reason &optional retry-after)
-               (append! kernel "provider.call.failed"
-                        (obj "profile" (provider-profile-name profile)
-                             "model" (provider-profile-model profile)
-                             "class" (string-downcase (symbol-name class))
-                             "status" (or status 0)
-                             "reason" (subseq reason 0 (min 300 (length reason)))
-                             "milliseconds" (ms) "work_id" work-id))
+               (let ((event (append! kernel "provider.call.failed"
+                                     (obj "profile" (provider-profile-name profile)
+                                          "model" (provider-profile-model profile)
+                                          "class" (string-downcase (symbol-name class))
+                                          "status" (or status 0)
+                                          "reason" (subseq reason 0 (min 300 (length reason)))
+                                          "milliseconds" (ms) "work_id" work-id))))
+                 ;; What the provider actually sent, so a failure can be read, not guessed.
+                 (when *capture-hook*
+                   (ignore-errors
+                    (funcall *capture-hook* kernel event body
+                             (json-encode (obj "failed" reason "finish_reason" (or finish :null) "usage" usage
+                                               "raw_stream" (reverse raw)))))))
                (error 'provider-failure :class class :reason reason
                                         :status (or status 0) :retry-after retry-after
                                         :partial (get-output-stream-string content)))
@@ -233,6 +250,9 @@ signals PROVIDER-FAILURE with a class on failure."
                      :timeout (provider-profile-read-timeout profile)
                      :stream-fn (and on-delta
                                      (lambda (data)
+                                       (when (stringp data)
+                                         (push data raw)
+                                         (when (> (incf raw-count) 60) (setf raw (subseq raw 0 60))))
                                        (if (eq data :heartbeat)
                                            (progress :heartbeat t)
                                            (handler-case (take (json-parse data))
