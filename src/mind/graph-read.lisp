@@ -59,13 +59,23 @@
       (setf hops (butlast hops)))
     (if hops (render-lineage hops) "unknown")))
 
+(defun fact-ended (kernel fact-id)
+  "The date FACT-ID stopped being true, when its valid_until is a date that
+has passed; else NIL. A fact that has ended stays in the record."
+  (let ((until (sql-value (kernel-db kernel) "SELECT valid_until FROM graph_facts WHERE id=?1 LIMIT 1" fact-id)))
+    (and (stringp until) (>= (length until) 10)
+         (every #'digit-char-p (remove #\- (subseq until 0 10)))
+         (string< (subseq until 0 10) (subseq (now-iso8601) 0 10))
+         (subseq until 0 10))))
+
 (defun render-fact (kernel row &key lineage)
   "One fact as a line: its statement (or subject predicate object), marked
 when it is in a story's world or is not a plain positive assertion, with
 where it came from."
   (destructuring-bind (id subject predicate object character derivation path scope polarity text world) row
-    (declare (ignore id path))
-    (format nil "~@[[in ~a] ~]~@[[~a] ~]~@[[not] ~]~a~@[ (~a)~]~:[~; (inferred)~]~@[ — ~a~]"
+    (declare (ignore path))
+    (format nil "~@[[ended ~a] ~]~@[[in ~a] ~]~@[[~a] ~]~@[[not] ~]~a~@[ (~a)~]~:[~; (inferred)~]~@[ — ~a~]"
+            (fact-ended kernel id)
             (world-name kernel world)
             (and (not (equal scope "assertion")) scope)
             (equal polarity "negative")
@@ -97,7 +107,9 @@ where it came from."
                                :test #'equal))))
       (loop for entity in (subseq named 0 (min *graph-slot-entities* (length named)))
             for all = (entity-facts kernel (first entity) :limit (* 3 *graph-slot-facts*))
-            for facts = (remove-if-not (lambda (f) (member (nth 10 f) open-worlds :test #'equal)) all)
+            ;; What has ended is not what is so now: it stays out of the context.
+            for facts = (remove-if (lambda (f) (fact-ended kernel (first f)))
+                                   (remove-if-not (lambda (f) (member (nth 10 f) open-worlds :test #'equal)) all))
             ;; An entity with no facts at all is still shown, as unconnected:
             ;; the operator wants it visible, not hidden or guessed at.
             when (or facts (null all))

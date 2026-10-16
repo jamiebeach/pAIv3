@@ -228,4 +228,21 @@
   (dolist (row pai-v3.mind::+graph-predicates+)
     (is (assoc (first row) pai-v3.mind::+predicate-meanings+ :test #'equal) (first row))))
 
+(deftest a-fact-that-has-ended-is-marked-and-kept-out-of-context
+  (with-graph (k)
+    (let* ((sam (form-entity k :kind "person" :name "Sam" :lineage (own k)))
+           (lee (form-entity k :kind "person" :name "Lee" :lineage (own k)))
+           (old (admit-fact k :subject sam :predicate "knows" :object lee :text "Sam and Lee were flatmates."
+                              :temporal (obj "character" "temporary-state" "valid_until" "2020-06-30")
+                              :evidence (quote-of "we shared a flat") :lineage (own k)))
+           (now (admit-fact k :subject sam :predicate "friend_of" :object lee :text "Sam and Lee are friends."
+                              :evidence (quote-of "my friend Lee") :lineage (own k))))
+      (is (equal "2020-06-30" (pai-v3.mind::fact-ended k old)))
+      (is (null (pai-v3.mind::fact-ended k now)))
+      (is (search "[ended 2020-06-30]" (render-fact k (find old (entity-facts k sam) :key #'first :test #'equal)))
+          "shown as ended where it is shown")
+      (let ((slot (format nil "~{~a~}" (knowledge-slot k "operator" "Tell me about Sam"))))
+        (is (search "friends" slot))
+        (is (not (search "flatmates" slot)) "and left out of what is so now")))))
+
 (run-suite "mind-graph")
