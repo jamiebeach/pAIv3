@@ -190,6 +190,8 @@
       (let ((notes (mapcar #'last-note (reverse *seen-messages*))))
         (is (search "write a short plan first" (first notes)) "the first call is asked for a plan")
         (is (search "Checkpoint, 8 of 30" (nth 8 notes)) "the ninth call follows a checkpoint")
+        (is (search "delivered as it is and ends this thought" (nth 8 notes))
+            "the checkpoint says that a message without a tool call is the answer (bead v3-35t)")
         (is (= 1 (count-if (lambda (n) (search "Checkpoint" n)) notes)))))))
 
 (deftest a-repeated-call-is-pointed-out

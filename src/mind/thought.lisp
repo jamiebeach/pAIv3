@@ -332,7 +332,7 @@ source and never answered)."
           ((and (zerop used) (member (getf thought :origin) '("work" "concern") :test #'string=))
            (format nil "Before you start: if this needs several steps, write a short plan first, saying what you will check and about how many of your ~d model calls it should take." max))
           ((and (plusp used) (zerop (mod used *checkpoint-every*)))
-           (format nil "Checkpoint, ~d of ~d calls used. In two lines: what have you established, and what question is still open? Then decide whether the next call is needed, or whether to finish now." used max)))))
+           (format nil "Checkpoint, ~d of ~d calls used. If more is needed, say in two lines what you have established and what is still open, together with your next tool call. If you are done, skip the checkpoint and write your answer itself: a message without a tool call is delivered as it is and ends this thought, so it must be the answer, not a note about it." used max)))))
 
 (defun %with-low-allowance-note (mind messages)
   "MESSAGES with this step's guidance note, if it has one."
