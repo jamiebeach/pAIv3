@@ -69,6 +69,19 @@
 
 ;;; Conversation
 
+(defparameter *text-bytes* 14000 "Most UTF-8 bytes of a message carried as a v3 event.")
+
+(defun %fit (text v2-id)
+  "TEXT as it fits a v3 event: a message too long keeps its start and says
+where the whole of it is. The archive holds every word."
+  (if (<= (length (babel:string-to-octets text :encoding :utf-8)) *text-bytes*)
+      text
+      (let ((end (length text)))
+        (loop while (> (length (babel:string-to-octets (subseq text 0 end) :encoding :utf-8)) *text-bytes*)
+              do (setf end (floor (* end 9) 10)))
+        (format nil "~a~%[... ~:d more characters; the whole message is in the v2 archive as event ~d]"
+                (subseq text 0 end) (- (length text) end) v2-id))))
+
 (defun %payload (json) (obj-get (json-parse json) "payload"))
 
 (defun import-conversation (kernel blobs v2 v2-agent &key (page 500))
@@ -81,7 +94,7 @@ predecessor's history was carried in are marked with that lineage."
           do (dolist (r rows)
                (destructuring-bind (id type at json) r
                  (let* ((p (%payload json))
-                        (text (obj-get p "text" ""))
+                        (text (let ((x (obj-get p "text" ""))) (if (stringp x) (%fit x id) x)))
                         ;; Messages without a channel are the carried-in history.
                         (carried (null (obj-get p "channel")))
                         (channel (or (obj-get p "channel") "web")))

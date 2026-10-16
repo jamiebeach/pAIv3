@@ -27,6 +27,7 @@
         (v2-event db 13 "agent-message" "2026-07-27T10:01:05Z" (obj "text" "Let me look." "turn_id" "t1" "segment_sequence" 0 "final" :false))
         (v2-event db 14 "agent-message" "2026-07-27T10:01:20Z" (obj "text" "Hello again." "turn_id" "t1" "segment_sequence" 2 "final" t))
         (v2-event db 20 "user-message" "2026-09-08T16:00:00Z" (obj "text" "A newer question" "channel" "web" "metadata" (obj)))
+        (v2-event db 22 "agent-message" "2026-09-08T16:01:00Z" (obj "text" (make-string 30000 :initial-element (code-char 120)) "channel" "web" "metadata" (obj)))
         (v2-event db 21 "agent-message" "2026-09-08T16:00:30Z" (obj "text" "A newer answer" "channel" "web" "metadata" (obj)))
         (v2-event db 30 "conscious-work-docket-opened" "2026-09-10T00:00:00Z"
                   (obj "work_id" "w1" "title" "Plan the garden" "purpose" "a garden plan" "operator_benefit" "the operator plants in spring"
@@ -62,18 +63,19 @@
       (let* ((h (open-agent (format nil "~av3/" dir))) (k (agent-handle-kernel h)) (blobs (agent-store-db h "blobs")))
         (unwind-protect
              (progn
-               (is (= 11 (sql-value blobs "SELECT count(*) FROM v2_archive WHERE storage_sequence>?1 LIMIT 1" 0)) "every v2 event archived, once")
+               (is (= 12 (sql-value blobs "SELECT count(*) FROM v2_archive WHERE storage_sequence>?1 LIMIT 1" 0)) "every v2 event archived, once")
                (is (sql-value blobs "SELECT 1 FROM v2_archive WHERE event_type=?1 LIMIT 1" "heap-health") "even what v3 will never use")
                (is (null (sql-value (kernel-db k) "SELECT 1 FROM pai_events WHERE agent_id=?1 AND event_type=?2 LIMIT 1" "beta" "heap-health"))
                    "and no v2 type enters the v3 ledger")
                (let ((rows (sql-rows (kernel-db k) "SELECT kind,rendered,at FROM working_dialogue WHERE audience=?1 ORDER BY event_id LIMIT 10" "operator")))
-                 (is (= 5 (length rows)) "two turns, three replies (one an interim note)")
+                 (is (= 6 (length rows)) "two turns, four replies (one an interim note)")
+                 (is (search "whole message is in the v2 archive as event 22" (second (car (last rows)))) "a long one fits, and says where the rest is")
                  (is (search "Hello from the old days" (second (first rows))))
                  (is (equal "2026-07-27T10:01:00Z" (third (first rows))) "at its own time"))
                (is (sql-value (kernel-db k) "SELECT 1 FROM pai_events WHERE agent_id=?1 AND event_type=?2 AND event_json LIKE ?3 LIMIT 1"
                               "beta" "turn.received" "%earlier agent (v1) via this agent%")
                    "carried-in history keeps its lineage")
-               (is (= 5 (sql-value blobs "SELECT count(*) FROM v2_map WHERE phase=?1 LIMIT 1" "conversation")) "each traced back to its v2 event")
+               (is (= 6 (sql-value blobs "SELECT count(*) FROM v2_map WHERE phase=?1 LIMIT 1" "conversation")) "each traced back to its v2 event")
                (is (equal '("m-keep" "m-new") (mapcar #'first (sql-rows (kernel-db k) "SELECT id FROM memory_nodes WHERE kind IN (?1,?2) ORDER BY id LIMIT 10" "observation" "thought")))
                    "current memories carried; superseded and quarantined left in the archive")
                (is (sql-value (kernel-db k) "SELECT 1 FROM memory_vectors WHERE id=?1 LIMIT 1" "m-keep") "with their embeddings, not re-embedded")
