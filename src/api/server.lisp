@@ -70,6 +70,15 @@ host, else the agent's first site."
   (let ((raw (hunchentoot:raw-post-data :force-text t)))
     (if (and raw (plusp (length raw))) (json-parse raw) (obj))))
 
+(defun see-other (location)
+  "Redirect to LOCATION as given. A path stays a path, so the browser keeps
+the scheme and host it used: behind an HTTPS proxy (Tailscale serve) the
+agent sees plain HTTP, and an absolute redirect built from that would send
+the browser to http://."
+  (setf (hunchentoot:return-code*) 302
+        (hunchentoot:header-out :location) location)
+  "")
+
 (defun reply (status object)
   (setf (hunchentoot:return-code*) status
         (hunchentoot:content-type*) "application/json")

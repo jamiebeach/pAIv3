@@ -488,7 +488,7 @@ localhost), the URL to send it to; passkeys only work at the agent's origin."
        ;; A page to open, so a browser can sign out without a button.
        (when (session-token) (end-session k (session-token) "signed out"))
        (hunchentoot:set-cookie "pai_session" :value "" :path "/" :max-age 0 :http-only t :same-site "Strict")
-       (values (hunchentoot:redirect "/login") t))
+       (values (see-other "/login") t))
 
       ((and (eq method :get) (string= path "/login"))
        (values (%asset "login.html") t))
@@ -496,7 +496,7 @@ localhost), the URL to send it to; passkeys only work at the agent's origin."
       ((and (eq method :get) (assoc path +pages+ :test #'string=))
        (if (%signed-in agent)
            (values (%asset (cdr (assoc path +pages+ :test #'string=))) t)
-           (values (hunchentoot:redirect (format nil "/login?next=~a" (hunchentoot:url-encode path))) t)))
+           (values (see-other (format nil "/login?next=~a" (hunchentoot:url-encode path))) t)))
 
       ((and (eq method :get) (gethash (subseq path 1) *web-assets*)
             (not (search ".html" path)))
