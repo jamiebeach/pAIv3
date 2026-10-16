@@ -87,6 +87,17 @@
     (declare (ignore wd))
     (format nil "~4,'0d-~2,'0d-~2,'0d ~2,'0d:~2,'0d" y mo d h mi)))
 
+(define-slot-source :clock (kernel request max)
+  ;; The time now, where the operator is. Without it a model guesses the
+  ;; hour from UTC stamps and gets it wrong.
+  (let* ((name (setting kernel "time.zone"))
+         (zone (%zone kernel nil))
+         (weekday (sixth (%local (now) zone)))
+         (text (format nil "It is ~a, ~a, in ~a (~a UTC). Times in what follows are UTC unless they say otherwise."
+                       (nth weekday '("Sunday" "Monday" "Tuesday" "Wednesday" "Thursday" "Friday" "Saturday"))
+                       (local-slot (now) zone) name (subseq (local-slot (now) local-time:+utc-zone+) 11))))
+    (list (list text (estimate-tokens text)))))
+
 (defun local-to-universal (text zone)
   "Universal time of local wall time TEXT (YYYY-MM-DDTHH:MM[:SS], or with a
 space) in ZONE."

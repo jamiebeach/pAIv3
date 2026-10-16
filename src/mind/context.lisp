@@ -29,7 +29,8 @@ list of (text tokens) rows, most relevant first.")
 ;;; Profiles (engineering spec §5.1 and §14: activity-first for the operator)
 
 (define-context-profile "operator-turn"
-  :slots ((:state     :max 300   :source :state     :title "How I am")
+  :slots ((:clock     :max 80    :source :clock     :title "Now")
+          (:state     :max 300   :source :state     :title "How I am")
           (:summary   :max 3000  :source :summary   :title "Earlier, in summary")
           (:conclusions :max 1200 :source :conclusions :title "What I have concluded lately (newer than the summary)")
           (:activity  :max 24000 :source :activity  :title "What I have been doing")
@@ -42,7 +43,8 @@ list of (text tokens) rows, most relevant first.")
           (:restricted :max 200  :source :restricted :title "Not for this audience")))
 
 (define-context-profile "private-cognition"
-  :slots ((:state     :max 300   :source :state     :title "How I am")
+  :slots ((:clock     :max 80    :source :clock     :title "Now")
+          (:state     :max 300   :source :state     :title "How I am")
           (:summary   :max 2000  :source :summary   :title "Earlier, in summary")
           (:conclusions :max 800 :source :conclusions :title "What I have concluded lately (newer than the summary)")
           (:activity  :max 8000  :source :activity  :title "What I have been doing")

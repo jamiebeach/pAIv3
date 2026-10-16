@@ -75,4 +75,14 @@
         (let ((woke (sql-value (kernel-db k) "SELECT count(*) FROM thoughts WHERE origin='noticing' LIMIT 1")))
           (is (= 0 woke) "no wake was asked for that one"))))))
 
+(deftest the-context-says-what-time-it-is-where-the-operator-is
+  (with-clock
+    (with-temp-kernel (k)
+      (change-setting k "time.zone" "America/New_York" :origin *op*)
+      (let ((text (first (first (funcall (gethash :clock pai-v3.mind::*slot-sources*) k nil 80)))))
+        (is (search "in America/New_York" text))
+        (is (search (format nil "~a" (pai-v3.mind:local-slot (now) (local-time:find-timezone-by-location-name "America/New_York"))) text)
+            "the local wall time")
+        (is (search "UTC unless" text) "and that other stamps are UTC")))))
+
 (run-suite "mind-schedule")
