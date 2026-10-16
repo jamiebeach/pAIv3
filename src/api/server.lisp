@@ -84,8 +84,16 @@ the browser to http://."
         (hunchentoot:content-type*) "application/json")
   (json-encode object))
 
+(defvar *session-cookie* "pai_session"
+  "The session cookie's name for the agent answering this request. Each agent
+has its own: browsers keep cookies by host, not port, so agents sharing a
+host name would otherwise sign each other out.")
+
+(defun session-cookie-name (agent)
+  (format nil "pai_session_~a" (kernel-agent-id (agent-kernel agent))))
+
 (defun session-token ()
-  (or (hunchentoot:cookie-in "pai_session")
+  (or (hunchentoot:cookie-in *session-cookie*)
       (let ((auth (hunchentoot:header-in* :authorization)))
         (and auth (> (length auth) 7) (string-equal "Bearer " auth :end2 7) (subseq auth 7)))))
 
@@ -109,7 +117,7 @@ origin and carry the client header (a simple form cannot set it)."
 (defun %issue-session (agent token)
   "Hand TOKEN to the client: an HttpOnly cookie for browsers, and a header
 for native clients that send it as a bearer token."
-  (hunchentoot:set-cookie "pai_session" :value token :path "/" :http-only t
+  (hunchentoot:set-cookie *session-cookie* :value token :path "/" :http-only t
                                         :same-site "Strict"
                                         :secure (and (search "https:" (request-origin agent)) t)
                                         :max-age *session-absolute-seconds*)
@@ -284,9 +292,10 @@ for native clients that send it as a bearer token."
 (defclass api-acceptor (hunchentoot:easy-acceptor) ((agent :initarg :agent :reader acceptor-agent)))
 
 (defmethod hunchentoot:acceptor-dispatch-request ((acceptor api-acceptor) request)
-  (let ((agent (acceptor-agent acceptor))
-        (method (hunchentoot:request-method request))
-        (path (hunchentoot:script-name request)))
+  (let* ((agent (acceptor-agent acceptor))
+         (method (hunchentoot:request-method request))
+         (path (hunchentoot:script-name request))
+         (*session-cookie* (session-cookie-name agent)))
     (if (not (agent-running agent))
         ;; A kept-alive connection outlives the listener; once stopped, the
         ;; agent's store may be closed, so refuse and drop it (bead v3-uy8).

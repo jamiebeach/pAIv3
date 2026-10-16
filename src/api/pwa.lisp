@@ -499,7 +499,7 @@ localhost), the URL to send it to; passkeys only work at the agent's origin."
       ((and (eq method :get) (string= path "/logout"))
        ;; A page to open, so a browser can sign out without a button.
        (when (session-token) (end-session k (session-token) "signed out"))
-       (hunchentoot:set-cookie "pai_session" :value "" :path "/" :max-age 0 :http-only t :same-site "Strict")
+       (hunchentoot:set-cookie *session-cookie* :value "" :path "/" :max-age 0 :http-only t :same-site "Strict")
        (values (see-other "/login") t))
 
       ((and (eq method :get) (string= path "/login"))

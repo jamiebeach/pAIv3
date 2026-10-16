@@ -407,4 +407,27 @@
              (is (site-login pc *origin*) "and that device signs in"))
         (stop-agent agent)))))
 
+(deftest each-agent-has-its-own-session-cookie
+  (incf *port*)
+  (with-temp-kernel (k :agent-id "first-agent")
+    (let ((agent (start-agent k :port *port* :address "127.0.0.1" :rp-id *rp* :origin *origin*)))
+      (unwind-protect
+           (let* ((pc (make-software-authenticator)))
+             (site-enrol pc *origin*)
+             (let* ((challenge (obj-get (nth-value 1 (site-post "/v1/auth/challenge" (obj "purpose" "login") *origin*)) "challenge"))
+                    (cd (client-data "webauthn.get" challenge *origin*))
+                    (ad (auth-data pc))
+                    (sig (ironclad:sign-message (authn-private pc) (sha (cat ad (sha cd)))))
+                    (headers (nth-value 2 (dex:post (url "/v1/auth/login")
+                                                    :content (json-encode (obj "credential_id" (b64 (authn-cred-id pc)) "challenge" challenge
+                                                                               "client_data_json" (b64 cd) "authenticator_data" (b64 ad)
+                                                                               "signature" (b64 (raw-to-der sig))))
+                                                    :headers (list (cons "Content-Type" "application/json") (cons "X-PAI-Request" "same-origin")
+                                                                   (cons "Origin" *origin*)))))
+                    (cookie (gethash "set-cookie" headers)))
+               (is (search "pai_session_first-agent=" (princ-to-string cookie))
+                   "named after the agent, so another agent on the same host keeps its own")
+               (is (not (equal (pai-v3.api::session-cookie-name agent) "pai_session")))))
+        (stop-agent agent)))))
+
 (run-suite "api-pwa")
