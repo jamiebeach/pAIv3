@@ -78,20 +78,57 @@ ends, statement, evidence and lineage, and the old one retracted."
 
 (defun eleventh-of (row) (nth 10 row))
 
+(defun %entity-for (kernel ref kind world)
+  "An entity by id, or by exact name and kind in WORLD, or a new one."
+  (or (let ((e (graph-entity kernel ref))) (and e (first e)))
+      (first (find-if (lambda (e) (and (equal kind (second e)) (equal world (tenth e)))) (find-entities kernel ref)))
+      (form-entity kernel :kind kind :name ref :world world :lineage (list (lineage-hop (kernel-agent-id kernel) "formed")))))
+
+(defun correct-add (kernel args source)
+  "Record a fact the operator just told me, with their words as its evidence.
+The quote must be in the operator's turn: nothing they did not say goes in."
+  (let* ((turn (and source (event-by-id kernel source)))
+         (said (and turn (obj-get (event-payload turn) "text")))
+         (quote (obj-get args "quote"))
+         (world (%check-world kernel (let ((w (obj-get args "world"))) (if (or (null w) (equal w "real")) +real-world+ w))))
+         (statement (obj-get args "statement")))
+    (unless (and (stringp quote) (plusp (length (string-trim " " quote))) (stringp said)
+                 (search (%normalise-quote quote) (%normalise-quote said)))
+      (%graph-refuse "the quote must be the operator's own words from this turn"))
+    (unless (and (stringp statement) (plusp (length statement))) (%graph-refuse "give the fact as one plain sentence"))
+    ;; Check the relation before forming anything, so a refused fact leaves no orphans.
+    (flet ((kind-of (ref kind) (let ((e (and (stringp ref) (graph-entity kernel ref)))) (if e (second e) kind))))
+      (unless (predicate-allows-p (obj-get args "predicate") (kind-of (obj-get args "subject") (obj-get args "subject_kind"))
+                                  (kind-of (obj-get args "object") (obj-get args "object_kind")))
+        (%graph-refuse "~a cannot link a ~a to a ~a" (obj-get args "predicate")
+                       (kind-of (obj-get args "subject") (obj-get args "subject_kind"))
+                       (kind-of (obj-get args "object") (obj-get args "object_kind")))))
+    (let* ((subject (%entity-for kernel (obj-get args "subject") (obj-get args "subject_kind") world))
+           (object (%entity-for kernel (obj-get args "object") (obj-get args "object_kind") world)))
+      (multiple-value-bind (id how)
+          (admit-fact kernel :subject subject :predicate (obj-get args "predicate") :object object :text statement :world world
+                             :evidence (list (obj "kind" "original-utterance" "quote" quote "source_event_id" source))
+                             :lineage (list (lineage-hop (kernel-agent-id kernel) "formed")))
+        (format nil "~:[Added~;Supported~] ~a: ~a" (eq how :supported) id statement)))))
+
 (define-tool "correct_knowledge"
   :description "Correct my knowledge graph when the operator points out a mistake, in the conversation where they do. action:
 retract (fact_id, reason) when a fact is wrong; merge (entity_id into into, reason) for a duplicate; alias (entity_id,
 alias) for another name; predicate (fact_id, predicate, reason) when the fact is right but its relation is wrong;
 world (entity_ids, world: a work's entity id or real, reason) when something from a story was taken as real, or the
-other way round. Look the ids up with the knowledge tool first. Every correction is kept with its reason."
+other way round; add (subject and object: an entity id or a name, subject_kind and object_kind for a name, predicate,
+statement: the fact in one sentence, quote: the operator's own words from this turn) when they tell me something new. Look the ids up with the knowledge tool first. Every correction is kept with its reason."
   :summary "Correct my knowledge graph."
   :available '("operator")
   :parameters (obj "type" "object"
-                   "properties" (obj "action" (obj "type" "string" "enum" (list "retract" "merge" "alias" "predicate" "world"))
+                   "properties" (obj "action" (obj "type" "string" "enum" (list "retract" "merge" "alias" "predicate" "world" "add"))
                                      "fact_id" (obj "type" "string") "entity_id" (obj "type" "string")
                                      "entity_ids" (obj "type" "array" "items" (obj "type" "string"))
                                      "into" (obj "type" "string") "alias" (obj "type" "string")
                                      "predicate" (obj "type" "string") "world" (obj "type" "string")
+                                     "subject" (obj "type" "string") "subject_kind" (obj "type" "string")
+                                     "object" (obj "type" "string") "object_kind" (obj "type" "string")
+                                     "statement" (obj "type" "string") "quote" (obj "type" "string")
                                      "reason" (obj "type" "string"))
                    "required" (list "action"))
   :run (lambda (kernel thought-id args)
@@ -102,6 +139,7 @@ other way round. Look the ids up with the knowledge tool first. Every correction
            (handler-case
                (cond ((not (and (equal "responding" (getf thought :origin)) source))
                       "I correct my graph only when the operator points something out in our conversation.")
+                     ((equal action "add") (correct-add kernel args source))
                      ((and (not (equal action "alias")) (null reason)) "Give the reason, in the operator's words where you can.")
                      ((equal action "retract") (correct-retract kernel (obj-get args "fact_id") reason source))
                      ((equal action "merge") (correct-merge kernel (obj-get args "entity_id") (obj-get args "into") reason source))

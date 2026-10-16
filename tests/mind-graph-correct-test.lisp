@@ -86,4 +86,23 @@
       (is (search "Retracted" (correct k thought "action" "retract" "fact_id" crossing "reason" "Mira is not real")))
       (is (search "Moved Mira into the real world" (correct k thought "action" "world" "entity_id" mira "world" "real" "reason" "undo"))))))
 
+(deftest a-fact-the-operator-tells-me-is-added-with-their-words
+  (with-temp-kernel (k)
+    (let ((thought (answering k "My dog Phoebe is a golden retriever, and I love the lake.")))
+      (is (search "operator's own words" (correct k thought "action" "add" "subject" "Sam" "subject_kind" "person"
+                                                  "predicate" "likes" "object" "the lake" "object_kind" "place"
+                                                  "statement" "Sam loves the lake." "quote" "I hate the lake"))
+          "words the operator did not say are refused")
+      (is (search "cannot link" (correct k thought "action" "add" "subject" "Phoebe" "subject_kind" "organism"
+                                         "predicate" "likes" "object" "the lake" "object_kind" "place"
+                                         "statement" "x" "quote" "I love the lake")))
+      (is (null (find-entities k "phoebe")) "a refused fact leaves no entity behind")
+      (is (search "Added" (correct k thought "action" "add" "subject" "Sam" "subject_kind" "person"
+                                   "predicate" "likes" "object" "the lake" "object_kind" "place"
+                                   "statement" "Sam loves the lake." "quote" "I love the lake")))
+      (let ((sam (first (first (find-entities k "sam")))))
+        (is sam)
+        (is (equal "I love the lake" (second (first (fact-evidence k (first (first (entity-facts k sam)))))))
+            "the operator's words are its evidence")))))
+
 (run-suite "mind-graph-correct")
