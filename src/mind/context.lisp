@@ -131,7 +131,8 @@ list of (text tokens) rows, most relevant first.")
 (defparameter +speaking-while-working+
   "## Speaking while you work
 Anything you write alongside a tool call reaches the operator at once, and the turn goes on. On a task that needs several steps, say in a sentence or two what you are about to do before you start, give a short update when something changes, and finish with a summary. A quick question needs none of this: just answer.
-If something comes up that is worth looking into later, raise a concern with the concern tool; in quiet time you will come back to it."
+If something comes up that is worth looking into later, raise a concern with the concern tool; in quiet time you will come back to it.
+A message with no tool call ends your turn. Never end one by saying what you will do next: if there is a next step, make the tool call in the same message; if not, give your answer."
   "How a reply turn talks between steps. Sent with the tool index, so it stays in the stable prefix.")
 
 (setf *assemble-thought-context*
@@ -143,5 +144,5 @@ If something comes up that is worth looking into later, raise a concern with the
                                 :thought-id (getf thought :id)
                                 :tools-text (if (string= "responding" (getf thought :origin))
                                                 (format nil "~a~@[~%~%~a~]" +speaking-while-working+ tools-text)
-                                                tools-text)
+                                                (format nil "A message with no tool call ends this thought. Never end one by saying what you will do next: make the tool call in the same message, or finish.~@[~%~%~a~]" tools-text))
                                 :task (format nil "~a" (getf thought :reason))))))
