@@ -20,16 +20,21 @@
 # after the agent has history starts as needs-rebuild and is never replayed
 # silently: rebuild it once after deploying it.
 #
-# Which container, volume and agent folder: private/dev-agent.env when it
-# exists (PAI_DEV_NAME, PAI_DEV_VOLUME, PAI_DEV_DIR), else these defaults.
+# Which container, volume and agent folder: the file PAI_DEV_ENV names
+# (default private/dev-agent.env) when it exists (PAI_DEV_NAME, PAI_DEV_VOLUME,
+# PAI_DEV_DIR, PAI_DEV_PORT, and PAI_DEV_ARGS for extra docker options), else
+# these defaults.
 set -eu
 export MSYS_NO_PATHCONV=1
 cd "$(dirname "$0")/.."
-[ -f private/dev-agent.env ] && . ./private/dev-agent.env
+env_file=${PAI_DEV_ENV:-private/dev-agent.env}
+[ -f "$env_file" ] && . "./$env_file"
 name=${PAI_DEV_NAME:-pai-dev}
 image=pai-v3-dev:local
 volume=${PAI_DEV_VOLUME:-pai-dev-home}
 agent_dir=${PAI_DEV_DIR:-/home/pai/agent}
+port=${PAI_DEV_PORT:-8090}
+extra=${PAI_DEV_ARGS:-}
 load='(push #p"/home/pai/v3/" asdf:*central-registry*)'
 
 copy_source() {
@@ -42,7 +47,7 @@ copy_source() {
 
 wait_up() {
   for i in $(seq 1 90); do
-    curl -s -m 2 http://localhost:8090/v1/auth/state >/dev/null && return 0
+    curl -s -m 2 http://localhost:$port/v1/auth/state >/dev/null && return 0
     sleep 2
   done
   echo "$name did not answer within three minutes."; return 1
@@ -52,7 +57,7 @@ case "${1:-}" in
   create)
     copy_source
     docker rm -f "$name" >/dev/null 2>&1 || true
-    docker create --name "$name" --restart unless-stopped -p 127.0.0.1:8090:8090 \
+    docker create --name "$name" --restart unless-stopped -p 127.0.0.1:$port:$port $extra \
       -e HOME=/home/pai -w /home/pai -v "$volume:/home/pai" "$image" \
       sbcl --dynamic-space-size 2048 --noinform --non-interactive \
         --load /opt/quicklisp/setup.lisp --eval "$load" \
@@ -66,11 +71,11 @@ case "${1:-}" in
       docker restart "$name" >/dev/null
       wait_up && echo "Restarted $name."
     else
-      docker exec "$name" curl -s -X POST http://127.0.0.1:8090/v1/dev/reload
+      docker exec "$name" curl -s -X POST http://127.0.0.1:$port/v1/dev/reload
       echo
     fi
     # A projection left needs-rebuild serves empty answers: fail loudly.
-    health=$(docker exec "$name" curl -s http://127.0.0.1:8090/v1/dev/health)
+    health=$(docker exec "$name" curl -s http://127.0.0.1:$port/v1/dev/health)
     case "$health" in
       *'"ok":true'*) ;;
       *) echo "NOT READY: $health"; echo "Fix with: tools/dev-agent.sh rebuild <name>..."; exit 1 ;;
@@ -82,12 +87,12 @@ case "${1:-}" in
     ;;
   peek)
     # Read recent state of the running agent: dialogue, calls or thoughts.
-    docker exec "$name" curl -s "http://127.0.0.1:8090/v1/dev/peek?what=${2:-dialogue}&limit=${3:-6}"
+    docker exec "$name" curl -s "http://127.0.0.1:$port/v1/dev/peek?what=${2:-dialogue}&limit=${3:-6}"
     echo
     ;;
   pai)
     shift
-    docker run --rm -i -e HOME=/home/pai -w /home/pai -v "$volume:/home/pai" "$image" \
+    docker run --rm -i -e HOME=/home/pai -w /home/pai -v "$volume:/home/pai" $extra "$image" \
       sbcl --dynamic-space-size 1024 --noinform --non-interactive \
         --load /opt/quicklisp/setup.lisp --eval "$load" \
         --eval '(handler-bind ((warning (function muffle-warning))) (ql:quickload "pai-v3" :silent t))' \
@@ -98,7 +103,7 @@ case "${1:-}" in
     [ $# -gt 0 ] || { echo "Name the projections to rebuild."; exit 2; }
     copy_source
     docker stop "$name" >/dev/null
-    docker run --rm -e HOME=/home/pai -e REBUILD="$*" -w /home/pai -v "$volume:/home/pai" "$image" \
+    docker run --rm -e HOME=/home/pai -e REBUILD="$*" -w /home/pai -v "$volume:/home/pai" $extra "$image" \
       sbcl --dynamic-space-size 2048 --noinform --non-interactive \
         --load /opt/quicklisp/setup.lisp --eval "$load" \
         --eval '(handler-bind ((warning (function muffle-warning))) (ql:quickload "pai-v3-maintenance" :silent t))' \
@@ -112,5 +117,5 @@ case "${1:-}" in
     wait_up && echo "Started $name again."
     ;;
   *)
-    sed -n '2,24p' "$0"; exit 2 ;;
+    sed -n '2,26p' "$0"; exit 2 ;;
 esac

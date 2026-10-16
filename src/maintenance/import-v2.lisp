@@ -206,6 +206,27 @@ again at its first start."
                         "model" "v2 working summary, imported"))
           (length claims))))))
 
+;;; Where background work starts
+
+(defun import-frontiers (kernel)
+  "Mark the imported conversation as already reviewed, sealed into episodes
+and read into the graph: v2 did that work, and its results came over.
+Without this a new agent pays, for days, to redo three months of it."
+  (let ((last (sql-value (kernel-db kernel) "SELECT event_id FROM working_dialogue WHERE audience=?1 ORDER BY event_id DESC LIMIT 1" "operator")))
+    (when last
+      (unless (>= (pai-v3.mind::episodes-sealed-through kernel) last)
+        (let ((o (obj "first_event_id" 0 "last_event_id" last "turns" 0 "memory_id" "v2-episodes-imported"
+                      "model" "v2, imported")))
+          ;; Set directly: OBJ leaves out empty lists, and these are required.
+          (dolist (k '("subjects" "retrieval_cues" "unresolved_threads")) (setf (gethash k o) '()))
+          (append! kernel "memory.episode.sealed" o)))
+      (unless (>= (pai-v3.mind::%formed-through kernel) last)
+        (append! kernel "graph.formation.done"
+                 (obj "through_event_id" last "turns" 0 "entities_formed" 0 "entities_matched" 0
+                      "facts_admitted" 0 "facts_supported" 0 "model" "v2, imported")))
+      (append! kernel "quiet.reviewed" (obj "through_event_id" last "thought_id" 0))
+      last)))
+
 ;;; Everything
 
 (defun import-v2-agent (dir events-path derived-path v2-agent)
@@ -224,6 +245,7 @@ again at its first start."
              (%say "memories: ~:d carried, ~:d left in the archive" n skipped))
            (%say "open work: ~d" (import-open-work kernel v2 v2-agent))
            (%say "summary: ~a claims" (import-summary kernel derived v2-agent))
+           (%say "background work starts after event ~a" (import-frontiers kernel))
            (let ((tz (sql-row v2 "SELECT event_json FROM pai_events WHERE agent_id=?1 AND event_type=?2 ORDER BY storage_sequence DESC LIMIT 1" v2-agent "user-timezone-changed")))
              (when tz
                (let ((after (obj-get (%payload (first tz)) "after")))

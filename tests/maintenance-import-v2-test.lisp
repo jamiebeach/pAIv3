@@ -82,7 +82,9 @@
                (is (equal '("Plan the garden") (mapcar (lambda (i) (obj-get i "title")) (pai-v3.mind:docket-items k))) "only work still open")
                (is (equal "America/New_York" (setting k "time.zone")))
                (is (search "planning a garden" (sql-value (kernel-db k) "SELECT text FROM working_summary WHERE audience=?1 LIMIT 1" "operator"))
-                   "the summary covers the imported conversation"))
+                   "the summary covers the imported conversation")
+               (is (null (pai-v3.mind::next-episode k)) "no episode sealing of the imported history")
+               (is (null (pai-v3.mind::%unformed-turns k)) "no graph formation over it either"))
           (close-agent h))))))
 
 (run-suite "maintenance-import-v2")
