@@ -394,4 +394,17 @@
                            10)
             (format nil "a toast names the kind of thought and what it is about; got ~s" (reverse lines)))))))
 
+(deftest a-first-device-enrols-with-a-console-pairing-code
+  (incf *port*)
+  (with-temp-kernel (k)
+    (let ((agent (start-agent k :port *port* :address "127.0.0.1" :rp-id *rp* :origin *origin*)))
+      (unwind-protect
+           (let* ((pc (make-software-authenticator))
+                  (code (pai-v3.trust:issue-console-pairing-code k))
+                  (grant (obj-get (nth-value 1 (site-post "/v1/auth/recover" (obj "code" code) *origin*)) "recovery_grant")))
+             (is grant "the console's code buys the first enrolment, with no device yet")
+             (is (= 200 (site-enrol pc *origin* :grant grant)))
+             (is (site-login pc *origin*) "and that device signs in"))
+        (stop-agent agent)))))
+
 (run-suite "api-pwa")

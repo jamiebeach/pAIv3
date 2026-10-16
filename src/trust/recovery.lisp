@@ -98,6 +98,16 @@ the last few minutes."
              (obj "code_hash" (%code-hash code) "expires" (iso8601 (+ (now) *pairing-seconds*))))
     code))
 
+(defun issue-console-pairing-code (kernel)
+  "A one-use pairing code issued from the console. Opening the agent's own
+stores is a stronger proof than a browser session, and it is the only way in
+when no device is enrolled and the agent runs where a browser cannot reach
+it as this machine (a container sees a forwarded port's requests as remote)."
+  (let ((code (%new-code)))
+    (append! kernel "auth.pairing.issued"
+             (obj "code_hash" (%code-hash code) "expires" (iso8601 (+ (now) *pairing-seconds*))))
+    code))
+
 (defun %pairing-open-p (kernel hash)
   (destructuring-bind (&optional expires status)
       (sql-row (kernel-db kernel) "SELECT expires_at,status FROM auth_pairing_codes WHERE code_hash=?1 LIMIT 1" hash)

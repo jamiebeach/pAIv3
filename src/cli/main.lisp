@@ -13,6 +13,7 @@
 ;;;   pai restore <backup-dir> <stamp> <target-dir>
 ;;;   pai backups <backup-dir>
 ;;;   pai secret-set <dir> <name> <host>[,<host>...]     (value read from stdin)
+;;;   pai pair <dir>                                     (a one-use code to enrol a first device)
 ;;;   pai unlock-methods <dir>
 ;;;   pai settings <dir>                       list every setting
 ;;;   pai settings-export <dir>                print them as JSON
@@ -154,6 +155,14 @@ for when the agent stops answering. Sent with SIGUSR1; nothing stops."
 (defun cmd-backups (args)
   (dolist (stamp (list-backups (first (%positional args)))) (%say "~a" stamp)))
 
+(defun cmd-pair (args)
+  "pai pair <dir>: a one-use code to enrol a device's passkey, for ten minutes."
+  (destructuring-bind (dir &rest ignore) (%positional args)
+    (declare (ignore ignore))
+    (%with-agent dir (lambda (k)
+                       (%say "Pairing code: ~a" (issue-console-pairing-code k))
+                       (%say "Open the agent's address, choose \"Use a recovery code\", enter it and create a passkey. It works once, for ten minutes.")))))
+
 (defun cmd-secret-set (args)
   (destructuring-bind (dir name hosts &rest ignore) (%positional args)
     (declare (ignore ignore))
@@ -248,7 +257,7 @@ optionally instructions and tone."
 
 (defparameter +commands+
   '(("init" . cmd-init) ("run" . cmd-run) ("backup-init" . cmd-backup-init) ("backup" . cmd-backup)
-    ("restore" . cmd-restore) ("backups" . cmd-backups) ("secret-set" . cmd-secret-set)
+    ("restore" . cmd-restore) ("backups" . cmd-backups) ("secret-set" . cmd-secret-set) ("pair" . cmd-pair)
     ("unlock-methods" . cmd-unlock-methods) ("settings" . cmd-settings)
     ("settings-export" . cmd-settings-export) ("settings-import" . cmd-settings-import)
     ("persona-set" . cmd-persona-set) ("graph-import" . cmd-graph-import)
