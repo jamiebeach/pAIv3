@@ -28,6 +28,7 @@
   (when (or (null seq-time) (zerop (length seq-time))) (incf (type-stats-empty-time stats)))
   (push size (type-stats-sizes stats))
   (when (> size limit) (incf (type-stats-oversized stats)))
+  (when (null json) (return-from %note))
   (handler-case
       (let* ((raw (json-parse json))
              (variant (%keys (obj-get raw "payload")))
@@ -44,7 +45,7 @@
 (defun %percentile (sorted p)
   (if sorted (nth (min (1- (length sorted)) (floor (* p (length sorted)))) sorted) 0))
 
-(defun census (path &key agent-id (page-size 2000) (limit-bytes *payload-limit-bytes*))
+(defun census (path &key agent-id (page-size 200) (limit-bytes *payload-limit-bytes*) (read-limit (* 1024 1024)))
   "Census of the events store at PATH (opened read-only). With AGENT-ID,
 only that agent's partition. Returns a report object."
   (let ((db (db-open path :read-only t))
@@ -53,8 +54,10 @@ only that agent's partition. Returns a report object."
         (agents (make-hash-table :test 'equal)))
     (unwind-protect
          (loop with after = 0
-               for rows = (sql-rows db "SELECT storage_sequence,event_id,agent_id,event_type,occurred_at,length(CAST(event_json AS BLOB)),event_json FROM pai_events WHERE storage_sequence>?1 ORDER BY storage_sequence LIMIT ?2"
-                                    after page-size)
+               for rows = (sql-rows db "SELECT storage_sequence,event_id,agent_id,event_type,occurred_at,length(CAST(event_json AS BLOB)),CASE WHEN length(CAST(event_json AS BLOB))<=?3 THEN event_json END FROM pai_events WHERE storage_sequence>?1 ORDER BY storage_sequence LIMIT ?2"
+                                    ;; An oversized event's body is not read: a page of
+                                    ;; them once needed more memory than there was.
+                                    after page-size read-limit)
                while rows
                do (loop for (seq id agent type at size json) in rows
                         ;; Event ids are global across agents: gaps and
