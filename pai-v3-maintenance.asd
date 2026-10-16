@@ -9,4 +9,5 @@ Never loaded by the runtime image (engineering spec §4.1)."
     :serial t
     :components ((:file "package")
                  (:file "rebuild")
-                 (:file "census")))))
+                 (:file "census")
+                 (:file "import-v2")))))

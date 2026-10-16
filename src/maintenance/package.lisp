@@ -7,4 +7,5 @@
                 #:projection-derivation)
   (:export #:census #:census-markdown
            #:rebuild-projection #:verify-projection
-           #:model-derived-rebuild-refused))
+           #:model-derived-rebuild-refused
+           #:import-v2-agent #:archive-v2 #:import-conversation #:import-memories #:import-open-work))
