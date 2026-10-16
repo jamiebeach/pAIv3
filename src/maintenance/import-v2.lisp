@@ -79,7 +79,7 @@ where the whole of it is. The archive holds every word."
       (let ((end (length text)))
         (loop while (> (length (babel:string-to-octets (subseq text 0 end) :encoding :utf-8)) *text-bytes*)
               do (setf end (floor (* end 9) 10)))
-        (format nil "~a~%[... ~:d more characters; the whole message is in the v2 archive as event ~d]"
+        (format nil "~a~%[... ~:d more characters; the whole of it is in the v2 archive, ~a]"
                 (subseq text 0 end) (- (length text) end) v2-id))))
 
 (defun %payload (json) (obj-get (json-parse json) "payload"))
@@ -94,7 +94,7 @@ predecessor's history was carried in are marked with that lineage."
           do (dolist (r rows)
                (destructuring-bind (id type at json) r
                  (let* ((p (%payload json))
-                        (text (let ((x (obj-get p "text" ""))) (if (stringp x) (%fit x id) x)))
+                        (text (let ((x (obj-get p "text" ""))) (if (stringp x) (%fit x (format nil "event ~d" id)) x)))
                         ;; Messages without a channel are the carried-in history.
                         (carried (null (obj-get p "channel")))
                         (channel (or (obj-get p "channel") "web")))
@@ -143,7 +143,8 @@ nodes are not carried; the archive still has them."
                           (%at (or (obj-get m "created_at") (now-iso8601))
                                (lambda ()
                                  (append! kernel "memory.formed"
-                                          (obj "memory_id" id "kind" (or (obj-get m "kind") "observation") "content" content
+                                          (obj "memory_id" id "kind" (or (obj-get m "kind") "observation")
+                                               "content" (%fit content (format nil "in the memory-write events for node ~a" id))
                                                "sensitivity" "operator-only" "owner" "self"
                                                "strength" (let ((i (obj-get m "importance"))) (if (realp i) (float (max 0 (min 1 i)) 1d0) 0.5d0))))
                                  (append! kernel "memory.embedded"

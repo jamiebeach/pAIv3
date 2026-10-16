@@ -69,7 +69,7 @@
                    "and no v2 type enters the v3 ledger")
                (let ((rows (sql-rows (kernel-db k) "SELECT kind,rendered,at FROM working_dialogue WHERE audience=?1 ORDER BY event_id LIMIT 10" "operator")))
                  (is (= 6 (length rows)) "two turns, four replies (one an interim note)")
-                 (is (search "whole message is in the v2 archive as event 22" (second (car (last rows)))) "a long one fits, and says where the rest is")
+                 (is (search "whole of it is in the v2 archive, event 22" (second (car (last rows)))) "a long one fits, and says where the rest is")
                  (is (search "Hello from the old days" (second (first rows))))
                  (is (equal "2026-07-27T10:01:00Z" (third (first rows))) "at its own time"))
                (is (sql-value (kernel-db k) "SELECT 1 FROM pai_events WHERE agent_id=?1 AND event_type=?2 AND event_json LIKE ?3 LIMIT 1"
