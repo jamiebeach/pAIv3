@@ -190,6 +190,8 @@ blobs; it re-ranks the shortlist."
   :consumes ("memory.formed" "memory.embedded" "memory.recalled")
   :tables ("CREATE TABLE IF NOT EXISTS memory_nodes (id TEXT PRIMARY KEY, kind TEXT NOT NULL, content TEXT NOT NULL, sensitivity TEXT NOT NULL, owner TEXT NOT NULL, topic TEXT, strength REAL NOT NULL, recalled INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, source_event_id INTEGER, retrieval_embedding BLOB, embedding_model TEXT)"
            "CREATE INDEX IF NOT EXISTS memory_nodes_sensitivity_idx ON memory_nodes(sensitivity,created_at)"
+           ;; Memories not yet embedded, found cheaply by the backfill.
+           "CREATE INDEX IF NOT EXISTS memory_nodes_unembedded_idx ON memory_nodes(coalesce(embedding_model,''))"
            ;; Scoring copy: unit-length native float32, one compact row per
            ;; memory so a recall scan reads only vectors.
            "CREATE TABLE IF NOT EXISTS memory_vectors (id TEXT PRIMARY KEY, sensitivity TEXT NOT NULL, vec BLOB NOT NULL)"
@@ -253,6 +255,24 @@ restrictive class when the caller does not know better."
                   "owner" owner "strength" strength "topic" topic "source_event_id" source-event-id))
     (request-work kernel "memory.embed" id (obj) :priority :maintenance)
     id))
+
+(defvar *embedding-backfill-at* (make-hash-table :test 'eq :weakness :key)
+  "Kernel -> when the backfill last looked.")
+
+(defun request-missing-embeddings (kernel &key (every 600) (batch 20))
+  "Queue embedding for memories that have none: those formed while the
+embedding service could not be reached would otherwise never be recalled.
+Looks at most every EVERY seconds, BATCH memories at a time."
+  (let ((last (gethash kernel *embedding-backfill-at* 0)))
+    (when (>= (- (now) last) every)
+      (setf (gethash kernel *embedding-backfill-at*) (now))
+      (let ((n 0))
+        (dolist (id (mapcar #'first (sql-rows (kernel-db kernel)
+                                              "SELECT id FROM memory_nodes WHERE coalesce(embedding_model,'')=?1 LIMIT ?2" "" batch)))
+          (unless (work-pending-p kernel "memory.embed" id)
+            (request-work kernel "memory.embed" id (obj) :priority :maintenance)
+            (incf n)))
+        n))))
 
 (define-handler "memory.embed"
   :run (lambda (kernel work)

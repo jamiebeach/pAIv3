@@ -6,6 +6,7 @@
 #   tools/dev-agent.sh create          make the container (run once)
 #   tools/dev-agent.sh sync            copy the source in and reload it live
 #   tools/dev-agent.sh sync --restart  copy the source in and restart
+#   tools/dev-agent.sh threads          print what each thread is doing (when it hangs)
 #   tools/dev-agent.sh peek <what> [n]  read the running agent: dialogue,
 #                                        calls (raw model responses) or thoughts
 #   tools/dev-agent.sh pai <command>   run the pai CLI from source while the
@@ -75,6 +76,10 @@ case "${1:-}" in
       *) echo "NOT READY: $health"; echo "Fix with: tools/dev-agent.sh rebuild <name>..."; exit 1 ;;
     esac
     ;;
+  threads)
+    # What every thread is doing, for an agent that has stopped answering.
+    docker kill -s USR1 "$name" >/dev/null && sleep 2 && docker logs --since 10s "$name" 2>&1 | grep -v '^;'
+    ;;
   peek)
     # Read recent state of the running agent: dialogue, calls or thoughts.
     docker exec "$name" curl -s "http://127.0.0.1:8090/v1/dev/peek?what=${2:-dialogue}&limit=${3:-6}"
@@ -107,5 +112,5 @@ case "${1:-}" in
     wait_up && echo "Started $name again."
     ;;
   *)
-    sed -n '2,23p' "$0"; exit 2 ;;
+    sed -n '2,24p' "$0"; exit 2 ;;
 esac

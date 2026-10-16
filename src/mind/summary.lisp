@@ -128,4 +128,5 @@ time to an open concern. Each part fails on its own."
   (ignore-errors (quiet-tick kernel))
   (ignore-errors (request-graph-formation kernel))
   (ignore-errors (request-episode-sealing kernel))
+  (ignore-errors (request-missing-embeddings kernel))
   (dolist (hook *periodic-hooks*) (ignore-errors (funcall hook kernel))))

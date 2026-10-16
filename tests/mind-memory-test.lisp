@@ -111,4 +111,14 @@
         (revoke-topic k operator "person:sam" "weekend plans")
         (is (null (recall k q "person:sam")) "revocation takes effect")))))
 
+(deftest memories-without-embeddings-are-queued-again
+  (with-clock
+    (with-temp-kernel (k)
+      (append! k "memory.formed" (obj "memory_id" "m-lost" "kind" "fact" "content" "Phoebe is a dog."
+                                     "sensitivity" "operator-only" "owner" "self" "strength" 0.5d0))
+      (is (not (work-pending-p k "memory.embed" "m-lost")) "formed with no embedding queued, as when the service was down")
+      (is (= 1 (pai-v3.mind::request-missing-embeddings k)))
+      (is (work-pending-p k "memory.embed" "m-lost") "queued again")
+      (is (null (pai-v3.mind::request-missing-embeddings k)) "and not looked at again until it is due"))))
+
 (run-suite "mind-memory")

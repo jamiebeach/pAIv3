@@ -74,6 +74,23 @@ method works."
             (open-agent dir :recovery-code answer)
             (open-agent dir :passphrase answer))))))
 
+(defvar *dump-lock* (bt:make-lock "thread dump"))
+
+(defun dump-threads (&rest ignore)
+  "Print every thread's backtrace to standard error: what each is doing,
+for when the agent stops answering. Sent with SIGUSR1; nothing stops."
+  (declare (ignore ignore))
+  (format *error-output* "~&=== thread dump at ~a: ~d threads~%" (now-iso8601) (length (sb-thread:list-all-threads)))
+  (dolist (thread (sb-thread:list-all-threads))
+    (flet ((dump ()
+             (bt:with-lock-held (*dump-lock*)
+               (format *error-output* "~&--- ~a~%" (sb-thread:thread-name thread))
+               (sb-debug:print-backtrace :count 25 :stream *error-output*)
+               (finish-output *error-output*))))
+      (if (eq thread sb-thread:*current-thread*)
+          (dump)
+          (ignore-errors (sb-thread:interrupt-thread thread #'dump))))))
+
 (defun cmd-run (args)
   (destructuring-bind (dir &rest ignore) (%positional args)
     (declare (ignore ignore))
@@ -94,6 +111,8 @@ method works."
               (obj-get config "address" "127.0.0.1") (pai-v3.api:agent-port agent))
         (let ((warning (not-ready-warning (agent-handle-kernel handle))))
           (when warning (%say "WARNING: ~a" warning)))
+        ;; kill -USR1 (docker kill -s USR1) prints what every thread is doing.
+        (sb-sys:enable-interrupt sb-unix:sigusr1 #'dump-threads)
         (handler-case (loop (sleep 3600))
           (sb-sys:interactive-interrupt ()
             (pai-v3.api:stop-agent agent)
