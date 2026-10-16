@@ -18,4 +18,6 @@
    #:issue-recovery-codes #:redeem-recovery-code #:recovery-codes-left #:issue-pairing-code
    ;; secrets
    #:open-secrets #:close-secrets #:set-secret #:remove-secret #:secret-names #:redact
-   #:secret-hmac #:secret-hmac-valid-p #:ensure-es256-secret #:secret-es256-public #:secret-es256-sign))
+   #:secret-hmac #:secret-hmac-valid-p #:ensure-es256-secret #:secret-es256-public #:secret-es256-sign
+   ;; google
+   #:+google-scopes+ #:google-connect #:google-access-ready #:google-disconnect #:google-access-secret))

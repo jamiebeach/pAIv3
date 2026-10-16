@@ -56,6 +56,7 @@
                  (:file "keys")
                  (:file "recovery")
                  (:file "secrets")
+                 (:file "google")
                  (:file "keychain-windows" :if-feature :win32)))
    (:module "src/self"
     :serial t
@@ -73,6 +74,7 @@
     :components ((:file "server")
                  (:file "fleet")
                  (:file "notify")
+                 (:file "google")
                  (:file "pwa")))
    (:module "src/cli"
     :serial t

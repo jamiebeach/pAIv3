@@ -331,7 +331,8 @@ deliver it if so. Returns the decision."
                                      "summary" (obj "type" "string")
                                      "message" (obj "type" "string"))
                    "required" (list "topic" "importance" "summary"))
-  :available :operator-trust
+  ;; The operator's own thoughts, and digests of their mail and calendar.
+  :available '("operator" "external")
   :run (lambda (kernel id args)
          (declare (ignore id))
          (let ((topic (obj-get args "topic")) (importance (obj-get args "importance"))

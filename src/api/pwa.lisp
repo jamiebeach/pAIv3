@@ -388,6 +388,13 @@ localhost), the URL to send it to; passkeys only work at the agent's origin."
       ;; Peers sign their requests; an operator session never stands in.
       ((fleet-path-p path) (values (fleet-route agent method path) t))
 
+      ((or (uiop:string-prefix-p "/oauth/google/" path) (string= path "/api/google/disconnect"))
+       (values (let ((origin (%signed-in agent)))
+                 (cond ((null origin) (reply 401 (obj "error" "sign in first")))
+                       ((and (eq method :post) (not (same-origin-p agent))) (reply 403 (obj "error" (%refusal agent))))
+                       (t (google-route agent method path origin))))
+               t))
+
       ((uiop:string-prefix-p "/api/notifications/" path)
        (values (let ((origin (%signed-in agent)))
                  (cond ((null origin) (reply 401 (obj "error" "not signed in")))

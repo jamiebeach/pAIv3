@@ -217,9 +217,28 @@ redact key-shaped text from the body."
         (raw-check url "address")
         (let ((text (%body-string body)))
           (raw-check text "body")
-          (values out-headers
-                  (if (and (stringp body) (plusp (length body))) (redact body) body)
-                  attached))))))
+          (let ((sent (if (and (stringp body) (plusp (length body))) (redact body) body)))
+            ;; A form body may name a secret, {{secret:NAME}}: filled in here,
+            ;; URL-encoded, only for a host the secret is bound to. An OAuth
+            ;; token request carries its client secret and refresh token so.
+            (when (and (stringp sent) (search "{{secret:" sent))
+              (setf sent (%fill-body-secrets sent host cache)
+                    attached t))
+            (values out-headers sent attached)))))))
+
+(defun %fill-body-secrets (body host cache)
+  (with-output-to-string (out)
+    (loop with i = 0
+          for start = (search "{{secret:" body :start2 i)
+          do (write-string body out :start i :end (or start (length body)))
+             (unless start (return))
+             (let* ((end (or (search "}}" body :start2 start) (%refuse "An unclosed secret placeholder.")))
+                    (name (subseq body (+ start 9) end))
+                    (entry (find name cache :key #'first :test #'string=)))
+               (unless entry (%refuse "There is no secret named ~a." name))
+               (unless (%host-bound-p host (third entry)) (%refuse "The secret ~a is not for ~a." name host))
+               (write-string (quri:url-encode (second entry)) out)
+               (setf i (+ end 2))))))
 
 (defun %refuse (fmt &rest args)
   (error 'egress-refused :reason (apply #'format nil fmt args)))
