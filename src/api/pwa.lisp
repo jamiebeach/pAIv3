@@ -129,7 +129,8 @@ assets. Returns the compiler's output."
 (defparameter +pages+
   '(("/" . "terminal.html") ("/terminal" . "terminal.html") ("/dashboard" . "observability.html")
     ("/graph" . "graph-explorer.html") ("/g" . "graph-explorer.html") ("/affect" . "affect.html")
-    ("/notifications" . "notifications.html") ("/settings" . "settings.html"))
+    ("/notifications" . "notifications.html") ("/settings" . "settings.html")
+    ("/board-view" . "board.html"))
   "Pages that need a signed-in operator. /login is open.")
 
 (defun %asset (name)
@@ -432,6 +433,15 @@ localhost), the URL to send it to; passkeys only work at the agent's origin."
                               (reply 200 (if id (model-capture k id)
                                              (obj "status" "not-found" "reason" "No model call named.")))))
                            (t (reply 404 (obj "error" "no such route"))))))
+               t))
+
+      ((and (eq method :get) (uiop:string-prefix-p "/api/board" path))
+       (values (cond ((not (%signed-in agent)) (reply 401 (obj "error" "sign in first")))
+                     ((string= path "/api/board/threads") (reply 200 (obj "threads" (board-index-json k))))
+                     ((string= path "/api/board/thread")
+                      (let ((thread (board-thread-json k (hunchentoot:get-parameter "id"))))
+                        (if thread (reply 200 thread) (reply 404 (obj "error" "no such thread")))))
+                     (t (reply 404 (obj "error" "no such route"))))
                t))
 
       ((and (eq method :post) (string= path "/api/v2/graph/search"))

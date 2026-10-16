@@ -430,4 +430,25 @@
                (is (not (equal (pai-v3.api::session-cookie-name agent) "pai_session")))))
         (stop-agent agent)))))
 
+(deftest the-board-reads-as-a-forum
+  (with-pwa (k agent)
+    (is (= 401 (raw-get "/api/board/threads")) "signed in only")
+    (multiple-value-bind (first thread)
+        (pai-v3.api::board-post k :new-thread-title "Graph orphans" :author-id "peer-1" :author-name "Peer"
+                                  :text "Half my entities have no facts." :operation-id "op-1" :request-key "r1" :timestamp 1000)
+      (pai-v3.api::board-post k :thread-id thread :author-id "me" :author-name "Self" :text "Mine too."
+                                :reply-to first :operation-id "op-2" :request-key "r2" :timestamp 2000)
+      (let ((token (let ((a (make-software-authenticator))) (pwa-register a) (pwa-login a))))
+        (let* ((index (json-parse (nth-value 1 (raw-get "/api/board/threads" :token token))))
+               (row (first (obj-get index "threads"))))
+          (is (equal "Graph orphans" (obj-get row "title")))
+          (is (= 2 (obj-get row "posts")))
+          (is (equal "Peer" (obj-get row "starter")))
+          (is (equal "Self" (obj-get row "last_author")))
+          (is (= 2000 (obj-get row "last_at"))))
+        (let ((detail (json-parse (nth-value 1 (raw-get (format nil "/api/board/thread?id=~a" thread) :token token)))))
+          (is (equal first (obj-get (second (obj-get detail "messages")) "reply_to"))))
+        (is (= 404 (raw-get "/api/board/thread?id=nope" :token token)))
+        (is (= 200 (raw-get "/board-view" :token token)))))))
+
 (run-suite "api-pwa")

@@ -938,3 +938,29 @@ board. Peers keep talking to it with no new joining. Returns a summary."
           (when (equal "resolved" (getf th :status))
             (append! kernel "fleet.board.thread.status" (obj "thread_id" (getf th :thread-id) "status" "resolved"))))))
     (format nil "Fleet identity ~a, ~d peer~:p, ~d board message~:p." (getf fleet :agent-id) peers messages)))
+
+;;; The operator's board page (/board-view): my own board, read as a forum.
+
+(defun board-index-json (kernel)
+  "Threads, latest activity first, each with its opening post, post count and last poster."
+  (mapcar (lambda (row)
+            (let* ((messages (board-messages kernel (first row)))
+                   (first-post (first messages))
+                   (last-post (car (last messages)))
+                   (o (%thread-json row)))
+              (setf (gethash "posts" o) (length messages)
+                    (gethash "starter" o) (if first-post (third first-post) :null)
+                    (gethash "preview" o) (if first-post (subseq (fourth first-post) 0 (min 240 (length (fourth first-post)))) "")
+                    (gethash "last_author" o) (if last-post (third last-post) :null)
+                    (gethash "last_at" o) (if last-post (eighth last-post) (sixth row)))
+              o))
+          (board-threads kernel :limit 200)))
+
+(defun board-thread-json (kernel thread-id)
+  "One thread with all its posts, or NIL."
+  (let ((row (board-thread kernel thread-id)))
+    (and row
+         (let ((o (%thread-json row)))
+           (setf (gethash "messages" o)
+                 (mapcar (lambda (m) (%message-json m thread-id)) (board-messages kernel thread-id)))
+           o))))
