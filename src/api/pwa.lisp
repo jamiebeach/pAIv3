@@ -388,6 +388,12 @@ localhost), the URL to send it to; passkeys only work at the agent's origin."
       ;; Peers sign their requests; an operator session never stands in.
       ((fleet-path-p path) (values (fleet-route agent method path) t))
 
+      ;; Google's return carries no session cookie: SameSite=Strict withholds it
+      ;; on arrival from another site. The single-use state, made from the
+      ;; operator's signed-in session when connecting began, is the proof.
+      ((string= path "/oauth/google/return")
+       (values (google-route agent method path nil) t))
+
       ((or (uiop:string-prefix-p "/oauth/google/" path) (string= path "/api/google/disconnect"))
        (values (let ((origin (%signed-in agent)))
                  (cond ((null origin) (reply 401 (obj "error" "sign in first")))
