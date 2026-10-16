@@ -17,6 +17,7 @@
   (connect-timeout 10) (read-timeout 120)
   (max-tokens 4096) (temperature nil)
   (vision nil)                            ; the model can see images
+  (all-tools nil)                         ; give every tool, not the core set and describe_tool
   (reasoning nil)                         ; passed through, e.g. {"max_tokens": 4000}: bounds thinking so a reply has room
   (microusd-per-1k-prompt 0) (microusd-per-1k-completion 0)  ; when no reported cost
   (transport #'http-transport))

@@ -444,10 +444,6 @@ TOOLS NIL asks for an answer with no tools offered."
   (let* ((kernel (mind-kernel mind)) (thought (mind-thought mind))
          (id (getf thought :id))
          (tools (and tools (tools-for thought)))
-         (hand (and tools (tools-in-hand thought tools (%picked-up messages))))
-         (frame (funcall *assemble-thought-context* kernel thought (tool-index-text tools hand)))
-         (spoken (make-string-output-stream))
-         (streaming (and (string= "responding" (getf thought :origin)) (getf thought :channel)))
          (images (turn-images kernel thought))
          (profile (let ((p (profile-for kernel (%purpose thought) (funcall *route-signals* kernel thought))))
                     ;; A turn with images asks for a model that can see, if one is routed.
@@ -455,6 +451,14 @@ TOOLS NIL asks for an answer with no tools offered."
                         (let ((v (ignore-errors (profile-for kernel "vision" (funcall *route-signals* kernel thought)))))
                           (if (and v (provider-profile-vision v)) v p))
                         p)))
+         ;; Some models will not pick a tool up with describe_tool before using
+         ;; it; a profile marked all_tools is given every tool it may use.
+         (hand (and tools (if (provider-profile-all-tools profile)
+                              tools
+                              (tools-in-hand thought tools (%picked-up messages)))))
+         (frame (funcall *assemble-thought-context* kernel thought (tool-index-text tools hand)))
+         (spoken (make-string-output-stream))
+         (streaming (and (string= "responding" (getf thought :origin)) (getf thought :channel)))
          (all (let ((all (append frame messages)))
                 (if images (with-images kernel all images profile) all)))
          (result

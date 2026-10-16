@@ -390,4 +390,27 @@
         (is (search "cut off" (sql-value (kernel-db k) "SELECT rendered FROM working_dialogue WHERE kind=?1 ORDER BY event_id DESC LIMIT 1" "reply"))
             "the operator sees it was cut off")))))
 
+(deftest a-profile-marked-all-tools-is-given-every-tool
+  (with-clock
+    (with-temp-kernel (k)
+      (let* ((counts '())
+             (*budget* (list :daily-microusd 100000000 :operator-reserve 0.2)))
+        (dolist (all '(nil t))
+          (let ((*thought-provider*
+                  (make-provider-profile
+                   :name "test" :base-url "http://fake" :model "m" :all-tools all
+                   :transport (lambda (url headers body &key stream-fn timeout)
+                                (declare (ignore url headers stream-fn timeout))
+                                (push (length (obj-get (json-parse body) "tools")) counts)
+                                (values 200 nil (json-encode (obj "choices" (list (obj "message" (obj "role" "assistant" "content" "done")
+                                                                                       "finish_reason" "stop"))
+                                                                  "usage" (obj "prompt_tokens" 5 "completion_tokens" 1))))))))
+            (advance 60)
+            (request-thought k "work" "do a thing")
+            (run-until-idle k)))
+        (let ((core (car (last counts))) (with-all (first counts)))
+          (is (< core with-all) "the core set is smaller")
+          (is (= with-all (length (pai-v3.mind::tools-for (list :audience "operator" :origin "work"))))
+              "all_tools sends every tool the thought may use"))))))
+
 (run-suite "mind-thought")
