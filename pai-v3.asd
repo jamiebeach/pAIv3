@@ -75,6 +75,7 @@
                  (:file "fleet")
                  (:file "notify")
                  (:file "google")
+                 (:file "files")
                  (:file "pwa")))
    (:module "src/cli"
     :serial t

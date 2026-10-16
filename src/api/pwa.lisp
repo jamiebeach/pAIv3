@@ -435,6 +435,12 @@ localhost), the URL to send it to; passkeys only work at the agent's origin."
                            (t (reply 404 (obj "error" "no such route"))))))
                t))
 
+      ((member path '("/api/v2/files" "/api/v2/file" "/api/v2/download" "/api/v2/upload") :test #'string=)
+       (values (cond ((not (%signed-in agent)) (reply 401 (obj "error" "sign in first")))
+                     ((and (eq method :post) (not (same-origin-p agent))) (reply 403 (obj "error" (%refusal agent))))
+                     (t (files-route agent method path)))
+               t))
+
       ((and (eq method :get) (uiop:string-prefix-p "/api/board" path))
        (values (cond ((not (%signed-in agent)) (reply 401 (obj "error" "sign in first")))
                      ((string= path "/api/board/threads") (reply 200 (obj "threads" (board-index-json k))))
