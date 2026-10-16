@@ -149,4 +149,28 @@
     (raise-concern k "Something to settle")
     (is (equal "concern" (getf (thought-row k (quiet-tick k)) :origin)))))
 
+(deftest what-quiet-time-concluded-reaches-the-next-turn
+  (with-quiet (k)
+    (let ((id (raise-concern k "Is the summary still saying the merge is dead code?")))
+      (close-concern k id "satisfied" "No: the merge is wired; the earlier claim was wrong.")
+      (let ((lines (pai-v3.mind::%fill k :conclusions (list :audience "operator") 1200)))
+        (is (search "the earlier claim was wrong" (format nil "~{~a~}" lines)) "the conclusion is in context")))
+    (advance (* 4 86400))
+    (is (null (pai-v3.mind::%fill k :conclusions (list :audience "operator") 1200)) "and ages out after a few days")))
+
+(deftest a-failure-is-looked-at-at-once-with-repair-steps
+  (with-quiet (k)
+    (quiet-tick k)                                      ; the failure cursor starts here
+    (let ((failed (request-thought k "work" "do something")))
+      (sql-exec (kernel-db k) "UPDATE thoughts SET status='failed',outcome=?2 WHERE id=?1" failed "model failure: empty response")
+      (receive-turn k :channel "web" :audience "operator" :speaker "Sam" :text "hello"
+                      :origin (obj "principal_type" "operator"))
+      (let ((id (quiet-tick k)))
+        (is id "it starts despite the operator having just spoken")
+        (is (search "A failure, looked at at once" (getf (thought-row k id) :reason)))
+        (is (search "inspect with what failures" (getf (thought-row k id) :reason)) "with the repair steps")
+        (is (search "priority 0" (getf (thought-row k id) :reason))))
+      (sql-exec (kernel-db k) "UPDATE thoughts SET status='ended' WHERE origin=?1" "concern")
+      (is (equal "grace" (nth-value 1 (quiet-tick k))) "once looked at, ordinary concerns wait as before"))))
+
 (run-suite "mind-concerns")

@@ -70,4 +70,18 @@
     (let ((d (find "dialogue" (obj-get (last-assembly k) "slots") :key (lambda (s) (obj-get s "slot")) :test #'equal)))
       (is (<= (obj-get d "tokens") 4000)))))
 
+(deftest no-slot-of-either-profile-fails-to-fill
+  (with-temp-kernel (k)
+    (pai-v3.mind::raise-concern k "Is anything broken?")
+    (dolist (profile '("operator-turn" "private-cognition"))
+      (pai-v3.mind::assemble-context k profile (list :audience "operator" :task "hello"))
+      (let ((slots (obj-get (event-payload (event-by-id k (ledger-head k))) "slots")))
+        (dolist (slot (remove-if (lambda (s) (member (obj-get s "slot") '("recall" "restricted") :test #'equal)) slots))
+          ;; Recall needs the embedding service, which tests do not run.
+          (is (not (search "unavailable" (obj-get slot "status")))
+              (format nil "~a in ~a: ~a" (obj-get slot "slot") profile (obj-get slot "status"))))
+        (is (find "concerns" slots :key (lambda (s) (obj-get s "slot")) :test #'equal))
+        (is (equal "ok" (obj-get (find "concerns" slots :key (lambda (s) (obj-get s "slot")) :test #'equal) "status"))
+            "an open concern reaches the context")))))
+
 (run-suite "mind-context")

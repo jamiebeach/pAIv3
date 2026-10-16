@@ -34,6 +34,20 @@
                                 degraded)))
         "Nothing is quarantined.")))
 
+(defun %inspect-failures (kernel)
+  "Recent failed model calls: why, and what the provider actually sent."
+  (let ((ids (latest-event-ids kernel "provider.call.failed" 5)))
+    (if (null ids)
+        "No failed model calls on record."
+        (format nil "~{~a~^~%~%~}"
+                (loop for id in ids
+                      for e = (event-by-id kernel id)
+                      for p = (event-payload e)
+                      for raw = (sql-value (kernel-db kernel) "SELECT response FROM model_captures WHERE call_event_id=?1 LIMIT 1" id)
+                      collect (format nil "Call ~d at ~a, ~a (~a): ~a~@[~%What was sent back: ~a~]"
+                                      id (event-at e) (obj-get p "model") (obj-get p "class") (obj-get p "reason")
+                                      (and raw (if (> (length raw) 3000) (format nil "~a…" (subseq raw 0 3000)) raw))))))))
+
 (defun %inspect-live-changes (kernel)
   (let ((rows (append (live-changes kernel) (live-changes kernel :status "lost-on-restart" :limit 20))))
     (if rows
@@ -47,9 +61,9 @@
           (json-encode (projection-counts kernel name)) (projection-digest kernel name)))
 
 (define-tool "inspect"
-  :description "Look at my own derived state, read-only. what: overview (every projection's status, cursor and problems), rows (a projection's rows; give name, and optionally table, column and value), quarantine (events a projection could not apply; optionally name), live_changes (my skills and repairs), digest (row counts and a digest of a projection, for verification; give name)."
+  :description "Look at my own derived state, read-only. what: overview (every projection's status, cursor and problems), failures (recent failed model calls and what the provider sent back), rows (a projection's rows; give name, and optionally table, column and value), quarantine (events a projection could not apply; optionally name), live_changes (my skills and repairs), digest (row counts and a digest of a projection, for verification; give name)."
   :parameters (obj "type" "object"
-                   "properties" (obj "what" (obj "type" "string" "enum" (list "overview" "rows" "quarantine" "live_changes" "digest"))
+                   "properties" (obj "what" (obj "type" "string" "enum" (list "overview" "failures" "rows" "quarantine" "live_changes" "digest"))
                                      "name" (obj "type" "string" "description" "A projection name, from the overview.")
                                      "table" (obj "type" "string")
                                      "column" (obj "type" "string")
@@ -67,6 +81,7 @@
                  (cond ((string= what "overview") (%inspect-overview kernel))
                        ((string= what "quarantine") (%inspect-quarantine kernel name))
                        ((string= what "live_changes") (%inspect-live-changes kernel))
+                       ((string= what "failures") (%inspect-failures kernel))
                        ((null name) (format nil "~a needs a projection name; see the overview." what))
                        ((not (find-projection-p name)) (format nil "There is no projection ~a." name))
                        ((string= what "digest") (%inspect-digest kernel name))

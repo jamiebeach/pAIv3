@@ -31,6 +31,7 @@ list of (text tokens) rows, most relevant first.")
 (define-context-profile "operator-turn"
   :slots ((:state     :max 300   :source :state     :title "How I am")
           (:summary   :max 3000  :source :summary   :title "Earlier, in summary")
+          (:conclusions :max 1200 :source :conclusions :title "What I have concluded lately (newer than the summary)")
           (:activity  :max 24000 :source :activity  :title "What I have been doing")
           (:dialogue  :max 4000  :source :dialogue  :title "Conversation")
           (:recall    :max 5000  :source :recall    :title "What I remember")
@@ -43,6 +44,7 @@ list of (text tokens) rows, most relevant first.")
 (define-context-profile "private-cognition"
   :slots ((:state     :max 300   :source :state     :title "How I am")
           (:summary   :max 2000  :source :summary   :title "Earlier, in summary")
+          (:conclusions :max 800 :source :conclusions :title "What I have concluded lately (newer than the summary)")
           (:activity  :max 8000  :source :activity  :title "What I have been doing")
           (:dialogue  :max 2000  :source :dialogue  :title "Recent conversation")
           (:recall    :max 3000  :source :recall    :title "What I remember")
@@ -76,7 +78,11 @@ list of (text tokens) rows, most relevant first.")
         (values nil 0 "unavailable")
         (handler-case
             (let ((kept '()) (used 0))
-              (loop for (text tokens) in (funcall fn kernel request max)
+              ;; A row is (text tokens), or plain text whose tokens are
+              ;; estimated here: a source returning bare lines once kept
+              ;; three slots out of every context, marked unavailable.
+              (loop for row in (funcall fn kernel request max)
+                    for (text tokens) = (if (stringp row) (list row (estimate-tokens row)) row)
                     while (<= (+ used tokens) max)
                     do (incf used tokens) (push text kept))
               (values (nreverse kept) used (if kept "ok" "empty")))
