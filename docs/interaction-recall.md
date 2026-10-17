@@ -191,10 +191,11 @@ is visible.
 The settled part grows in stages; the shape stays the same.
 
 - **First form: rows.** With no revision yet, the settled part is
-  assembled from rows: the strongest few graph facts about the anchor and
-  its few most significant memories (by memory strength, agent §11). The
-  first consolidation pass records these as the first revision, so the
-  fresh part starts from there.
+  assembled from rows, live, each time: the anchor's summary, its
+  strongest few graph facts and the memories that name it. It is not
+  recorded as a revision, since nothing would refresh a stored copy before
+  consolidation exists; it simply never goes stale. The first written
+  revision (below) is the first one recorded.
 - **Written form.** Consolidation in sleep (agent §13) revises each
   impression whose fresh part has grown: from the last settled text and
   the fresh interactions, a model writes the new settled text, which keeps

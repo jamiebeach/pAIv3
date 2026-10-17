@@ -303,3 +303,10 @@ recorded) and its delivery appended in one transaction. Returns the count."
                                         rows))
                         "Nothing is scheduled."))))
              (error (e) (format nil "Not scheduled: ~a" e))))))
+
+(define-open-items "schedule" (kernel terms audience)
+  (loop for (text next-at) in (sql-rows (kernel-db kernel)
+                                        "SELECT text,next_at FROM scheduled_items WHERE status='active' AND audience=?1 ORDER BY next_at LIMIT 50"
+                                        audience)
+        when (mentions-any-p text terms)
+          collect (format nil "Coming up~@[ ~a~]: ~a" (and next-at (ignore-errors (local-stamp kernel next-at))) text)))

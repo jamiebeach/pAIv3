@@ -28,6 +28,7 @@
                  (:file "thought")
                  (:file "persona")
                  (:file "context")
+                 (:file "open-items")
                  (:file "affect")
                  (:file "schedule")
                  (:file "summary")
@@ -80,6 +81,10 @@
                  (:file "google")
                  (:file "files")
                  (:file "pwa")))
+   (:module "src/recall"
+    :serial t
+    :components ((:file "package")
+                 (:file "impressions")))
    (:module "src/cli"
     :serial t
     :components ((:file "main")))))

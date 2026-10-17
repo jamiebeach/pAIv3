@@ -245,3 +245,9 @@ that spends it is parked until the operator reopens it. A parked item can only b
     (mapcar (lambda (i) (format nil "- ~a (~a~:[~;, parked~]): next, ~a" (obj-get i "title") (obj-get i "priority")
                                 (eq t (obj-get i "parked")) (obj-get i "next_step")))
             (docket-items kernel))))
+
+(define-open-items "docket" (kernel terms audience)
+  (when (equal audience "operator")
+    (loop for item in (docket-items kernel)
+          when (or (mentions-any-p (obj-get item "title") terms) (mentions-any-p (obj-get item "next_step") terms))
+            collect (format nil "Work I am keeping: ~a (next: ~a)" (obj-get item "title") (obj-get item "next_step")))))

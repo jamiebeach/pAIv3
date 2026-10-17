@@ -462,3 +462,10 @@ comes first, then, with none of those, rumination. Returns the thought id, or NI
           (some (lambda (starter) (ignore-errors (funcall starter kernel))) *quiet-starters*)
           (%start-rumination kernel)
           (no "nothing open")))))
+
+(define-open-items "concerns" (kernel terms audience)
+  ;; My concerns are my own thinking: told only to the operator.
+  (when (equal audience "operator")
+    (loop for (nil nil question) in (open-concerns kernel)
+          when (mentions-any-p question terms)
+            collect (format nil "I am looking into: ~a" question))))

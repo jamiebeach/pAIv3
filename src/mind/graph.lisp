@@ -446,6 +446,14 @@ Returns (values fact-id :admitted|:supported). Signals GRAPH-REFUSED."
             (sql-rows db "SELECT id,subject,predicate,object,character,derivation,path,scope,polarity,text,world FROM graph_facts WHERE object=?1 AND status=?2 LIMIT ?3"
                       entity-id "active" limit))))
 
+(defun entity-names (kernel entity-id)
+  "Every name ENTITY-ID goes by, as kept (lower case), its own name first."
+  (let ((own (third (graph-entity kernel entity-id))))
+    (remove-duplicates
+     (cons (%canonical own)
+           (mapcar #'first (sql-rows (kernel-db kernel) "SELECT canonical FROM graph_names WHERE entity_id=?1 LIMIT 50" entity-id)))
+     :test #'string=)))
+
 (defun live-fact (kernel fact-id)
   "Fact FACT-ID while it is active, in the shape ENTITY-FACTS gives; else NIL."
   (sql-row (kernel-db kernel) "SELECT id,subject,predicate,object,character,derivation,path,scope,polarity,text,world FROM graph_facts WHERE id=?1 AND status=?2 LIMIT 1"

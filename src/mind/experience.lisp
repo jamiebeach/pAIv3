@@ -98,7 +98,8 @@ or NIL when it is not an interaction. HANDLES is a list of (handle label)."
            ;; Every scope seen, so a search open to the operator names them all.
            "CREATE TABLE IF NOT EXISTS experience_scopes (scope TEXT PRIMARY KEY, kind TEXT NOT NULL)"
            "CREATE INDEX IF NOT EXISTS experience_scopes_kind_idx ON experience_scopes(kind,scope)"
-           "CREATE TABLE IF NOT EXISTS experience_handles (handle TEXT PRIMARY KEY, label TEXT NOT NULL, at TEXT NOT NULL)")
+           "CREATE TABLE IF NOT EXISTS experience_handles (handle TEXT PRIMARY KEY, label TEXT NOT NULL, at TEXT NOT NULL)"
+           "CREATE INDEX IF NOT EXISTS experience_handles_label_idx ON experience_handles(label)")
   :entity (lambda (e) (event-id e))
   :reduce (lambda (db e)
             (let* ((p (event-payload e)) (type (event-type e)))
@@ -168,6 +169,14 @@ seen bound to a meaning."
                           (format nil "SELECT handle,label FROM experience_handles WHERE handle IN (~a) LIMIT 100"
                                   (%in-list 1 (length batch)))
                           batch)))))
+
+(defun handles-labelled (kernel labels)
+  "The handles bound to any of LABELS (exact), such as a peer's id bound to its name."
+  (when labels
+    (mapcar #'first (apply #'sql-rows (kernel-db kernel)
+                           (format nil "SELECT handle FROM experience_handles WHERE label IN (~a) LIMIT 50"
+                                   (%in-list 1 (length labels)))
+                           labels))))
 
 (defun %experience-scopes (kernel audience)
   "The scopes AUDIENCE may see: every scope for the operator."
