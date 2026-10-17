@@ -35,6 +35,10 @@
   "The one allowance table for all thinking: per root thought, shared by its
 sub-calls. Change budgets here, not per kind.")
 
+(define-setting "thought.max_tool_calls_per_step"
+  :type :integer :min 1 :max 64 :default 12 :group "Thinking"
+  :description "Most tool calls one model response may run. The rest are answered as not run, so the model asks again with fewer (a model once asked for 347 at once).")
+
 (define-setting "thought.policy"
   :type :array :group "Thinking"
   :default (loop for (origin priority calls microusd depth) in *thought-policy*
@@ -535,7 +539,9 @@ sub-call's result arrives later."
       (let ((fn (obj-get call "function")))
         (%record-text kernel id "tool_call" "" "tool" (obj-get fn "name")
                       "call_id" (obj-get call "id") "arguments" (obj-get fn "arguments"))))
-    (loop for call in calls
+    (loop with most = (setting kernel "thought.max_tool_calls_per_step")
+          for call in calls
+          for n from 1
           for fn = (obj-get call "function")
           for name = (obj-get fn "name")
           for tool = (gethash name *tools*)
@@ -543,7 +549,11 @@ sub-call's result arrives later."
           for result = (let ((*call-id* (obj-get call "id")))
                          (%activity thought "tool-start" "tool_name" name
                                     "input" (let ((a (or (obj-get fn "arguments") ""))) (subseq a 0 (min 200 (length a)))))
-                         (cond ((not (and tool (tool-available-p tool thought)))
+                         (cond ((> n most)
+                                (setf failed t)
+                                (format nil "Not run: this response asked for ~d tool calls and at most ~d run at once. Ask again for the ones you still need, a few at a time."
+                                        (length calls) most))
+                               ((not (and tool (tool-available-p tool thought)))
                                 (setf failed t)
                                 (format nil "No tool named ~a." name))
                                (t (let ((result (handler-case

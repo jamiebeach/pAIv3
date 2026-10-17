@@ -205,6 +205,18 @@
         (is (not (search "already made" (third (first results)))) "the first call is new")
         (is (search "already made this exact call" (third (second results))) "the same call, keys reordered, is noticed")))))
 
+(deftest a-flood-of-tool-calls-runs-only-the-first-few
+  (with-thinking (k)
+    (let* ((*script* (list (obj "content" "" "tool_calls" (loop for i below 20 collect (call (format nil "c~d" i) "clock")))
+                           (obj "content" "Done.")))
+           (id (request-thought k "work" "look around")))
+      (run-until-idle k)
+      (let ((results (remove "tool_result" (thought-steps k id) :key #'first :test-not #'equal)))
+        (is (= 20 (length results)) "every call is answered, so the history stays valid")
+        (is (= 12 (count-if (lambda (r) (not (search "Not run" (third r)))) results)) "the first twelve run")
+        (is (search "asked for 20 tool calls" (third (car (last results)))) "the rest say why"))
+      (is (equal "ended" (getf (thought-row k id) :status))))))
+
 (deftest provider-outage-retries-without-losing-the-thought
   (with-thinking (k)
     (let* ((*script* (list 503 (obj "content" "Back now.")))
