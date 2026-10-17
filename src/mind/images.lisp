@@ -56,11 +56,16 @@ agent is opened. NIL: the ledger's own database (tests).")
                        (concatenate 'string b (make-string (mod (- (length b)) 4) :initial-element #\=)))))))
 
 (defun turn-images (kernel thought)
-  "The image ids sent with the turn THOUGHT answers."
+  "The image ids sent with what THOUGHT answers: the operator's turn, or a
+peer's board message or notification."
   (let* ((source (getf thought :source-event-id))
-         (event (and source (ignore-errors (event-by-id kernel source)))))
-    (and event (string= "turn.received" (event-type event))
-         (remove-if-not #'stringp (obj-get (event-payload event) "images")))))
+         (event (and source (ignore-errors (event-by-id kernel source))))
+         (p (and event (event-payload event))))
+    (and event
+         (let ((ids (cond ((member (event-type event) '("turn.received" "fleet.board.posted") :test #'string=)
+                           (obj-get p "images"))
+                          ((string= (event-type event) "fleet.op") (obj-get (obj-get p "body") "images")))))
+           (and (listp ids) (remove-if-not #'stringp ids))))))
 
 (defun with-images (kernel messages ids profile)
   "MESSAGES with the images IDS added to the last (user) message when PROFILE

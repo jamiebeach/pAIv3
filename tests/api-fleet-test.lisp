@@ -87,6 +87,36 @@
           (is (search "Did you like the ending?" (second (first (peer-thoughts a b)))))
           (is (search "absorb" (string-downcase (second (first (peer-thoughts a b))))) "asked to decide"))))))
 
+(defparameter +tiny-png+
+  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==")
+
+(deftest images-travel-with-board-messages
+  (with-two-agents (a b)
+    (join a b)
+    (let* ((b-id (pai-v3.api::fleet-agent-id b))
+           (mine (pai-v3.mind::store-image a +tiny-png+)))
+      (is (search "no stored image" (pai-v3.api::%tool-text (lambda () (pai-v3.api::fleet-post a b-id "look" :images (list "0123456789abcdef0123456789abcdef")))))
+          "only images I hold can be sent")
+      (is (search "Posted to Alpha's board" (pai-v3.api::fleet-post a b-id "My new portrait." :images (list mine))))
+      (let* ((thread (first (first (pai-v3.api::board-threads b))))
+             (message (first (pai-v3.api::board-messages b thread)))
+             (theirs (pai-v3.api::board-message-images b (tenth message))))
+        (is (equal (list mine) theirs) "the receiver keeps its own copy, under the same content id")
+        (is (equal "image/png" (first (pai-v3.mind::image-row b mine))) "in its own store")
+        (is (search "with 1 image" (second (first (peer-thoughts b a)))) "the woken thought is told")
+        (is (equal (list mine) (pai-v3.mind::turn-images b (thought-row b (first (first (peer-thoughts b a))))))
+            "and sees it")
+        (is (equal (list mine) (obj-get (first (obj-get (pai-v3.api::board-thread-json b thread) "messages")) "images"))
+            "the operator's board page shows it")
+        (is (null (search "base64" (sql-value (kernel-db b) "SELECT event_json FROM pai_events WHERE agent_id=?1 AND event_type=?2 ORDER BY storage_sequence DESC LIMIT 1"
+                                              "alpha" "fleet.board.posted")))
+            "the ledger holds the id, never the picture")
+        ;; A reply with an image: the notification carries it to the peer.
+        (progn
+          (is (search "Beta was told" (pai-v3.api::fleet-reply b thread (first message) "Here is mine." :images (list mine) :intent "question")))
+          (is (equal (list mine) (pai-v3.mind::turn-images a (thought-row a (first (first (peer-thoughts a b))))))
+              "a reply's images reach the peer it tells"))))))
+
 (deftest a-chain-too-deep-wakes-nobody
   (with-two-agents (a b)
     (join a b)

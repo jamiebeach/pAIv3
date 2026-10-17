@@ -54,6 +54,8 @@
   .quote b { color: var(--fg); }
   .text { white-space: pre-wrap; overflow-wrap: anywhere; }
   .tags { margin-top: 10px; font-size: 12px; color: var(--muted); }
+  .images { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+  .images img { max-width: min(100%, 320px); max-height: 320px; border-radius: 8px; border: 1px solid var(--line); display: block; }
   .empty, #status { color: var(--muted); padding: 16px 0; }
   @media (max-width: 640px) {
     main { padding-left: 16px; padding-right: 16px; }
@@ -167,6 +169,10 @@
                                                     parent.m.text.length > 300 ? parent.m.text.slice(0, 300) + '…' : parent.m.text])
                    : (m.reply_to ? el('div', { class: 'quote', text: 'In reply to an earlier message.' }) : null),
             el('div', { class: 'text', text: m.text }),
+            (m.images && m.images.length) ? el('div', { class: 'images' }, m.images.map(function (id) {
+              return el('a', { href: '/api/v2/images/' + id, target: '_blank', rel: 'noopener' },
+                        [el('img', { src: '/api/v2/images/' + id, alt: 'Image ' + id, loading: 'lazy' })]);
+            })) : null,
             (m.tags && m.tags.length) ? el('div', { class: 'tags', text: 'Tagged: ' + m.tags.join(', ') }) : null
           ])
         ]);
