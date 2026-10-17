@@ -197,7 +197,7 @@
 
 ;;; Talking to peers
 
-(defun %fleet-http (kernel address path payload &key peer-id (method :post))
+(defun %fleet-http (kernel address path payload &key peer-id (method :post) (connect-timeout 10) (read-timeout 20))
   "Send PAYLOAD as JSON to ADDRESS PATH, signed when PEER-ID is given, and
 return the parsed reply. A refusal or an unreachable peer signals."
   (let* ((body (redact (if payload (json-encode payload) "")))
@@ -214,7 +214,8 @@ return the parsed reply. A refusal or an unreachable peer signals."
         ;; Peers are named by the operator at joining, often on a private
         ;; tailnet; the agent never chooses an address.
         (http-request method url :headers headers :body (and (eq method :post) body)
-                                 :allow-private t :connect-timeout 10 :read-timeout 20 :max-redirects 0)
+                                 :allow-private t :connect-timeout connect-timeout :read-timeout read-timeout
+                                 :max-redirects 0)
       (let ((parsed (ignore-errors (json-parse out))))
         (unless (<= 200 status 299)
           (error "~a answered ~d~@[: ~a~]" (%address-host address) status
@@ -798,15 +799,19 @@ some other way: it is the only thing that binds the two operators."
                    ((and (eq method :post) (string= path "/fleet/board-notification"))
                     (reply 200 (accept-board-notification k peer (json-parse body))))
                    ((string= path "/board/threads")
-                    (let ((o (obj))) (setf (gethash "threads" o) (mapcar #'%thread-json (board-threads k))) (reply 200 o)))
+                    ;; Forum rows: a v2 peer reads the fields it knows and ignores the rest.
+                    (reply 200 (obj "threads" (board-index-json k))))
                    ((string= path "/board/thread")
                     (let ((thread (board-thread k (hunchentoot:get-parameter "id"))))
                       (if thread
                           (let ((o (%thread-json thread)))
                             (setf (gethash "messages" o)
-                                  (mapcar (lambda (m) (%message-json m (first thread))) (board-messages k (first thread))))
+                                  (mapcar (lambda (m) (%message-json m (first thread) k)) (board-messages k (first thread))))
                             (reply 200 o))
                           (reply 404 (obj "status" "not-found")))))
+                   ((string= path "/board/image")
+                    (let ((data (board-image k (hunchentoot:get-parameter "thread") (hunchentoot:get-parameter "id"))))
+                      (if data (reply 200 (obj "data_url" data)) (reply 404 (obj "status" "not-found")))))
                    ((string= path "/board/since")
                     (let* ((ts (hunchentoot:get-parameter "ts"))
                            (since (and (stringp ts) (plusp (length ts)) (every #'digit-char-p ts) (parse-integer ts))))
@@ -1055,3 +1060,55 @@ board. Peers keep talking to it with no new joining. Returns a summary."
            (setf (gethash "messages" o)
                  (mapcar (lambda (m) (%message-json m thread-id kernel)) (board-messages kernel thread-id)))
            o))))
+
+;;; The fleet view (bead v3-b3s): every board in the group in one list, for
+;;; the operator. Each peer's board is read over the signed routes peers
+;;; already use to read each other's; nothing new is exposed.
+
+(defun board-image (kernel thread-id image-id)
+  "IMAGE-ID as a data URL when it is attached to a message in THREAD-ID on
+my board; else NIL. Only what the board already shows is served."
+  (and (stringp thread-id) (stringp image-id) (board-thread kernel thread-id)
+       (some (lambda (m) (member image-id (board-message-images kernel (tenth m)) :test #'equal))
+             (board-messages kernel thread-id))
+       (pai-v3.mind::image-data-url kernel image-id)))
+
+(defun %peer-get (kernel peer path)
+  (%fleet-http kernel (third peer) path nil :peer-id (first peer) :method :get
+                                            :connect-timeout 3 :read-timeout 8))
+
+(defun fleet-board-overview (kernel)
+  "Every board in my fleet: mine and each peer's, as a list of objects
+(owner name reachable threads [error]). A peer that cannot be reached says so."
+  (cons (obj "owner" "self" "name" (fleet-own-name kernel) "reachable" t
+             "threads" (board-index-json kernel))
+        (mapcar (lambda (peer)
+                  (handler-case
+                      (obj "owner" (first peer) "name" (second peer) "reachable" t
+                           "threads" (or (%given (obj-get (%peer-get kernel peer "/board/threads") "threads")) '()))
+                    (error (e)
+                      (obj "owner" (first peer) "name" (second peer) "reachable" :false "threads" '()
+                           "error" (let ((m (princ-to-string e))) (subseq m 0 (min 200 (length m))))))))
+                (fleet-peers kernel))))
+
+(defun fleet-board-thread (kernel owner thread-id)
+  "Thread THREAD-ID on OWNER's board (\"self\", or a peer id), with its messages, or NIL."
+  (if (equal owner "self")
+      (board-thread-json kernel thread-id)
+      (let ((peer (fleet-peer kernel owner)))
+        (and peer (stringp thread-id)
+             (ignore-errors
+              (%peer-get kernel peer (format nil "/board/thread?id=~a" (hunchentoot:url-encode thread-id))))))))
+
+(defun fleet-board-image (kernel owner thread-id image-id)
+  "The (mime octets) of an image on OWNER's board, or NIL."
+  (let ((url (if (equal owner "self")
+                 (board-image kernel thread-id image-id)
+                 (let ((peer (fleet-peer kernel owner)))
+                   (and peer (stringp thread-id) (stringp image-id)
+                        (ignore-errors
+                         (%given (obj-get (%peer-get kernel peer (format nil "/board/image?thread=~a&id=~a"
+                                                                          (hunchentoot:url-encode thread-id)
+                                                                          (hunchentoot:url-encode image-id)))
+                                          "data_url"))))))))
+    (and (stringp url) (ignore-errors (multiple-value-list (pai-v3.mind::%parse-data-url url))))))

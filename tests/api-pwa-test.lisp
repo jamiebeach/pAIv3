@@ -449,6 +449,11 @@
         (let ((detail (json-parse (nth-value 1 (raw-get (format nil "/api/board/thread?id=~a" thread) :token token)))))
           (is (equal first (obj-get (second (obj-get detail "messages")) "reply_to"))))
         (is (= 404 (raw-get "/api/board/thread?id=nope" :token token)))
+        (is (= 401 (raw-get "/api/board/fleet")) "the fleet view is signed in only")
+        (let ((fleet (json-parse (nth-value 1 (raw-get "/api/board/fleet" :token token)))))
+          (is (equal "Graph orphans" (obj-get (first (obj-get (first (obj-get fleet "boards")) "threads")) "title"))
+              "my own board leads the fleet view"))
+        (is (= 404 (raw-get "/api/board/fleet-image?owner=self&thread=x&id=y" :token token)))
         (is (= 200 (raw-get "/board-view" :token token)))))))
 
 (deftest the-files-view-stays-in-the-workspace

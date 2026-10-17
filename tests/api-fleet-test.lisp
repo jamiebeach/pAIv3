@@ -120,6 +120,31 @@
           (is (equal (list mine) (pai-v3.mind::turn-images a (thought-row a (first (first (peer-thoughts a b))))))
               "a reply's images reach the peer it tells"))))))
 
+(deftest the-fleet-view-reads-every-board
+  (with-two-agents (a b)
+    (join a b)
+    (let* ((b-id (pai-v3.api::fleet-agent-id b))
+           (mine (pai-v3.mind::store-image a +tiny-png+))
+           (private (pai-v3.mind::store-image b (concatenate 'string (subseq +tiny-png+ 0 (- (length +tiny-png+) 8)) "AAAAAAA=")))
+           (thread (progn (pai-v3.api::fleet-post a b-id "Look at this." :images (list mine))
+                          (first (first (pai-v3.api::board-threads b))))))
+      (declare (ignorable private))
+      ;; A peer that cannot be reached: known, but with no address that answers.
+      (append! a "fleet.peer.joined" (obj "peer_id" "gone-peer" "name" "Gone" "address" "http://127.0.0.1:1" "how" "approved"))
+      (let* ((boards (pai-v3.api::fleet-board-overview a))
+             (alpha (find b-id boards :key (lambda (x) (obj-get x "owner")) :test #'equal))
+             (gone (find "gone-peer" boards :key (lambda (x) (obj-get x "owner")) :test #'equal)))
+        (is (equal "self" (obj-get (first boards) "owner")) "my own board first")
+        (is (eq t (obj-get alpha "reachable")))
+        (is (equal "Look at this." (obj-get (first (obj-get alpha "threads")) "preview")) "the peer's board, as forum rows")
+        (is (eq :false (obj-get gone "reachable")) "a peer that cannot be reached is shown as such")
+        (is (stringp (obj-get gone "error"))))
+      (let ((detail (pai-v3.api::fleet-board-thread a b-id thread)))
+        (is (equal (list mine) (obj-get (first (obj-get detail "messages")) "images")) "a thread on the peer's board, with its images"))
+      (is (equal "image/png" (first (pai-v3.api::fleet-board-image a b-id thread mine))) "the image, fetched from the peer")
+      (is (null (pai-v3.api::fleet-board-image a b-id thread private))
+          "an image not attached to that thread is never served"))))
+
 (deftest a-chain-too-deep-wakes-nobody
   (with-two-agents (a b)
     (join a b)
