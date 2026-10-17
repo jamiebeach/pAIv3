@@ -72,7 +72,11 @@ agent's own experience, not code written for each one (operator decision
 2026-10-17: accept the noise of association for its generality). A cue
 activates memory by two passes, merged:
 
-**Exact: handles.** One table maps any **handle** to an **anchor**. A
+**Exact: handles.** Names of people and things are already the graph's
+(`graph_names`); they stay there, the one home for names. Identifiers the
+graph does not hold go in one table of handles (`experience_handles`, kept
+by the experience index, §7), each bound to what it means. Together they
+map any **handle** to an **anchor**. A
 handle is a string that refers to something: a name, an alias, a peer id,
 a stored image id, a file path, an email address, a bead id. An anchor is
 the thing it refers to, usually a graph entity, otherwise an anchor of its
@@ -224,7 +228,9 @@ An impression's fresh part (§5) and the associative pass both need a
 record of interactions. Today an agent's exchanges with peers leave no trace in its
 own memory: a peer's message is handled by a separate peer thought, and its
 words go to the boards, not to the agent's episodes or summary. An
-**interaction index** fixes this. It is a projection that, for each
+**interaction index** fixes this. It is the experience index that already
+serves `search_experience` (src/mind/experience.lisp), extended rather
+than duplicated: for each
 interaction (a turn, a reply, a board post sent or received, a
 notification, a tool action), records:
 

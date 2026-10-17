@@ -220,14 +220,15 @@ fixed in code, never input."
 (defvar *embedding-sources* (make-hash-table :test 'equal)
   "Source name -> plist (:missing :text :record).")
 
-(defmacro define-embedding-source (name &key missing text record)
+(defmacro define-embedding-source (name &key missing text record (batch 20))
   "Register NAME as something whose items are embedded. MISSING (kernel
 batch) lists ids not yet embedded; TEXT (kernel id) is the text to embed, or
 NIL when the item is gone; RECORD (kernel id model vector) keeps the
-vector, normally by appending an event. Defines the work handler
+vector, normally by appending an event. BATCH is how many missing items
+one backfill pass queues. Defines the work handler
 \"NAME.embed\", whose entity is the item's id."
   `(progn
-     (setf (gethash ,name *embedding-sources*) (list :missing ,missing :text ,text :record ,record))
+     (setf (gethash ,name *embedding-sources*) (list :missing ,missing :text ,text :record ,record :batch ,batch))
      (define-handler ,(format nil "~a.embed" name)
        :run (lambda (kernel work) (%embed-item kernel ,name (getf work :entity)) nil))))
 
@@ -247,17 +248,18 @@ vector, normally by appending an event. Defines the work handler
 (defvar *embedding-backfill-at* (make-hash-table :test 'eq :weakness :key)
   "Kernel -> when the backfill last looked.")
 
-(defun request-missing-embeddings (kernel &key (every 600) (batch 20))
+(defun request-missing-embeddings (kernel &key (every 600) batch)
   "Queue embedding for items of every source that have none: those formed
 while the embedding service could not be reached would otherwise never be
-found. Looks at most every EVERY seconds, BATCH items per source at a time.
+found. Looks at most every EVERY seconds, each source's own batch at a time
+(or BATCH for all, when given).
 Returns how many were queued, or NIL when it was not yet time to look."
   (let ((last (gethash kernel *embedding-backfill-at* 0)))
     (when (>= (- (now) last) every)
       (setf (gethash kernel *embedding-backfill-at*) (now))
       (let ((n 0))
         (maphash (lambda (source spec)
-                   (dolist (id (funcall (getf spec :missing) kernel batch))
+                   (dolist (id (funcall (getf spec :missing) kernel (or batch (getf spec :batch))))
                      (unless (work-pending-p kernel (format nil "~a.embed" source) id)
                        (request-embedding kernel source id)
                        (incf n))))

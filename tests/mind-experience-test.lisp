@@ -76,4 +76,42 @@
             (pai-v3.mind::*embedding-cache* '()))
         (is (search "unavailable" (run-tool k id "recall" (obj "about" "something new"))))))))
 
+(deftest interactions-are-found-by-identifier-and-name
+  (with-experience (k)
+    (append! k "fleet.peer.joined" (obj "peer_id" "49463f05-c184" "name" "Nova" "address" "http://x" "how" "approved"))
+    (append! k "fleet.board.posted"
+             (obj "msg_id" "m-1" "thread_id" "t-77aa" "thread_title" "Portraits" "author_id" "49463f05-c184"
+                  "author_name" "Nova" "text" "Here is my new portrait." "operation_id" "op" "request_key" "rk"
+                  "timestamp" 1 "images" (list "abcdef0123456789abcdef0123456789")))
+    (append! k "image.generated" (obj "image_id" "abcdef0123456789abcdef0123456789" "prompt" "a lighthouse at dusk"
+                                      "model" "m" "width" 1 "height" 1 "cost_usd" 0.001d0))
+    (is (equal '(("49463f05-c184" "Nova")) (pai-v3.mind::handles-in k "writing to 49463f05-c184 now"))
+        "a peer id means its name")
+    (is (search "lighthouse" (second (first (pai-v3.mind::handles-in k "image ABCDEF0123456789ABCDEF0123456789")))))
+    (is (search "board thread" (second (first (pai-v3.mind::handles-in k "in t-77aa")))))
+    (let ((by-id (pai-v3.mind::experience-mentioning k (list "49463f05-c184") "operator")))
+      (is (= 2 (length by-id)) "the joining and the post both name the peer's id")
+      (is (search "portrait" (third (first by-id))) "newest first"))
+    (is (search "lighthouse" (third (first (pai-v3.mind::experience-mentioning k (list "abcdef0123456789abcdef0123456789") "operator"))))
+        "the image made, and the post that carried it")
+    (is (pai-v3.mind::experience-mentioning k (list "Nova") "operator") "and by name")
+    (is (null (pai-v3.mind::experience-mentioning k (list "Nova") "peer:someone-else"))
+        "another peer does not see what passed with this one")))
+
+(deftest interactions-are-embedded-and-found-by-meaning
+  (with-experience (k)
+    (setf pai-v3.mind::*embedder-resting-until* 0)
+    (remhash k pai-v3.mind::*embedding-backfill-at*)
+    (receive-turn k :channel "web" :audience "operator" :speaker "Operator"
+                    :text "The garden needs water every morning" :origin (obj "principal_type" "operator"))
+    (deliver-reply k :channel "web" :audience "operator" :text "Working on it" :interim t)
+    (deliver-reply k :channel "web" :audience "operator" :text "The boiler service is booked for Thursday")
+    (is (= 2 (pai-v3.mind::request-missing-embeddings k)) "a status line between steps is not embedded")
+    (loop repeat 200 until (eq :idle (run-scheduler-step k)))
+    (let ((near (pai-v3.mind::experience-near k (embed "water the garden in the morning") "operator")))
+      (is (search "garden" (third (first near))) "the nearest in meaning comes first")
+      (is (< (second (first near)) (second (second near)))))
+    (is (null (pai-v3.mind::experience-near k (embed "garden") "peer:someone")) "scoped by audience")
+    (is (zerop (pai-v3.mind::request-missing-embeddings k :every 0)) "nothing is left to embed")))
+
 (run-suite "mind-experience")
