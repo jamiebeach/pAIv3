@@ -79,6 +79,7 @@
     ("companion_of" ("person" "organism") ("person" "organism"))
     ("has_age" ("person" "organism") ("attribute_value"))
     ("has_gender" ("person" "organism") ("attribute_value"))
+    ("has_appearance" ,+graph-all-kinds+ ("attribute_value"))
     ("appears_in" ,+graph-all-kinds+ ("artifact"))
     ;; Everyday relations v2 had no word for, found by reading what its
     ;; related_to facts said (bead v3-clp.15): 81% of its facts were related_to.
@@ -124,6 +125,7 @@
     ("daughter_of" . "is the daughter of") ("son_of" . "is the son of")
     ("spouse_of" . "is married to or the partner of") ("companion_of" . "is a companion (or pet) of")
     ("has_age" . "is this age") ("has_gender" . "has this gender")
+    ("has_appearance" . "looks like this (the description is in the statement; cite the picture when there is one)")
     ("appears_in" . "is a character, place or thing in this work")
     ("sibling_of" . "is a brother or sister of") ("relative_of" . "is related by family to (other than parent, child, sibling, spouse)")
     ("friend_of" . "is a friend of") ("knows" . "is acquainted with")
@@ -149,7 +151,10 @@
 (defparameter +temporal-characters+
   '("event" "temporary-state" "ongoing-state" "standing-disposition" "timeless" "unspecified"))
 (defparameter +evidence-kinds+
-  '("original-utterance" "prior-agent-utterance" "tool-observation" "generated-summary" "retrieval-metadata"))
+  '("original-utterance" "prior-agent-utterance" "tool-observation" "generated-summary" "retrieval-metadata"
+    ;; A picture the fact was read from (bead v3-3za): its quote describes
+    ;; what the image shows, and its source_ref is image:<stored image id>.
+    "image"))
 (defparameter +lineage-hows+ '("formed" "imported" "migrated"))
 (defparameter +grounding-scopes+ '("assertion" "reported-speech" "proposal" "intention" "question" "hypothesis"))
 (defparameter +polarities+ '("positive" "negative" "unknown"))
@@ -363,12 +368,20 @@ when given (an import keeps its source's ids), else a new one."
     (obj "character" character "occurred_at" (obj-get given "occurred_at")
          "valid_from" (obj-get given "valid_from") "valid_until" (obj-get given "valid_until"))))
 
-(defun %evidence (evidence)
+(defun %image-ref (ev)
+  "The stored image id an image piece of evidence cites, or NIL."
+  (let ((ref (obj-get ev "source_ref")))
+    (and (stringp ref) (> (length ref) 6) (string= "image:" ref :end2 6) (subseq ref 6))))
+
+(defun %evidence (evidence kernel)
   (unless (and (listp evidence) (plusp (length evidence))) (%graph-refuse "a fact needs evidence: at least one quote"))
   (loop for ev in evidence
         unless (and (hash-table-p ev) (member (obj-get ev "kind") +evidence-kinds+ :test #'equal)
                     (stringp (obj-get ev "quote")) (< 0 (length (string-trim " " (obj-get ev "quote"))) 1001))
-          do (%graph-refuse "each piece of evidence needs a kind and a quote of 1 to 1000 characters"))
+          do (%graph-refuse "each piece of evidence needs a kind and a quote of 1 to 1000 characters")
+        when (equal "image" (obj-get ev "kind"))
+          do (unless (and (%image-ref ev) (image-row kernel (%image-ref ev)))
+               (%graph-refuse "image evidence must cite a stored image as image:<id>")))
   evidence)
 
 (defun %grounding (grounding)
@@ -405,7 +418,7 @@ Returns (values fact-id :admitted|:supported). Signals GRAPH-REFUSED."
     (let ((problem (%lineage-problem lineage))) (when problem (%graph-refuse "~a" problem)))
     (let* ((temporal (%temporal temporal))
            (grounding (%grounding grounding))
-           (evidence (%evidence evidence))
+           (evidence (%evidence evidence kernel))
            (same (sql-value (kernel-db kernel)
                             "SELECT id FROM graph_facts WHERE subject=?1 AND predicate=?2 AND object=?3 AND status=?4 AND character=?5 AND scope=?6 AND polarity=?7 AND coalesce(lower(trim(text)),'')=?8 AND world=?9 LIMIT 1"
                             (first s) predicate (first o) "active" (obj-get temporal "character")

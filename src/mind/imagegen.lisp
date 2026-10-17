@@ -76,7 +76,7 @@
     (http-request :post url :headers headers :body body :read-timeout 120))
   "(lambda (url headers body)) -> body, status. Replaced in tests.")
 
-(defun generate-image (kernel thought-id prompt &key (size "square") references)
+(defun generate-image (kernel thought-id prompt &key (size "square") references depicts)
   "Make an image of PROMPT. With REFERENCES (stored image ids), the reference
 model makes it, keeping who or what they show. Returns the text the agent
 sees."
@@ -125,8 +125,23 @@ sees."
                               (obj "image_id" id "prompt" prompt "model" model "references" references
                                    "width" (second shape) "height" (third shape) "cost_usd" cost
                                    "thought_id" thought-id))
-                     (format nil "Made image ~a (US$~,4f). To show it, put this in your reply on a line of its own:~%![~a](/api/v2/images/~a)"
-                             id cost (substitute #\Space #\] (subseq prompt 0 (min 80 (length prompt)))) id)))))))))
+                     (let ((shows (%note-made-depictions kernel id depicts references thought-id)))
+                       (format nil "Made image ~a (US$~,4f).~@[ It shows ~{~a~^, ~}.~] To show it, put this in your reply on a line of its own:~%![~a](/api/v2/images/~a)"
+                               id cost shows (substitute #\Space #\] (subseq prompt 0 (min 80 (length prompt)))) id))))))))))
+
+(defun %note-made-depictions (kernel image-id depicts references thought-id)
+  "Link a made image to who it shows: those named in DEPICTS, and those its
+REFERENCES show. Returns their names; a name that resolves to nothing is skipped."
+  (let ((names '()))
+    (dolist (ref depicts)
+      (handler-case (setf names (append names (note-depictions kernel image-id (list ref) :how "made"
+                                                                                       :source-event-id thought-id)))
+        (error () nil)))
+    (dolist (entity (depicted-in kernel references))
+      (handler-case (progn (note-depiction kernel image-id entity :how "shown" :source-event-id thought-id)
+                           (pushnew (third (graph-entity kernel entity)) names :test #'equal))
+        (error () nil)))
+    names))
 
 (define-tool "generate_image"
   :description "Make an image from a description, with the image model the operator chose. prompt: what the image shows,
@@ -134,14 +149,18 @@ concretely (subject, setting, style, light, composition); size: square, portrait
 the result says how to show it in a reply. Each image costs money and there is a daily budget, so make one when it is
 wanted, not several to choose from. references: ids of up to 4 stored images (ones I made, or the operator sent)
 showing who or what should appear again, for a consistent portrait or the same character in a new scene; a model
-that keeps identity from references then makes it. Describe the new scene in the prompt."
+that keeps identity from references then makes it. Describe the new scene in the prompt. depicts: names or
+entity ids of who or what the image shows, so I can find it again as a picture of them (whoever the references
+show is linked anyway)."
   :summary "Make an image from a description."
   :available :operator-trust
   :parameters (obj "type" "object"
                    "properties" (obj "prompt" (obj "type" "string")
                                      "size" (obj "type" "string" "enum" (mapcar #'first +image-sizes+))
-                                     "references" (obj "type" "array" "items" (obj "type" "string")))
+                                     "references" (obj "type" "array" "items" (obj "type" "string"))
+                                     "depicts" (obj "type" "array" "items" (obj "type" "string")))
                    "required" (list "prompt"))
   :run (lambda (kernel thought-id args)
          (generate-image kernel thought-id (obj-get args "prompt") :size (or (obj-get args "size") "square")
-                         :references (let ((r (obj-get args "references"))) (and (consp r) (remove-if-not #'stringp r))))))
+                         :references (let ((r (obj-get args "references"))) (and (consp r) (remove-if-not #'stringp r)))
+                         :depicts (let ((d (obj-get args "depicts"))) (and (consp d) (remove-if-not #'stringp d))))))

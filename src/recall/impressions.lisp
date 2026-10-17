@@ -120,6 +120,8 @@ by default, those ANCHOR itself opens."
                                 (and known (list (string-right-trim '(#\Newline) known)))))
                          (subseq memories 0 (min *memories-most* (length memories))))))))
         (list :anchor anchor :name name :kind kind
+              ;; Pictures of the operator's world are the operator's.
+              :pictures (and operator entity (pictures-of kernel entity))
               :settled settled
               :fresh (subseq fresh 0 (min *fresh-most* (length fresh)))
               :open (open-items-about kernel terms audience)
@@ -127,6 +129,6 @@ by default, those ANCHOR itself opens."
 
 (defun render-impression (impression)
   "IMPRESSION as the lines the agent reads, marked as recall."
-  (destructuring-bind (&key name kind settled fresh open &allow-other-keys) impression
-    (format nil "Recalled about ~a (~a):~@[~%~{  ~a~^~%~}~]~@[~%  Lately:~%~{    ~a~^~%~}~]~@[~%  Open:~%~{    ~a~^~%~}~]"
-            name kind settled fresh open)))
+  (destructuring-bind (&key name kind settled fresh open pictures &allow-other-keys) impression
+    (format nil "Recalled about ~a (~a):~@[~%~{  ~a~^~%~}~]~@[~%  Pictures (stored image ids, to look at or use as references): ~{~a~^, ~}~]~@[~%  Lately:~%~{    ~a~^~%~}~]~@[~%  Open:~%~{    ~a~^~%~}~]"
+            name kind settled pictures fresh open)))

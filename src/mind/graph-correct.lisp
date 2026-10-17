@@ -107,7 +107,13 @@ The quote must be in the operator's turn: nothing they did not say goes in."
            (object (%entity-for kernel (obj-get args "object") (obj-get args "object_kind") world)))
       (multiple-value-bind (id how)
           (admit-fact kernel :subject subject :predicate (obj-get args "predicate") :object object :text statement :world world
-                             :evidence (list (obj "kind" "original-utterance" "quote" quote "source_event_id" source))
+                             :evidence (append (list (obj "kind" "original-utterance" "quote" quote "source_event_id" source))
+                                               ;; The picture the fact was read from, when there is one.
+                                               (let ((image (obj-get args "image")))
+                                                 (and (stringp image) (plusp (length image))
+                                                      (list (obj "kind" "image" "quote" statement
+                                                                 "source_ref" (format nil "image:~a" image)
+                                                                 "source_event_id" source)))))
                              :lineage (list (lineage-hop (kernel-agent-id kernel) "formed")))
         (format nil "~:[Added~;Supported~] ~a: ~a" (eq how :supported) id statement)))))
 
@@ -117,7 +123,8 @@ retract (fact_id, reason) when a fact is wrong; merge (entity_id into into, reas
 alias) for another name; predicate (fact_id, predicate, reason) when the fact is right but its relation is wrong;
 world (entity_ids, world: a work's entity id or real, reason) when something from a story was taken as real, or the
 other way round; add (subject and object: an entity id or a name, subject_kind and object_kind for a name, predicate,
-statement: the fact in one sentence, quote: the operator's own words from this turn) when they tell me something new. Look the ids up with the knowledge tool first. Every correction is kept with its reason."
+statement: the fact in one sentence, quote: the operator's own words from this turn, and image: a stored image id
+when the fact was read from a picture, such as has_appearance) when they tell me something new. Look the ids up with the knowledge tool first. Every correction is kept with its reason."
   :summary "Correct my knowledge graph."
   :available '("operator")
   :parameters (obj "type" "object"
@@ -129,6 +136,7 @@ statement: the fact in one sentence, quote: the operator's own words from this t
                                      "subject" (obj "type" "string") "subject_kind" (obj "type" "string")
                                      "object" (obj "type" "string") "object_kind" (obj "type" "string")
                                      "statement" (obj "type" "string") "quote" (obj "type" "string")
+                                     "image" (obj "type" "string")
                                      "reason" (obj "type" "string"))
                    "required" (list "action"))
   :run (lambda (kernel thought-id args)

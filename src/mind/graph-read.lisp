@@ -120,8 +120,9 @@ at. NIL when its facts are all in closed worlds or have ended."
   (destructuring-bind (id kind name summary status merged origin path lineage world) entity
     (declare (ignore status merged origin path))
     (let ((facts (entity-facts kernel id :limit 40)))
-      (format nil "~a (~a, ~a~@[, in the world of ~a~]) — from ~a~@[~%~a~]~%~:[No facts.~;~:*~{~a~^~%~}~]"
+      (format nil "~a (~a, ~a~@[, in the world of ~a~]) — from ~a~@[~%~a~]~@[~%Pictures: ~{~a~^, ~}~]~%~:[No facts.~;~:*~{~a~^~%~}~]"
               name kind id (world-name kernel world) (%lineage-of lineage (kernel-agent-id kernel)) summary
+              (pictures-of kernel id)
               (mapcar (lambda (f)
                         (let ((evidence (fact-evidence kernel (first f))))
                           (format nil "- ~a [~a]~@[~%    \"~a\"~]" (render-fact kernel f) (first f)
