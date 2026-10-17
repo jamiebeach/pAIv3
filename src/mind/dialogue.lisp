@@ -97,6 +97,6 @@ fitted to TOKEN-BUDGET. One indexed read of at most MAX-ROWS rows."
           while (<= (+ used tokens) token-budget)
           do (incf used tokens)
              (push (make-dialogue-row :event-id id :channel channel :speaker speaker
-                                      :text text :tokens tokens)
+                                      :text (localize-dialogue kernel text) :tokens tokens)
                    kept))
     (values kept used)))

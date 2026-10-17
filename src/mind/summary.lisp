@@ -71,7 +71,7 @@ oldest first, as (event-id rendered tokens), bounded by the input limit."
                                audience covers window-start)
           while (<= (+ used (third row)) limit)
           do (incf used (third row))
-          collect row)))
+          collect (list (first row) (localize-dialogue kernel (second row)) (third row)))))
 
 (defun request-summaries (kernel)
   "Ask for a fold for each audience with enough unsummarised conversation.

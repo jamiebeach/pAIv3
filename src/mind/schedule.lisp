@@ -70,6 +70,25 @@
 
 ;;; Time
 
+(defun local-stamp (kernel iso)
+  "ISO8601 time ISO as the operator's wall clock, naming the zone:
+2026-10-17T00:53:00Z -> Fri 2026-10-16 20:53 EDT."
+  (local-time:format-timestring
+   nil (local-time:parse-timestring iso)
+   :format '(:short-weekday " " (:year 4) "-" (:month 2) "-" (:day 2) " " (:hour 2) ":" (:min 2) " " :timezone)
+   :timezone (%zone kernel nil)))
+
+(defun localize-dialogue (kernel rendered)
+  "A dialogue line with its leading UTC stamp ([2026-10-17 00:53 web] ...)
+in the operator's time. Bare UTC stamps were read as local time (both agents
+did, more than once) even with the clock slot saying otherwise."
+  (if (and (> (length rendered) 18) (char= #\[ (char rendered 0)) (char= #\Space (char rendered 17))
+           (every #'digit-char-p (remove #\: (remove #\- (remove #\Space (subseq rendered 1 17))))))
+      (let ((iso (format nil "~aT~a:00Z" (subseq rendered 1 11) (subseq rendered 12 17))))
+        (or (ignore-errors (concatenate 'string "[" (local-stamp kernel iso) (subseq rendered 17)))
+            rendered))
+      rendered))
+
 (defun %zone (kernel name)
   (local-time:find-timezone-by-location-name
    (if (or (null name) (string= name "user")) (setting kernel "time.zone") name)))
@@ -93,7 +112,7 @@
   (let* ((name (setting kernel "time.zone"))
          (zone (%zone kernel nil))
          (weekday (sixth (%local (now) zone)))
-         (text (format nil "It is ~a, ~a, in ~a (~a UTC). Times in what follows are UTC unless they say otherwise."
+         (text (format nil "It is ~a, ~a, in ~a (~a UTC). Conversation times are in this zone; other times say UTC."
                        (nth weekday '("Sunday" "Monday" "Tuesday" "Wednesday" "Thursday" "Friday" "Saturday"))
                        (local-slot (now) zone) name (subseq (local-slot (now) local-time:+utc-zone+) 11))))
     (list (list text (estimate-tokens text)))))

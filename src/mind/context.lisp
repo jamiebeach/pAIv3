@@ -68,7 +68,7 @@ list of (text tokens) rows, most relevant first.")
         (sql-rows (kernel-db kernel)
                   "SELECT reason,outcome,status,updated_at FROM thoughts WHERE audience=?1 AND id<>?2 ORDER BY id DESC LIMIT 40"
                   (getf request :audience) (or (getf request :thought-id) 0))
-        for text = (format nil "[~a] ~a -> ~a~@[: ~a~]" (subseq at 0 16) reason status outcome)
+        for text = (format nil "[~a UTC] ~a -> ~a~@[: ~a~]" (subseq at 0 16) reason status outcome)
         collect (list text (estimate-tokens text))))
 
 ;;; Assembly
@@ -160,6 +160,7 @@ A message with no tool call ends your turn. Never end one by saying what you wil
                                 ;; the last user message, where any chat model looks for them.
                                 :task (or (and (string= "responding" (getf thought :origin))
                                                (getf thought :source-event-id)
-                                               (sql-value (kernel-db kernel) "SELECT rendered FROM working_dialogue WHERE event_id=?1 LIMIT 1"
-                                                          (getf thought :source-event-id)))
+                                               (let ((turn (sql-value (kernel-db kernel) "SELECT rendered FROM working_dialogue WHERE event_id=?1 LIMIT 1"
+                                                                      (getf thought :source-event-id))))
+                                                 (and turn (localize-dialogue kernel turn))))
                                           (format nil "~a" (getf thought :reason)))))))

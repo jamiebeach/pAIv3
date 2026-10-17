@@ -78,7 +78,7 @@
            (if rows
                (format nil "~{~a~^~%~}"
                        (loop for (kind at snippet ref) in rows
-                             collect (format nil "[~a ~a] ~a (~a): ~a"
+                             collect (format nil "[~a ~a UTC] ~a (~a): ~a"
                                              (subseq at 0 10) (subseq at 11 16) kind ref snippet)))
                "Nothing in my experience matches that."))))
 

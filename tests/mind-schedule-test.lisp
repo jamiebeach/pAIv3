@@ -83,6 +83,20 @@
         (is (search "in America/New_York" text))
         (is (search (format nil "~a" (pai-v3.mind:local-slot (now) (local-time:find-timezone-by-location-name "America/New_York"))) text)
             "the local wall time")
-        (is (search "UTC unless" text) "and that other stamps are UTC")))))
+        (is (search "other times say UTC" text) "and that other stamps say UTC")))))
+
+(deftest conversation-is-stamped-in-the-operators-time
+  (with-temp-kernel (k)
+    (change-setting k "time.zone" "America/Toronto" :origin *op*)
+    (is (equal "[Fri 2026-10-16 20:53 EDT web] Operator: hi"
+               (pai-v3.mind::localize-dialogue k "[2026-10-17 00:53 web] Operator: hi"))
+        "a UTC stamp after midnight is still the evening before, where the operator is")
+    (is (equal "[Mon 2026-01-05 07:00 EST web] Me: ok"
+               (pai-v3.mind::localize-dialogue k "[2026-01-05 12:00 web] Me: ok")))
+    (is (equal "no stamp here" (pai-v3.mind::localize-dialogue k "no stamp here")))
+    (receive-turn k :channel "web" :audience "operator" :speaker "Sam" :text "hello")
+    (is (search "Sam: hello" (dialogue-row-text (first (recent-dialogue k "operator")))))
+    (is (not (search (subseq (now-iso8601) 0 10) (subseq (dialogue-row-text (first (recent-dialogue k "operator"))) 0 5)))
+        "the line no longer starts with the bare UTC date")))
 
 (run-suite "mind-schedule")
