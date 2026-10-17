@@ -47,6 +47,20 @@
     (let ((h (ironclad:byte-array-to-hex-string b)))
       (format nil "~a-~a-~a-~a-~a" (subseq h 0 8) (subseq h 8 12) (subseq h 12 16) (subseq h 16 20) (subseq h 20)))))
 
+;; Errors the operator can act on, said as cause and action (bead v3-q78);
+;; anything else keeps the provider's own message.
+(defun %image-refusal (status message)
+  (let ((m (string-downcase (or message ""))))
+    (cond ((member status '(401 403))
+           "The image was not made: the provider refused the key. The operator should check the runware secret.")
+          ((or (eql status 402) (search "credit" m) (search "invoice" m) (search "balance" m))
+           "The image was not made: the provider account has no credit. The operator needs to add funds to the Runware account.")
+          ((eql status 429)
+           "The image was not made: the provider is limiting requests. Try again in a minute.")
+          ((and (integerp status) (>= status 500))
+           (format nil "The image was not made: the provider failed (HTTP ~a). Try again later." status))
+          (t (format nil "The image was not made (HTTP ~a): ~a" status message)))))
+
 (defvar *image-post*
   (lambda (url headers body)
     (http-request :post url :headers headers :body body :read-timeout 120))
@@ -79,10 +93,10 @@
                     (result (and (hash-table-p answer) (first (obj-get answer "data"))))
                     (data (and result (obj-get result "imageBase64Data"))))
                (if (not (and (eql status 200) (stringp data)))
-                   (format nil "The image was not made (HTTP ~a): ~a" status
-                           (let ((e (and (hash-table-p answer) (first (obj-get answer "errors")))))
-                             (or (and e (obj-get e "message"))
-                                 (subseq (or body "") 0 (min 300 (length (or body "")))))))
+                   (%image-refusal status
+                                   (let ((e (and (hash-table-p answer) (first (obj-get answer "errors")))))
+                                     (or (and e (obj-get e "message"))
+                                         (subseq (or body "") 0 (min 300 (length (or body "")))))))
                    (let ((id (store-image kernel (format nil "data:image/png;base64,~a" data)))
                          (cost (let ((c (obj-get result "cost"))) (if (realp c) (float c 1d0) 0d0))))
                      (append! kernel "image.generated"
