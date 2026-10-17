@@ -13,6 +13,9 @@
 (define-setting "images.generation_model"
   :type :string :default "runware:z-image@turbo" :group "Images"
   :description "The model images are made with, by its Runware identifier.")
+(define-setting "images.reference_model"
+  :type :string :default "bytedance:seedream@5.0-flash" :group "Images"
+  :description "The model used when an image starts from reference images (a consistent portrait, the same character in a new scene): one that keeps identity from references, by its Runware identifier.")
 (define-setting "images.generation_daily_usd"
   :type :number :min 0 :max 50 :default 1.0d0 :group "Images"
   :description "Most US dollars of image making a day (UTC). At the limit, image making waits for the next day.")
@@ -20,7 +23,7 @@
 (define-event-type "image.generated"
   :schema (("image_id" :string) ("prompt" :string) ("model" :string)
            ("width" :integer) ("height" :integer) ("cost_usd" :number) ("thought_id" :integer :optional)
-           ("reference" :string :optional)))
+           ("references" :array :optional)))
 
 (define-projection "generated_images"
   :kind :inline
@@ -36,6 +39,12 @@
 (defparameter +image-sizes+
   '(("square" 1024 1024) ("portrait" 832 1216) ("landscape" 1216 832))
   "Shapes an image may take, in pixels; multiples of 64, as the models want.")
+
+(defparameter +reference-sizes+
+  '(("square" 2048 2048) ("portrait" 1664 2496) ("landscape" 2496 1664))
+  "The same shapes for the reference model, which wants at least 3.69 megapixels.")
+
+(defparameter *references-most* 4 "Most reference images one image may start from.")
 
 (defun images-spent-today (kernel)
   (or (sql-value (kernel-db kernel) "SELECT sum(cost_usd) FROM generated_images WHERE day=?1 LIMIT 1"
@@ -67,22 +76,24 @@
     (http-request :post url :headers headers :body body :read-timeout 120))
   "(lambda (url headers body)) -> body, status. Replaced in tests.")
 
-(defun generate-image (kernel thought-id prompt &key (size "square") reference (strength 0.6))
-  "Make an image of PROMPT, starting from stored image REFERENCE when given
-(STRENGTH 0 to 1: how far the result may move from it). Returns the text
-the agent sees."
-  (let ((url (setting kernel "images.generation_url"))
-        (model (setting kernel "images.generation_model"))
-        (shape (assoc size +image-sizes+ :test #'equal))
-        (limit (setting kernel "images.generation_daily_usd")))
+(defun generate-image (kernel thought-id prompt &key (size "square") references)
+  "Make an image of PROMPT. With REFERENCES (stored image ids), the reference
+model makes it, keeping who or what they show. Returns the text the agent
+sees."
+  (let* ((url (setting kernel "images.generation_url"))
+         (model (setting kernel (if references "images.reference_model" "images.generation_model")))
+         (shape (assoc size (if references +reference-sizes+ +image-sizes+) :test #'equal))
+         (output (if references "JPG" "PNG"))
+         (limit (setting kernel "images.generation_daily_usd")))
     (cond ((equal url "") "Image making is off: images.generation_url is not set.")
           ((not (and (stringp prompt) (<= 3 (length (string-trim " " prompt)) 2000)))
            "Describe the image in 3 to 2000 characters.")
           ((null shape) (format nil "size is one of ~{~a~^, ~}." (mapcar #'first +image-sizes+)))
-          ((and reference (null (image-row kernel reference)))
-           (format nil "There is no stored image ~a to start from." reference))
-          ((not (and (realp strength) (<= 0.05 strength 1)))
-           "strength is from 0.05 (stay close to the reference) to 1 (change freely).")
+          ((> (length references) *references-most*)
+           (format nil "At most ~d reference images." *references-most*))
+          ((find-if-not (lambda (r) (image-row kernel r)) references)
+           (format nil "There is no stored image ~a to start from."
+                   (find-if-not (lambda (r) (image-row kernel r)) references)))
           ((>= (images-spent-today kernel) limit)
            (format nil "Today's image budget (US$~,2f) is spent; image making resumes tomorrow (UTC)." limit))
           (t
@@ -95,10 +106,10 @@ the agent sees."
                                                             "positivePrompt" prompt "model" model
                                                             "width" (second shape) "height" (third shape)
                                                             "numberResults" 1 "outputType" "base64Data"
-                                                            "outputFormat" "PNG" "includeCost" t)))
-                                             (when reference
-                                               (setf (gethash "inputs" task) (obj "seedImage" (image-data-url kernel reference))
-                                                     (gethash "strength" task) (float strength 1d0)))
+                                                            "outputFormat" output "includeCost" t)))
+                                             (when references
+                                               (setf (gethash "inputs" task)
+                                                     (obj "referenceImages" (mapcar (lambda (r) (image-data-url kernel r)) references))))
                                              task))))
              (let* ((answer (ignore-errors (json-parse body)))
                     (result (and (hash-table-p answer) (first (obj-get answer "data"))))
@@ -108,10 +119,10 @@ the agent sees."
                                    (let ((e (and (hash-table-p answer) (first (obj-get answer "errors")))))
                                      (or (and e (obj-get e "message"))
                                          (subseq (or body "") 0 (min 300 (length (or body "")))))))
-                   (let ((id (store-image kernel (format nil "data:image/png;base64,~a" data)))
+                   (let ((id (store-image kernel (format nil "data:image/~:[png~;jpeg~];base64,~a" references data)))
                          (cost (let ((c (obj-get result "cost"))) (if (realp c) (float c 1d0) 0d0))))
                      (append! kernel "image.generated"
-                              (obj "image_id" id "prompt" prompt "model" model "reference" reference
+                              (obj "image_id" id "prompt" prompt "model" model "references" references
                                    "width" (second shape) "height" (third shape) "cost_usd" cost
                                    "thought_id" thought-id))
                      (format nil "Made image ~a (US$~,4f). To show it, put this in your reply on a line of its own:~%![~a](/api/v2/images/~a)"
@@ -121,19 +132,16 @@ the agent sees."
   :description "Make an image from a description, with the image model the operator chose. prompt: what the image shows,
 concretely (subject, setting, style, light, composition); size: square, portrait or landscape. The image is kept, and
 the result says how to show it in a reply. Each image costs money and there is a daily budget, so make one when it is
-wanted, not several to choose from. reference: the id of a stored image (one I made, or one the operator sent) to
-start from, keeping its look, for a consistent portrait or a variation; strength (0.05 to 1, default 0.6) is how far
-the new image may move from it: low stays close, high changes more. A reference keeps composition and colour more
-than identity, so describe the subject fully in the prompt too."
+wanted, not several to choose from. references: ids of up to 4 stored images (ones I made, or the operator sent)
+showing who or what should appear again, for a consistent portrait or the same character in a new scene; a model
+that keeps identity from references then makes it. Describe the new scene in the prompt."
   :summary "Make an image from a description."
   :available :operator-trust
   :parameters (obj "type" "object"
                    "properties" (obj "prompt" (obj "type" "string")
                                      "size" (obj "type" "string" "enum" (mapcar #'first +image-sizes+))
-                                     "reference" (obj "type" "string")
-                                     "strength" (obj "type" "number"))
+                                     "references" (obj "type" "array" "items" (obj "type" "string")))
                    "required" (list "prompt"))
   :run (lambda (kernel thought-id args)
          (generate-image kernel thought-id (obj-get args "prompt") :size (or (obj-get args "size") "square")
-                         :reference (let ((r (obj-get args "reference"))) (and (stringp r) (plusp (length r)) r))
-                         :strength (or (obj-get args "strength") 0.6))))
+                         :references (let ((r (obj-get args "references"))) (and (consp r) (remove-if-not #'stringp r))))))
