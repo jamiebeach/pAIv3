@@ -446,6 +446,11 @@ Returns (values fact-id :admitted|:supported). Signals GRAPH-REFUSED."
             (sql-rows db "SELECT id,subject,predicate,object,character,derivation,path,scope,polarity,text,world FROM graph_facts WHERE object=?1 AND status=?2 LIMIT ?3"
                       entity-id "active" limit))))
 
+(defun live-fact (kernel fact-id)
+  "Fact FACT-ID while it is active, in the shape ENTITY-FACTS gives; else NIL."
+  (sql-row (kernel-db kernel) "SELECT id,subject,predicate,object,character,derivation,path,scope,polarity,text,world FROM graph_facts WHERE id=?1 AND status=?2 LIMIT 1"
+           fact-id "active"))
+
 (defun fact-evidence (kernel fact-id)
   (sql-rows (kernel-db kernel) "SELECT kind,quote,source_event_id,speaker,origin,source_ref,at FROM graph_evidence WHERE fact_id=?1 ORDER BY seq LIMIT 20" fact-id))
 

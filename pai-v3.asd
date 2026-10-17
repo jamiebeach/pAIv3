@@ -44,6 +44,7 @@
                  (:file "graph")
                  (:file "graph-import")
                  (:file "graph-read")
+                 (:file "graph-vectors")
                  (:file "graph-form")
                  (:file "graph-recover")
                  (:file "graph-correct")
