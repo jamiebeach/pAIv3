@@ -84,6 +84,10 @@ the browser to http://."
         (hunchentoot:content-type*) "application/json")
   (json-encode object))
 
+(defvar *agent-name* nil
+  "The name of the agent answering this request, for page titles: with
+several agents open, each tab and home-screen app says whose it is.")
+
 (defvar *session-cookie* "pai_session"
   "The session cookie's name for the agent answering this request. Each agent
 has its own: browsers keep cookies by host, not port, so agents sharing a
@@ -295,7 +299,8 @@ for native clients that send it as a bearer token."
   (let* ((agent (acceptor-agent acceptor))
          (method (hunchentoot:request-method request))
          (path (hunchentoot:script-name request))
-         (*session-cookie* (session-cookie-name agent)))
+         (*session-cookie* (session-cookie-name agent))
+         (*agent-name* (ignore-errors (fleet-own-name (agent-kernel agent)))))
     (if (not (agent-running agent))
         ;; A kept-alive connection outlives the listener; once stopped, the
         ;; agent's store may be closed, so refuse and drop it (bead v3-uy8).

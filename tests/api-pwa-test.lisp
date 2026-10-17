@@ -486,4 +486,12 @@
         (is (equal "edited" (uiop:read-file-string (merge-pathnames "notes/a.txt" root))))
         (uiop:delete-directory-tree (pathname root) :validate t)))))
 
+(deftest pages-and-the-app-carry-the-agents-name
+  (with-pwa (k agent)
+    (change-setting k "fleet.own_name" "Nova" :origin (obj "principal_type" "operator") :reason "test")
+    (is (search "<title>Nova · Sign in</title>" (nth-value 1 (raw-get "/login"))))
+    (let ((manifest (json-parse (nth-value 1 (raw-get "/manifest.webmanifest")))))
+      (is (equal "Nova" (obj-get manifest "short_name")) "a home-screen app is named for its agent")
+      (is (equal "/terminal" (obj-get manifest "start_url")) "and keeps the rest"))))
+
 (run-suite "api-pwa")

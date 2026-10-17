@@ -133,8 +133,28 @@ assets. Returns the compiler's output."
     ("/board-view" . "board.html"))
   "Pages that need a signed-in operator. /login is open.")
 
+(defun %named (name body)
+  "BODY with the answering agent's name in its title (a page) or app name
+(the manifest)."
+  (cond ((null *agent-name*) body)
+        ((string= (pathname-type name) "html")
+         (let* ((open (search "<title>" body)) (close (and open (search "</title>" body :start2 open))))
+           (if (null close)
+               body
+               (let ((title (subseq body (+ open 7) close)))
+                 (dolist (cut '("pAI " "the agent " " to pAI"))
+                   (let ((at (search cut title)))
+                     (when at (setf title (concatenate 'string (subseq title 0 at) (subseq title (+ at (length cut))))))))
+                 (format nil "~a<title>~a · ~a</title>~a" (subseq body 0 open)
+                         (hunchentoot:escape-for-html *agent-name*) title (subseq body (+ close 8)))))))
+        ((string= name "manifest.webmanifest")
+         (let ((o (json-parse body)))
+           (setf (gethash "name" o) (format nil "~a · pAI" *agent-name*) (gethash "short_name" o) *agent-name*)
+           (json-encode o)))
+        (t body)))
+
 (defun %asset (name)
-  (let ((body (gethash name *web-assets*)))
+  (let ((body (let ((raw (gethash name *web-assets*))) (and raw (%named name raw)))))
     (when body
       (setf (hunchentoot:content-type*)
             (or (cdr (assoc (pathname-type name) +asset-types+ :test #'string=)) "application/octet-stream"))
