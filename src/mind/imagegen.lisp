@@ -19,7 +19,8 @@
 
 (define-event-type "image.generated"
   :schema (("image_id" :string) ("prompt" :string) ("model" :string)
-           ("width" :integer) ("height" :integer) ("cost_usd" :number) ("thought_id" :integer :optional)))
+           ("width" :integer) ("height" :integer) ("cost_usd" :number) ("thought_id" :integer :optional)
+           ("reference" :string :optional)))
 
 (define-projection "generated_images"
   :kind :inline
@@ -66,8 +67,10 @@
     (http-request :post url :headers headers :body body :read-timeout 120))
   "(lambda (url headers body)) -> body, status. Replaced in tests.")
 
-(defun generate-image (kernel thought-id prompt &key (size "square"))
-  "Make an image of PROMPT. Returns the text the agent sees."
+(defun generate-image (kernel thought-id prompt &key (size "square") reference (strength 0.6))
+  "Make an image of PROMPT, starting from stored image REFERENCE when given
+(STRENGTH 0 to 1: how far the result may move from it). Returns the text
+the agent sees."
   (let ((url (setting kernel "images.generation_url"))
         (model (setting kernel "images.generation_model"))
         (shape (assoc size +image-sizes+ :test #'equal))
@@ -76,6 +79,10 @@
           ((not (and (stringp prompt) (<= 3 (length (string-trim " " prompt)) 2000)))
            "Describe the image in 3 to 2000 characters.")
           ((null shape) (format nil "size is one of ~{~a~^, ~}." (mapcar #'first +image-sizes+)))
+          ((and reference (null (image-row kernel reference)))
+           (format nil "There is no stored image ~a to start from." reference))
+          ((not (and (realp strength) (<= 0.05 strength 1)))
+           "strength is from 0.05 (stay close to the reference) to 1 (change freely).")
           ((>= (images-spent-today kernel) limit)
            (format nil "Today's image budget (US$~,2f) is spent; image making resumes tomorrow (UTC)." limit))
           (t
@@ -83,12 +90,16 @@
                (funcall *image-post* url
                         (list (cons "Content-Type" "application/json")
                               (cons "Authorization" (list :secret "runware" "Bearer ~a")))
-                        (json-encode (list (obj "taskType" "imageInference"
-                                                "taskUUID" (%uuid-v4)
-                                                "positivePrompt" prompt "model" model
-                                                "width" (second shape) "height" (third shape)
-                                                "numberResults" 1 "outputType" "base64Data"
-                                                "outputFormat" "PNG" "includeCost" t))))
+                        (json-encode (list (let ((task (obj "taskType" "imageInference"
+                                                            "taskUUID" (%uuid-v4)
+                                                            "positivePrompt" prompt "model" model
+                                                            "width" (second shape) "height" (third shape)
+                                                            "numberResults" 1 "outputType" "base64Data"
+                                                            "outputFormat" "PNG" "includeCost" t)))
+                                             (when reference
+                                               (setf (gethash "inputs" task) (obj "seedImage" (image-data-url kernel reference))
+                                                     (gethash "strength" task) (float strength 1d0)))
+                                             task))))
              (let* ((answer (ignore-errors (json-parse body)))
                     (result (and (hash-table-p answer) (first (obj-get answer "data"))))
                     (data (and result (obj-get result "imageBase64Data"))))
@@ -100,7 +111,7 @@
                    (let ((id (store-image kernel (format nil "data:image/png;base64,~a" data)))
                          (cost (let ((c (obj-get result "cost"))) (if (realp c) (float c 1d0) 0d0))))
                      (append! kernel "image.generated"
-                              (obj "image_id" id "prompt" prompt "model" model
+                              (obj "image_id" id "prompt" prompt "model" model "reference" reference
                                    "width" (second shape) "height" (third shape) "cost_usd" cost
                                    "thought_id" thought-id))
                      (format nil "Made image ~a (US$~,4f). To show it, put this in your reply on a line of its own:~%![~a](/api/v2/images/~a)"
@@ -110,12 +121,19 @@
   :description "Make an image from a description, with the image model the operator chose. prompt: what the image shows,
 concretely (subject, setting, style, light, composition); size: square, portrait or landscape. The image is kept, and
 the result says how to show it in a reply. Each image costs money and there is a daily budget, so make one when it is
-wanted, not several to choose from."
+wanted, not several to choose from. reference: the id of a stored image (one I made, or one the operator sent) to
+start from, keeping its look, for a consistent portrait or a variation; strength (0.05 to 1, default 0.6) is how far
+the new image may move from it: low stays close, high changes more. A reference keeps composition and colour more
+than identity, so describe the subject fully in the prompt too."
   :summary "Make an image from a description."
   :available :operator-trust
   :parameters (obj "type" "object"
                    "properties" (obj "prompt" (obj "type" "string")
-                                     "size" (obj "type" "string" "enum" (mapcar #'first +image-sizes+)))
+                                     "size" (obj "type" "string" "enum" (mapcar #'first +image-sizes+))
+                                     "reference" (obj "type" "string")
+                                     "strength" (obj "type" "number"))
                    "required" (list "prompt"))
   :run (lambda (kernel thought-id args)
-         (generate-image kernel thought-id (obj-get args "prompt") :size (or (obj-get args "size") "square"))))
+         (generate-image kernel thought-id (obj-get args "prompt") :size (or (obj-get args "size") "square")
+                         :reference (let ((r (obj-get args "reference"))) (and (stringp r) (plusp (length r)) r))
+                         :strength (or (obj-get args "strength") 0.6))))

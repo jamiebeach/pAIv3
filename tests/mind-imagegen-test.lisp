@@ -59,4 +59,20 @@
       (is (search "3 to 2000" (pai-v3.mind::generate-image k nil "")))
       (is (null *sent*) "bad requests are not sent"))))
 
+(deftest an-image-can-start-from-a-kept-one
+  (with-temp-kernel (k)
+    (let* ((*sent* '()) (pai-v3.mind::*image-post* (runware))
+           (first-said (pai-v3.mind::generate-image k nil "a portrait"))
+           (ref (subseq first-said 11 43)))
+      (setf *sent* '())
+      (is (search "Made image" (pai-v3.mind::generate-image k nil "the same portrait at night" :reference ref :strength 0.4)))
+      (let ((task (first (third (first *sent*)))))
+        (is (uiop:string-prefix-p "data:image/png;base64," (obj-get (obj-get task "inputs") "seedImage"))
+            "the reference goes as the seed image, from the store")
+        (is (< 0.39 (obj-get task "strength") 0.41)))
+      (setf *sent* '())
+      (is (search "no stored image" (pai-v3.mind::generate-image k nil "x y z" :reference "00000000000000000000000000000000")))
+      (is (search "strength is from" (pai-v3.mind::generate-image k nil "x y z" :reference ref :strength 0)))
+      (is (null *sent*) "nothing is sent for a bad reference"))))
+
 (run-suite "mind-imagegen")
