@@ -80,6 +80,7 @@
     :serial t
     :components ((:file "server")
                  (:file "fleet")
+                 (:file "boards")
                  (:file "notify")
                  (:file "google")
                  (:file "files")

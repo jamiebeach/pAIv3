@@ -145,6 +145,26 @@
       (is (null (pai-v3.api::fleet-board-image a b-id thread private))
           "an image not attached to that thread is never served"))))
 
+(deftest an-agent-reads-a-sisters-board-uninvited
+  (with-two-agents (a b)
+    (join a b)
+    (let* ((picture (pai-v3.mind::store-image b +tiny-png+))
+           (said (pai-v3.api::fleet-announce b "My new portrait, for anyone curious." :title "Portrait" :images (list picture)))
+           (thread (first (first (pai-v3.api::board-threads b)))))
+      (declare (ignore said))
+      (is (null (pai-v3.mind::image-row a picture)) "untagged, nothing reached Beta")
+      (let ((listing (pai-v3.api::read-peer-board a "Alpha" nil "operator")))
+        (is (search "Alpha's board:" listing) "a peer is named by name")
+        (is (search "Portrait" listing)))
+      (let ((text (pai-v3.api::read-peer-board a "Alpha" thread "operator")))
+        (is (search "My new portrait" text))
+        (is (search picture text) "with its image id")
+        (is (search "post_fleet_message" text) "and how to answer there"))
+      (is (equal "image/png" (first (pai-v3.mind::image-row a picture))) "the picture is now in Beta's own store")
+      (is (search picture (format nil "~{~a~}" (mapcar #'first (pai-v3.mind::recently-seen a "operator"))))
+          "and among what she has seen lately, so she can look_at it")
+      (is (search "no peer called" (pai-v3.api::%tool-text (lambda () (pai-v3.api::read-peer-board a "Nobody" nil "operator"))))))))
+
 (deftest a-chain-too-deep-wakes-nobody
   (with-two-agents (a b)
     (join a b)
