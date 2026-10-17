@@ -146,7 +146,11 @@
   (funcall (pai-v3.mind::tool-run (gethash "knowledge" pai-v3.mind::*tools*)) k 1 (apply #'obj args)))
 
 (defun knowledge-slot (k audience task)
-  (funcall (gethash :knowledge pai-v3.mind::*slot-sources*) k (list :audience audience :task task) 1500))
+  "What the graph tells of what TASK names, as impressions show it: the
+operator's knowledge, so nothing for another audience."
+  (when (equal audience "operator")
+    (let* ((named (entities-named-in k task)) (worlds (open-worlds-for k named)))
+      (remove nil (mapcar (lambda (e) (entity-knowledge k e worlds)) named)))))
 
 (deftest what-i-know-comes-from-the-names-in-the-conversation
   (with-graph (k)

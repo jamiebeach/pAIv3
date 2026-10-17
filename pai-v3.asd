@@ -84,7 +84,8 @@
    (:module "src/recall"
     :serial t
     :components ((:file "package")
-                 (:file "impressions")))
+                 (:file "impressions")
+                 (:file "recall")))
    (:module "src/cli"
     :serial t
     :components ((:file "main")))))

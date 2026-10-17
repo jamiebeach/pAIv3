@@ -31,27 +31,31 @@
     (seed-persona k)
     (receive-turn k :channel "web" :audience "operator" :speaker "Operator" :text "Hi"
                     :origin (obj "principal_type" "operator"))
-    (let ((messages (assemble-context k "operator-turn" (list :audience "operator" :task "Reply."))))
+    (let* ((kept (gethash :recollection pai-v3.mind::*slot-sources*))
+           (messages (progn (remhash :recollection pai-v3.mind::*slot-sources*)
+                            (unwind-protect (assemble-context k "operator-turn" (list :audience "operator" :task "Reply."))
+                              (setf (gethash :recollection pai-v3.mind::*slot-sources*) kept)))))
       (is (search "I am Test Agent" (obj-get (first messages) "content")) "stable prefix first")
       (is (search "Operator: Hi" (obj-get (second messages) "content")))
       (let* ((a (last-assembly k))
              (slots (obj-get a "slots")))
         (is (= 64 (length (obj-get a "persona_fingerprint"))))
         (is (string= "ok" (obj-get (find "dialogue" slots :key (lambda (s) (obj-get s "slot")) :test #'equal) "status")))
-        (is (search "unavailable" (obj-get (find "recall" slots :key (lambda (s) (obj-get s "slot")) :test #'equal) "status"))
+        (is (search "unavailable" (obj-get (find "recollection" slots :key (lambda (s) (obj-get s "slot")) :test #'equal) "status"))
             "a missing source is reported, not fatal")))))
 
 (deftest failing-source-degrades-only-its-slot
   (with-temp-kernel (k)
-    (define-slot-source :recall (kernel request max) (error "index missing"))
-    (unwind-protect
-         (let ((messages (assemble-context k "operator-turn" (list :audience "operator" :task "x"))))
-           (is (= 3 (length messages)))
-           (is (search "unavailable: index missing"
-                       (obj-get (find "recall" (obj-get (last-assembly k) "slots")
-                                      :key (lambda (s) (obj-get s "slot")) :test #'equal)
-                                "status"))))
-      (remhash :recall pai-v3.mind::*slot-sources*))))
+    (let ((kept (gethash :recollection pai-v3.mind::*slot-sources*)))
+      (define-slot-source :recollection (kernel request max) (error "index missing"))
+      (unwind-protect
+           (let ((messages (assemble-context k "operator-turn" (list :audience "operator" :task "x"))))
+             (is (= 3 (length messages)))
+             (is (search "unavailable: index missing"
+                         (obj-get (find "recollection" (obj-get (last-assembly k) "slots")
+                                        :key (lambda (s) (obj-get s "slot")) :test #'equal)
+                                  "status"))))
+        (setf (gethash :recollection pai-v3.mind::*slot-sources*) kept)))))
 
 (deftest other-audiences-never-see-operator-dialogue
   (with-temp-kernel (k)

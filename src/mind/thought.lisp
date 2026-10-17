@@ -353,23 +353,24 @@ source and never answered)."
         (or text ""))))
 
 (defvar *step-notes* '()
-  "Functions (lambda (kernel thought-id tool-name arguments prior)) run after
-each tool call; each returns a note for that call's result, or NIL. PRIOR is
-the thought's earlier (tool arguments) calls. The mind's extension point
+  "Functions (lambda (kernel thought-id tool-name arguments prior result)) run
+after each tool call; each returns a note for that call's result, or NIL.
+PRIOR is the thought's earlier (tool arguments) calls; RESULT the call's
+result text. The mind's extension point
 for what should come to mind as the agent acts (design note
 interaction-recall §11); notes are shown before the result, in order.")
 
 (defmacro define-step-note (name lambda-list &body body)
   "Register step note NAME (a symbol): LAMBDA-LIST is (kernel thought-id
-tool-name arguments prior). Redefining NAME replaces it in place."
+tool-name arguments prior result). Redefining NAME replaces it in place."
   `(progn
      (defun ,name ,lambda-list (declare (ignorable ,@lambda-list)) ,@body)
      (pushnew ',name *step-notes*)
      ',name))
 
-(defun %step-notes (kernel thought-id name arguments prior)
+(defun %step-notes (kernel thought-id name arguments prior result)
   (loop for note in (reverse *step-notes*)
-        for text = (ignore-errors (funcall note kernel thought-id name arguments prior))
+        for text = (ignore-errors (funcall note kernel thought-id name arguments prior result))
         when (and (stringp text) (plusp (length text))) collect text))
 
 (defun %repeat-note (name arguments prior)
@@ -391,7 +392,7 @@ source it has read; PRIOR is the thought's earlier (tool arguments) calls."
                    (format nil "(This is read number ~d of ~a in this thought. Use outline, or search for the name you need, instead of reading it again.)"
                            (1+ times) (obj-get a "path"))))))))))
 
-(define-step-note repeated-call-note (kernel thought-id name arguments prior)
+(define-step-note repeated-call-note (kernel thought-id name arguments prior result)
   (%repeat-note name arguments prior))
 
 (defvar *wrap-up-hook* nil
@@ -579,11 +580,11 @@ sub-call's result arrives later."
                                ((not (and tool (tool-available-p tool thought)))
                                 (setf failed t)
                                 (format nil "No tool named ~a." name))
-                               (t (let ((result (handler-case
+                               (t (let* ((result (handler-case
                                                     (funcall (tool-run tool) kernel id
                                                              (json-parse (obj-get fn "arguments")))
                                                   (error (e) (setf failed t) (format nil "Tool error: ~a" e))))
-                                        (notes (%step-notes kernel id name (obj-get fn "arguments") prior)))
+                                        (notes (and (stringp result) (%step-notes kernel id name (obj-get fn "arguments") prior result))))
                                     (if (and notes (stringp result)) (format nil "~{~a~%~%~}~a" notes result) result)))))
           unless (eq result :pending)
             do (%activity thought "tool-result" "tool_name" name

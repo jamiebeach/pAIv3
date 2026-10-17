@@ -72,7 +72,6 @@ identifier it goes by, so interactions naming any of them are found."
 ;;; Assembling an impression
 
 (defparameter *fresh-most* 5 "Most fresh interactions an impression carries.")
-(defparameter *facts-most* 5 "Most facts a first-form settled part carries.")
 (defparameter *memories-most* 3 "Most memories a first-form settled part carries.")
 (defparameter +fresh-kinds+ '("conversation" "board" "fleet" "made")
   "Kinds of experience that are interactions; thinking and memories are not.")
@@ -90,10 +89,12 @@ identifier it goes by, so interactions naming any of them are found."
   (let ((text (substitute #\Space #\Newline (string-trim " " (or text "")))))
     (if (> (length text) most) (concatenate 'string (subseq text 0 most) "…") text)))
 
-(defun impression (kernel anchor audience)
+(defun impression (kernel anchor audience &key open-worlds)
   "The impression of ANCHOR that AUDIENCE may receive, as a plist
 (:anchor :name :kind :settled lines :fresh lines :open lines :revision n), or
-NIL when ANCHOR is unknown."
+NIL when ANCHOR is unknown. OPEN-WORLDS are the story worlds the cue opened
+(the real world, and a story's only when it or someone in it was named);
+by default, those ANCHOR itself opens."
   (destructuring-bind (&optional name kind terms entity) (%anchor kernel anchor)
     (when name
       (let* ((revision (%revision kernel anchor))
@@ -111,10 +112,12 @@ NIL when ANCHOR is unknown."
                          (and operator entity
                               (let ((summary (fourth (graph-entity kernel entity))))
                                 (and (stringp summary) (plusp (length summary)) (list summary))))
+                         ;; What the graph knows, as the graph tells it: worlds,
+                         ;; ended facts and lineage are handled there, once.
                          (and operator entity
-                              (let ((facts (entity-facts kernel entity :limit 20)))
-                                (mapcar (lambda (f) (render-fact kernel f))
-                                        (subseq facts 0 (min *facts-most* (length facts))))))
+                              (let* ((row (graph-entity kernel entity))
+                                     (known (entity-knowledge kernel row (or open-worlds (open-worlds-for kernel (list row))))))
+                                (and known (list (string-right-trim '(#\Newline) known)))))
                          (subseq memories 0 (min *memories-most* (length memories))))))))
         (list :anchor anchor :name name :kind kind
               :settled settled

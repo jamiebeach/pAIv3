@@ -217,8 +217,8 @@
         (is (search "asked for 20 tool calls" (third (car (last results)))) "the rest say why"))
       (is (equal "ended" (getf (thought-row k id) :status))))))
 
-(defun noting-the-clock (kernel thought-id name arguments prior)
-  (declare (ignore kernel thought-id arguments prior))
+(defun noting-the-clock (kernel thought-id name arguments prior result)
+  (declare (ignore kernel thought-id arguments prior result))
   (and (equal name "clock") "(Noted: you asked the time.)"))
 (defun breaking-note (&rest args) (declare (ignore args)) (error "a broken note"))
 

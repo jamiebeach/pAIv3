@@ -78,7 +78,7 @@
     (drain k)
     (assemble-context k "operator-turn" (list :audience "operator" :task "the lighthouse story"))
     (let ((slots (obj-get (event-payload (event-by-id k (sql-value (kernel-db k) "SELECT event_id FROM pai_events WHERE agent_id=?1 AND event_type=?2 ORDER BY storage_sequence DESC LIMIT 1" (kernel-agent-id k) "context.assembled"))) "slots")))
-      (is (equal "ok" (obj-get (find "recall" slots :key (lambda (s) (obj-get s "slot")) :test #'equal) "status"))))
+      (is (equal "ok" (obj-get (find "recollection" slots :key (lambda (s) (obj-get s "slot")) :test #'equal) "status"))))
     (is (> (sql-value (kernel-db k) "SELECT strength FROM memory_nodes WHERE kind=?1 LIMIT 1" "episode") 0.5)
         "recalled memories grow stronger")))
 

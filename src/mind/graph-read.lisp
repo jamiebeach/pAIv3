@@ -5,8 +5,7 @@
 ;;; things up, and the search behind the operator's graph explorer page.
 ;;; The graph is the operator's: guests never see it.
 
-(defparameter *graph-slot-entities* 8 "Entities the What I know slot may name.")
-(defparameter *graph-slot-facts* 5 "Facts it may give per entity.")
+(defparameter *graph-slot-facts* 5 "Facts entity-knowledge gives per entity.")
 
 (defun %name-grams (text &key (longest 4) (most 400))
   "Every run of one to LONGEST words in TEXT, lower-case, for exact name lookup."
@@ -90,33 +89,30 @@ where it came from."
   (%lineage-of (sql-value (kernel-db kernel) "SELECT lineage FROM graph_facts WHERE id=?1 LIMIT 1" fact-id)
                (kernel-agent-id kernel)))
 
-(define-slot-source :knowledge (kernel request max)
-  ;; From the graph, about who and what the recent conversation names. The
-  ;; operator's knowledge, for the operator's thoughts only.
-  (when (equal "operator" (getf request :audience))
-    (let* ((recent (sql-rows (kernel-db kernel)
-                             "SELECT rendered FROM working_dialogue WHERE audience=?1 ORDER BY event_id DESC LIMIT 6" "operator"))
-           (text (format nil "~a~%~{~a~%~}" (or (getf request :task) "") (mapcar #'first recent)))
-           (named (entities-named-in kernel text))
-           ;; A story's world opens only when the conversation names the work
-           ;; or someone in it; otherwise only what is real.
-           (open-worlds (cons +real-world+
-                              (remove-duplicates
-                               (loop for e in named
-                                     collect (if (equal (tenth e) +real-world+) (first e) (tenth e)))
-                               :test #'equal))))
-      (loop for entity in (subseq named 0 (min *graph-slot-entities* (length named)))
-            for all = (entity-facts kernel (first entity) :limit (* 3 *graph-slot-facts*))
-            ;; What has ended is not what is so now: it stays out of the context.
-            for facts = (remove-if (lambda (f) (fact-ended kernel (first f)))
-                                   (remove-if-not (lambda (f) (member (nth 10 f) open-worlds :test #'equal)) all))
-            ;; An entity with no facts at all is still shown, as unconnected:
-            ;; the operator wants it visible, not hidden or guessed at.
-            when (or facts (null all))
-              collect (format nil "~a (~a~@[, in ~a~]):~:[ no known connections.~%~;~:*~%~{  - ~a~%~}~]"
-                              (third entity) (second entity) (world-name kernel (tenth entity))
-                              (mapcar (lambda (f) (render-fact kernel f :lineage (%fact-lineage kernel (first f))))
-                                      (subseq facts 0 (min *graph-slot-facts* (length facts)))))))))
+(defun open-worlds-for (kernel entities)
+  "The worlds open given ENTITIES named: the real one, and a story's world
+only when the story or someone in it is named."
+  (declare (ignore kernel))
+  (cons +real-world+
+        (remove-duplicates
+         (loop for e in entities
+               collect (if (equal (tenth e) +real-world+) (first e) (tenth e)))
+         :test #'equal)))
+
+(defun entity-knowledge (kernel entity open-worlds)
+  "What I know of ENTITY (a graph-entity row) within OPEN-WORLDS, as one
+block: its live facts that have not ended, each with where it came from;
+an entity with no facts at all says so, so it is never hidden or guessed
+at. NIL when its facts are all in closed worlds or have ended."
+  (let* ((all (entity-facts kernel (first entity) :limit (* 3 *graph-slot-facts*)))
+         ;; What has ended is not what is so now.
+         (facts (remove-if (lambda (f) (fact-ended kernel (first f)))
+                           (remove-if-not (lambda (f) (member (nth 10 f) open-worlds :test #'equal)) all))))
+    (when (or facts (null all))
+      (format nil "~a (~a~@[, in ~a~]):~:[ no known connections.~%~;~:*~%~{  - ~a~%~}~]"
+              (third entity) (second entity) (world-name kernel (tenth entity))
+              (mapcar (lambda (f) (render-fact kernel f :lineage (%fact-lineage kernel (first f))))
+                      (subseq facts 0 (min *graph-slot-facts* (length facts))))))))
 
 ;;; The tool
 

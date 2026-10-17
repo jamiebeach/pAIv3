@@ -129,14 +129,6 @@ mention that restricted information exists. Tuned for nomic-embed-text.")
 
 ;;; Context slot sources
 
-(define-slot-source :recall (kernel request max)
-  (let* ((query (or (getf request :query) (getf request :task)))
-         (rows (recall kernel (embed query kernel) (getf request :audience))))
-    (when rows
-      (append! kernel "memory.recalled" (obj "memory_ids" (mapcar #'first rows)
-                                             "thought_id" (getf request :thought-id))))
-    (mapcar (lambda (row) (list (second row) (estimate-tokens (second row)))) rows)))
-
 (define-slot-source :restricted (kernel request max)
   (let ((topics (withheld-topics kernel (embed (or (getf request :query) (getf request :task)) kernel)
                                  (getf request :audience))))
