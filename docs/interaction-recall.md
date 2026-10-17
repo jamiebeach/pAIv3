@@ -326,11 +326,15 @@ consolidation, so it could easily repeat that. These rules prevent it.
 deliberation. It lives in its own module and package (`src/recall/`,
 `pai-v3.recall`), loaded after the mind. The mind does not know it exists:
 
-- The mind offers two general extension points, not recall-specific ones:
-  **stimulus hooks**, run as a thought starts, which may add to its
-  context; and **step notes**, run after each tool call, which may append
-  to its result. The repeated-call note in `act` becomes the first step
-  note, so `act` no longer special-cases it.
+- The mind offers two general extension points, not recall-specific ones.
+  **At a stimulus**, context slot sources (`define-slot-source`): a module
+  registers a source by keyword, the context profiles name it, and a source
+  that is absent reports itself unavailable without failing assembly. This
+  already exists; recall uses it rather than adding a second mechanism.
+  **At each tool call**, step notes (`define-step-note`, src/mind/thought.lisp):
+  registered functions whose notes are shown with the call's result. The
+  repeated-call note is the first step note, so `act` no longer
+  special-cases it.
 - Recall registers itself on both. With the module removed, the mind still
   runs and only recall is gone. Later System-1 work (perception, appraisal,
   unbidden thought) uses the same two points.

@@ -32,6 +32,7 @@
                  (:file "schedule")
                  (:file "summary")
                  (:file "grants")
+                 (:file "vectors")
                  (:file "memory")
                  (:file "web")
                  (:file "beads")

@@ -217,6 +217,23 @@
         (is (search "asked for 20 tool calls" (third (car (last results)))) "the rest say why"))
       (is (equal "ended" (getf (thought-row k id) :status))))))
 
+(defun noting-the-clock (kernel thought-id name arguments prior)
+  (declare (ignore kernel thought-id arguments prior))
+  (and (equal name "clock") "(Noted: you asked the time.)"))
+(defun breaking-note (&rest args) (declare (ignore args)) (error "a broken note"))
+
+(deftest step-notes-come-with-a-tool-result
+  (with-thinking (k)
+    (let* ((pai-v3.mind::*step-notes* (list* 'breaking-note 'noting-the-clock pai-v3.mind::*step-notes*))
+           (*script* (list (obj "content" "" "tool_calls" (list (call "a" "clock")))
+                           (obj "content" "Noon.")))
+           (id (request-thought k "work" "check the time")))
+      (run-until-idle k)
+      (let ((result (third (find "tool_result" (thought-steps k id) :key #'first :test #'equal))))
+        (is (search "(Noted: you asked the time.)" result) "a registered note is shown with the result")
+        (is (< (search "Noted" result) (length result)) "before it"))
+      (is (equal "ended" (getf (thought-row k id) :status)) "a note that fails is skipped, not fatal"))))
+
 (deftest provider-outage-retries-without-losing-the-thought
   (with-thinking (k)
     (let* ((*script* (list 503 (obj "content" "Back now.")))
