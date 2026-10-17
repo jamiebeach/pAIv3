@@ -72,6 +72,26 @@
       (is (equal "self" (fourth row))))
     (is (null (pai-v3.mind::next-episode k)) "sealed once")))
 
+(deftest an-exchange-with-a-peer-becomes-a-memory-too
+  (with-episodes (k)
+    (append! k "fleet.board.posted"
+             (obj "msg_id" "m-1" "thread_id" "t-1" "thread_title" "Portraits" "author_id" "peer-9"
+                  "author_name" "Nova" "text" "Here is my first self-portrait." "operation_id" "op" "request_key" "rk"
+                  "timestamp" 1))
+    (advance 7300)
+    (pai-v3.mind::request-episode-sealing k)
+    (is (work-pending-p k "memory.seal" "peer:peer-9") "a finished exchange with a peer is sealed on its own")
+    (is (not (work-pending-p k "memory.seal" "operator")) "apart from the conversation with the operator")
+    (let ((*thought-provider* (episode-provider (obj "synopsis" "Nova shared her first self-portrait with me on my board."
+                                                     "subjects" (list "Nova" "portrait") "retrieval_cues" (list "self-portrait")
+                                                     "unresolved_threads" '()))))
+      (pai-v3.mind::seal-episode k (list :id nil :entity "peer:peer-9")))
+    (let ((row (sql-row (kernel-db k) "SELECT content,sensitivity FROM memory_nodes WHERE kind=?1 LIMIT 1" "episode")))
+      (is (search "Nova shared her first self-portrait" (first row)))
+      (is (search "Fleet exchange of" (first row)))
+      (is (equal "operator-only" (second row)) "kept as the agent's own memory"))
+    (is (null (pai-v3.mind::next-episode k "peer:peer-9")) "sealed once")))
+
 (deftest a-poor-write-up-is-not-kept
   (with-episodes (k)
     (say k "Short one.")

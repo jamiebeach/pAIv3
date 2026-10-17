@@ -41,4 +41,36 @@
             "a retracted fact no longer comes to mind")
         (is (zerop (pai-v3.mind::request-missing-embeddings k :every 0)) "and is not embedded again")))))
 
+(deftest formation-by-meaning-supports-and-suggests
+  (with-temp-kernel (k)
+    (let ((*embedder* (lambda (texts) (mapcar #'words-vector texts)))
+          (pai-v3.mind::*embedding-cache* '()))
+      (setf *budget* (list :daily-microusd 100000000 :operator-reserve 0.2)
+            pai-v3.mind::*embedder-resting-until* 0)
+      (remhash k pai-v3.mind::*embedding-backfill-at*)
+      (let* ((sam (form-entity k :kind "person" :name "Sam" :lineage (formed k)))
+             (samuel (form-entity k :kind "person" :name "Samuel" :lineage (formed k)))
+             (lee (form-entity k :kind "person" :name "Lee" :lineage (formed k)))
+             (lisbon (form-entity k :kind "place" :name "Lisbon" :lineage (formed k)))
+             (sister (admit-fact k :subject lee :predicate "sibling_of" :object sam :text "Lee is Sam's sister."
+                                   :evidence (said "my sister Lee") :lineage (formed k))))
+        (admit-fact k :subject lee :predicate "related_to" :object sam :text "Lee is Sam's older sister."
+                      :evidence (said "Lee and Sam") :lineage (formed k))
+        (admit-fact k :subject sam :predicate "lives_at" :object lisbon :text "Sam lives in Lisbon by the river."
+                      :evidence (said "I live in Lisbon") :lineage (formed k))
+        (admit-fact k :subject samuel :predicate "lives_at" :object lisbon :text "Samuel lives in Lisbon by the river."
+                      :evidence (said "he lives in Lisbon") :lineage (formed k))
+        (pai-v3.mind::request-missing-embeddings k :every 0)
+        (loop repeat 200 until (eq :idle (run-scheduler-step k)))
+        (is (equal sister (pai-v3.mind::near-duplicate-fact k "Lee is Sam's sister!" lee sam "assertion" "positive"))
+            "the same thing in other words supports the fact already there")
+        (is (null (pai-v3.mind::near-duplicate-fact k "Lee is Sam's sister." lee sam "assertion" "negative"))
+            "never across polarity: a denial is not support")
+        (is (null (pai-v3.mind::near-duplicate-fact k "Lee is Sam's sister." sam lee "assertion" "positive"))
+            "nor between other ends")
+        (let ((text (format nil "~{~a~%~}" (pai-v3.mind::graph-suggestions k))))
+          (is (search "perhaps predicate sibling_of" text) "a vague relation that reads like a precise one")
+          (is (or (search "Sam and Samuel may be one person" text) (search "Samuel and Sam may be one person" text))
+              "entities whose facts read alike"))))))
+
 (run-suite "mind-graph-vectors")

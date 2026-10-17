@@ -133,19 +133,25 @@ at. NIL when its facts are all in closed worlds or have ended."
 (define-tool "knowledge"
   :description "Look things up in my knowledge graph: who and what I know about, and what I know of them.
 action: search (query: a name or words in one), entity (id, or name: the entity with its facts, a quote for
-each, and where it came from), health (how complete the graph is). Facts are marked when they are not a plain
+each, and where it came from), health (how complete the graph is), suggest (vague related_to facts that read like
+a precise relation, and entities that may be one: for the operator to decide, then correct_knowledge). Facts are marked when they are not a plain
 assertion ([question], [proposal], [reported-speech]...), negative ([not]) or inferred. Where a fact came from
 reads like \"Alpha (v1) via Beta\": formed by Alpha and carried here by Beta."
   :summary "Look things up in my knowledge graph."
   :available '("operator")
   :parameters (obj "type" "object"
-                   "properties" (obj "action" (obj "type" "string" "enum" (list "search" "entity" "health"))
+                   "properties" (obj "action" (obj "type" "string" "enum" (list "search" "entity" "health" "suggest"))
                                      "query" (obj "type" "string") "id" (obj "type" "string") "name" (obj "type" "string"))
                    "required" (list "action"))
   :run (lambda (kernel thought-id args)
          (declare (ignore thought-id))
          (let ((action (obj-get args "action")))
            (cond
+             ((equal action "suggest")
+              (let ((lines (graph-suggestions kernel)))
+                (if lines
+                    (format nil "Suggestions only; nothing is changed until the operator agrees:~%~{- ~a~^~%~}" lines)
+                    "Nothing to suggest: no vague relations or likely duplicates stand out.")))
              ((equal action "health")
               (let ((h (graph-health kernel)))
                 (format nil "~d entities, ~d facts; ~d entities (~,0f%) have no facts; ~,0f% of facts are only related_to."

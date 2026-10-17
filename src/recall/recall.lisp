@@ -27,14 +27,26 @@
 
 (define-projection "recollections"
   :kind :inline
+  :version 2
   :consumes ("recall.recollected")
-  :tables ("CREATE TABLE IF NOT EXISTS recollections (thought_id INTEGER NOT NULL, anchor TEXT NOT NULL, hook TEXT NOT NULL, at TEXT NOT NULL, PRIMARY KEY(thought_id,anchor))")
+  :tables ("CREATE TABLE IF NOT EXISTS recollections (thought_id INTEGER NOT NULL, anchor TEXT NOT NULL, hook TEXT NOT NULL, at TEXT NOT NULL, PRIMARY KEY(thought_id,anchor))"
+           ;; How often and how lately each anchor came to mind: what sleep revises.
+           "CREATE TABLE IF NOT EXISTS recall_activity (anchor TEXT PRIMARY KEY, kind TEXT NOT NULL, times INTEGER NOT NULL, last_at TEXT NOT NULL)"
+           "CREATE INDEX IF NOT EXISTS recall_activity_recent_idx ON recall_activity(kind,last_at)")
   :reduce (lambda (db e)
             (let* ((p (event-payload e)) (thought (obj-get p "thought_id")))
-              (when (integerp thought)
-                (dolist (anchor (obj-get p "anchors"))
+              (dolist (anchor (obj-get p "anchors"))
+                (sql-exec db "INSERT INTO recall_activity(anchor,kind,times,last_at) VALUES(?1,'anchor',1,?2) ON CONFLICT(anchor) DO UPDATE SET times=times+1,last_at=excluded.last_at"
+                          anchor (event-at e))
+                (when (integerp thought)
                   (sql-exec db "INSERT OR IGNORE INTO recollections(thought_id,anchor,hook,at) VALUES(?1,?2,?3,?4)"
                             thought anchor (obj-get p "hook") (event-at e)))))))
+
+(defun recently-recalled (kernel &key (days 7) (limit 20))
+  "Anchors that came to mind in the last DAYS, most recent first."
+  (mapcar #'first (sql-rows (kernel-db kernel)
+                            "SELECT anchor FROM recall_activity WHERE kind=?1 AND last_at>=?2 ORDER BY last_at DESC LIMIT ?3"
+                            "anchor" (iso8601 (- (now) (* days 86400))) limit)))
 
 (defun recalled-in (kernel thought-id)
   "The anchors already brought to mind in THOUGHT-ID."
@@ -73,7 +85,11 @@ nearest VECTOR, within the association distance."
               for row = (live-fact kernel id)
               when (and row (< d limit)) append (list (second row) (fourth row))))
       (loop for (nil d gist) in (experience-near kernel vector audience :pool 6)
-            when (and gist (< d limit)) append (%exact-anchors kernel gist)))
+            when (and gist (< d limit)) append (%exact-anchors kernel gist))
+      ;; The written sense of someone, recalled by meaning.
+      (when (equal audience "operator")
+        (loop for (anchor d) in (impressions-near kernel vector)
+              when (< d limit) collect anchor)))
      :test #'equal :from-end t)))
 
 (defun %impressions (kernel anchors audience open-worlds)
@@ -103,7 +119,9 @@ nearest VECTOR, within the association distance."
              (memories (and vector
                             (remove-if (lambda (row) (some (lambda (text) (search (second row) text)) texts))
                                        (recall kernel vector audience :k 5)))))
-        (when shown (%record kernel thought "stimulus" (mapcar #'first shown) task))
+        (when shown
+          (%record kernel thought "stimulus" (mapcar #'first shown) task)
+          (prompt-due-intentions kernel (mapcar #'first shown) audience))
         (when memories
           (append! kernel "memory.recalled" (obj "memory_ids" (mapcar #'first memories) "thought_id" thought)))
         (append (mapcar (lambda (text) (list text (estimate-tokens text))) texts)
@@ -124,4 +142,5 @@ nearest VECTOR, within the association distance."
          (shown (%impressions kernel (subseq anchors 0 (min *step-anchors-most* (length anchors))) audience nil)))
     (when shown
       (%record kernel thought-id (format nil "step:~a" name) (mapcar #'first shown) cue)
+      (prompt-due-intentions kernel (mapcar #'first shown) audience)
       (format nil "~{~a~^~%~%~}" (mapcar #'second shown)))))

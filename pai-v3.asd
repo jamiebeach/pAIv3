@@ -32,6 +32,7 @@
                  (:file "affect")
                  (:file "schedule")
                  (:file "summary")
+                 (:file "consolidation")
                  (:file "grants")
                  (:file "vectors")
                  (:file "memory")
@@ -86,7 +87,9 @@
     :serial t
     :components ((:file "package")
                  (:file "impressions")
-                 (:file "recall")))
+                 (:file "recall")
+                 (:file "intentions")
+                 (:file "sleep")))
    (:module "src/cli"
     :serial t
     :components ((:file "main")))))

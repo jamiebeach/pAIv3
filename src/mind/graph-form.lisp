@@ -273,6 +273,18 @@ Returns (values entities-formed entities-matched admitted supported dropped)."
                                          "polarity" (or (obj-get f "polarity") "positive"))))
                      ;; Refuse a bad time or scope before anything is formed.
                      (%temporal temporal) (%grounding grounding)
+                     ;; Both ends already in the graph: a spec of (:id <entity>).
+                     (let ((same (and (eq :id (first s)) (eq :id (first o)) (stringp statement)
+                                      (near-duplicate-fact kernel statement (second s) (second o)
+                                                           (obj-get grounding "scope") (obj-get grounding "polarity"))))
+                           (evidence (list (obj "kind" (if (equal "turn" (second source)) "original-utterance" "prior-agent-utterance")
+                                                "quote" quote "speaker" (third source)
+                                                "source_event_id" (and (null (fifth source)) (first source))
+                                                "origin" (or (fifth source) me) "source_ref" (sixth source)))))
+                     ;; What a live fact already says, in other words, supports it (§7a).
+                     (if same
+                         (progn (append! kernel "graph.fact.supported" (obj "fact_id" same "evidence" evidence))
+                                (incf supported))
                      (multiple-value-bind (id outcome)
                          (admit-fact kernel :subject (ensure (obj-get f "subject")) :predicate predicate
                                             :object (ensure (obj-get f "object"))
@@ -280,14 +292,11 @@ Returns (values entities-formed entities-matched admitted supported dropped)."
                                             :derivation (if (eq t (obj-get f "inferred")) "inferred" "direct")
                                             ;; A source from this agent's own dialogue points at its event; one
                                             ;; from elsewhere carries its own origin and reference.
-                                            :evidence (list (obj "kind" (if (equal "turn" (second source)) "original-utterance" "prior-agent-utterance")
-                                                                 "quote" quote "speaker" (third source)
-                                                                 "source_event_id" (and (null (fifth source)) (first source))
-                                                                 "origin" (or (fifth source) me) "source_ref" (sixth source)))
+                                            :evidence evidence
                                             :world (if (consp world) (ensure (second world)) world)
                                             :lineage (list (lineage-hop me "formed")))
                        (declare (ignore id))
-                       (if (eq outcome :admitted) (incf admitted) (incf supported))))
+                       (if (eq outcome :admitted) (incf admitted) (incf supported))))))
                  (graph-refused (c) (drop "fact ~a: ~a" statement (graph-refused-reason c)))))))))
     (values formed matched admitted supported (reverse dropped))))
 

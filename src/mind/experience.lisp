@@ -86,13 +86,15 @@ or NIL when it is not an interaction. HANDLES is a list of (handle label)."
 
 (define-projection "experience"
   :kind :inline
-  :version 2
+  :version 3
   :consumes ("turn.received" "reply.delivered" "notice.posted" "thought.step" "memory.formed"
              "fleet.peer.joined" "fleet.board.posted" "fleet.op" "image.generated" "experience.embedded")
   :tables ("CREATE VIRTUAL TABLE IF NOT EXISTS experience_fts USING fts5(text, keys, kind UNINDEXED, scope UNINDEXED, at UNINDEXED, ref UNINDEXED, event_id UNINDEXED, tokenize='porter unicode61')"
            ;; Interactions to embed, newest first; embedded once their vector is kept.
-           "CREATE TABLE IF NOT EXISTS experience_items (event_id INTEGER PRIMARY KEY, scope TEXT NOT NULL, gist TEXT NOT NULL, embedded INTEGER NOT NULL DEFAULT 0)"
+           ;; The whole text, its kind and when; the first part of it is what is embedded.
+           "CREATE TABLE IF NOT EXISTS experience_items (event_id INTEGER PRIMARY KEY, scope TEXT NOT NULL, kind TEXT NOT NULL, gist TEXT NOT NULL, at TEXT NOT NULL, embedded INTEGER NOT NULL DEFAULT 0)"
            "CREATE INDEX IF NOT EXISTS experience_items_embedded_idx ON experience_items(embedded,event_id)"
+           "CREATE INDEX IF NOT EXISTS experience_items_scope_idx ON experience_items(scope,event_id)"
            "CREATE TABLE IF NOT EXISTS experience_vectors (id TEXT PRIMARY KEY, scope TEXT NOT NULL, vec BLOB NOT NULL)"
            "CREATE INDEX IF NOT EXISTS experience_vectors_scope_idx ON experience_vectors(scope)"
            ;; Every scope seen, so a search open to the operator names them all.
@@ -107,7 +109,9 @@ or NIL when it is not an interaction. HANDLES is a list of (handle label)."
                        (when (and (stringp text) (plusp (length text)))
                          (sql-exec db "INSERT INTO experience_fts(text,keys,kind,scope,at,ref,event_id) VALUES(?1,?2,?3,?4,?5,?6,?7)"
                                    text keys kind scope (event-at e) ref (event-id e))
-                         (sql-exec db "INSERT OR IGNORE INTO experience_scopes(scope,kind) VALUES(?1,'scope')" scope))))
+                         ;; A peer's scope is also listed as one, for sealing its episodes.
+                         (sql-exec db "INSERT OR IGNORE INTO experience_scopes(scope,kind) VALUES(?1,?2)"
+                                   scope (if (and (> (length scope) 7) (string= "a:peer:" scope :end2 7)) "peer" "scope")))))
                 (cond ((string= type "experience.embedded")
                        (let ((id (obj-get p "event_id")))
                          (sql-exec db "INSERT INTO experience_vectors(id,scope,vec) SELECT ?1,scope,?2 FROM experience_items WHERE event_id=?3 ON CONFLICT(id) DO UPDATE SET vec=excluded.vec"
@@ -129,8 +133,8 @@ or NIL when it is not an interaction. HANDLES is a list of (handle label)."
                            (destructuring-bind (text kind scope ref keys embed handles) i
                              (index text kind scope ref keys)
                              (when (and embed (stringp text) (plusp (length text)))
-                               (sql-exec db "INSERT OR IGNORE INTO experience_items(event_id,scope,gist) VALUES(?1,?2,?3)"
-                                         (event-id e) scope (subseq text 0 (min +gist-characters+ (length text)))))
+                               (sql-exec db "INSERT OR IGNORE INTO experience_items(event_id,scope,kind,gist,at) VALUES(?1,?2,?3,?4,?5)"
+                                         (event-id e) scope kind text (event-at e)))
                              (loop for (handle label) in handles
                                    when (and (stringp handle) (>= (length handle) 6) (stringp label) (plusp (length label)))
                                      do (sql-exec db "INSERT INTO experience_handles(handle,label,at) VALUES(?1,?2,?3) ON CONFLICT(handle) DO UPDATE SET label=excluded.label,at=excluded.at"
@@ -145,7 +149,8 @@ or NIL when it is not an interaction. HANDLES is a list of (handle label)."
                                        "SELECT event_id FROM experience_items WHERE embedded=?1 ORDER BY event_id DESC LIMIT ?2" 0 batch)))
   ;; Work entities are text; an item's id is its event id.
   :text (lambda (kernel id)
-          (sql-value (kernel-db kernel) "SELECT gist FROM experience_items WHERE event_id=?1 LIMIT 1" (%event-id id)))
+          (let ((text (sql-value (kernel-db kernel) "SELECT gist FROM experience_items WHERE event_id=?1 LIMIT 1" (%event-id id))))
+            (and text (subseq text 0 (min +gist-characters+ (length text))))))
   :record (lambda (kernel id model vector)
             (append! kernel "experience.embedded"
                      (obj "event_id" (%event-id id) "model" model "vector" (base64url-encode vector)))))
@@ -181,7 +186,7 @@ seen bound to a meaning."
 (defun %experience-scopes (kernel audience)
   "The scopes AUDIENCE may see: every scope for the operator."
   (if (equal audience "operator")
-      (mapcar #'first (sql-rows (kernel-db kernel) "SELECT scope FROM experience_scopes WHERE kind=?1 LIMIT 1000" "scope"))
+      (mapcar #'first (sql-rows (kernel-db kernel) "SELECT scope FROM experience_scopes WHERE kind IN (?1,?2) LIMIT 1000" "scope" "peer"))
       (cons (format nil "a:~a" audience)
             (mapcar (lambda (s) (format nil "s:~a" s)) (sensitivities-for kernel audience)))))
 
@@ -197,6 +202,19 @@ or identifiers), newest first, as (kind at text ref event-id)."
       (sql-rows (kernel-db kernel)
                 "SELECT kind,at,text,ref,event_id FROM experience_fts WHERE experience_fts MATCH ?1 AND (?2 IS NULL OR instr(?2,'|'||scope||'|')>0) ORDER BY rowid DESC LIMIT ?3"
                 match scopes limit))))
+
+(defun peer-audiences (kernel)
+  "The audiences (peer:<id>) of every peer something has passed with."
+  (mapcar (lambda (r) (subseq (first r) 2))
+          (sql-rows (kernel-db kernel) "SELECT scope FROM experience_scopes WHERE kind=?1 LIMIT 200" "peer")))
+
+(defun experience-items-after (kernel audience after &key (limit 400))
+  "Interactions with AUDIENCE after event AFTER, oldest first, as
+(event-id kind speaker text at), the shape conversation rows have."
+  (loop for (id kind text at) in (sql-rows (kernel-db kernel)
+                                           "SELECT event_id,kind,gist,at FROM experience_items WHERE scope=?1 AND event_id>?2 ORDER BY event_id LIMIT ?3"
+                                           (format nil "a:~a" audience) after limit)
+        collect (list id kind audience text at)))
 
 (defun experience-near (kernel query-vector audience &key (pool 12))
   "Interactions AUDIENCE may see nearest QUERY-VECTOR in meaning, as

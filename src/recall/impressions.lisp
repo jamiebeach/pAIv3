@@ -24,18 +24,48 @@
   :schema (("anchor" :string) ("settled" :string) ("sources" :array :optional)
            ("through_event_id" :integer)))
 
+(define-event-type "impression.embedded"
+  :schema (("anchor" :string) ("model" :string) ("vector" :string)))  ; base64url pgvector-send
+
 (define-projection "impressions"
   :kind :inline
-  :consumes ("impression.revised" "graph.reset")
-  :tables ("CREATE TABLE IF NOT EXISTS impressions (anchor TEXT PRIMARY KEY, settled TEXT NOT NULL, sources TEXT NOT NULL, through_event_id INTEGER NOT NULL, revision INTEGER NOT NULL, revised_at TEXT NOT NULL)")
+  :version 2
+  :consumes ("impression.revised" "impression.embedded" "graph.reset")
+  :tables ("CREATE TABLE IF NOT EXISTS impressions (anchor TEXT PRIMARY KEY, settled TEXT NOT NULL, sources TEXT NOT NULL, through_event_id INTEGER NOT NULL, revision INTEGER NOT NULL, revised_at TEXT NOT NULL, embedded INTEGER NOT NULL DEFAULT 0)"
+           "CREATE INDEX IF NOT EXISTS impressions_embedded_idx ON impressions(embedded,revised_at)"
+           "CREATE TABLE IF NOT EXISTS impression_vectors (id TEXT PRIMARY KEY, scope TEXT NOT NULL, vec BLOB NOT NULL)"
+           "CREATE INDEX IF NOT EXISTS impression_vectors_scope_idx ON impression_vectors(scope)")
   :entity (lambda (e) (obj-get (event-payload e) "anchor"))
   :reduce (lambda (db e)
-            (let ((p (event-payload e)))
-              (if (string= (event-type e) "graph.reset")
-                  (sql-exec db "DELETE FROM impressions")
-                  (sql-exec db "INSERT INTO impressions(anchor,settled,sources,through_event_id,revision,revised_at) VALUES(?1,?2,?3,?4,1,?5) ON CONFLICT(anchor) DO UPDATE SET settled=excluded.settled,sources=excluded.sources,through_event_id=excluded.through_event_id,revision=revision+1,revised_at=excluded.revised_at"
-                            (obj-get p "anchor") (obj-get p "settled") (json-encode (or (obj-get p "sources") '()))
-                            (obj-get p "through_event_id") (event-at e))))))
+            (let ((p (event-payload e)) (type (event-type e)))
+              (cond ((string= type "graph.reset")
+                     (sql-exec db "DELETE FROM impressions")
+                     (sql-exec db "DELETE FROM impression_vectors"))
+                    ((string= type "impression.embedded")
+                     (sql-exec db "INSERT INTO impression_vectors(id,scope,vec) VALUES(?1,'operator',?2) ON CONFLICT(id) DO UPDATE SET vec=excluded.vec"
+                               (obj-get p "anchor") (unit-vector-octets (decode-vector (base64url-decode (obj-get p "vector")))))
+                     (sql-exec db "UPDATE impressions SET embedded=1 WHERE anchor=?1" (obj-get p "anchor")))
+                    (t
+                     (sql-exec db "INSERT INTO impressions(anchor,settled,sources,through_event_id,revision,revised_at,embedded) VALUES(?1,?2,?3,?4,1,?5,0) ON CONFLICT(anchor) DO UPDATE SET settled=excluded.settled,sources=excluded.sources,through_event_id=excluded.through_event_id,revision=revision+1,revised_at=excluded.revised_at,embedded=0"
+                               (obj-get p "anchor") (obj-get p "settled") (json-encode (or (obj-get p "sources") '()))
+                               (obj-get p "through_event_id") (event-at e)))))))
+
+;;; A written impression is embedded, so the sense of someone can come to
+;;; mind by meaning (§5a); it is the operator's, like the graph it draws on.
+
+(define-embedding-source "impression"
+  :missing (lambda (kernel batch)
+             (mapcar #'first (sql-rows (kernel-db kernel)
+                                       "SELECT anchor FROM impressions WHERE embedded=?1 ORDER BY revised_at DESC LIMIT ?2" 0 batch)))
+  :text (lambda (kernel anchor)
+          (sql-value (kernel-db kernel) "SELECT settled FROM impressions WHERE anchor=?1 LIMIT 1" anchor))
+  :record (lambda (kernel anchor model vector)
+            (append! kernel "impression.embedded"
+                     (obj "anchor" anchor "model" model "vector" (base64url-encode vector)))))
+
+(defun impressions-near (kernel query-vector &key (pool 6))
+  "Anchors whose written impression is nearest QUERY-VECTOR, as (anchor distance)."
+  (nearest-vectors kernel "impression_vectors" "scope" (list "operator") query-vector :pool pool))
 
 (defun revise-impression (kernel anchor settled &key sources (through-event-id (ledger-head kernel)))
   "Record a new settled text for ANCHOR, covering interactions through
@@ -59,7 +89,8 @@ identifier it goes by, so interactions naming any of them are found."
   (if (and (> (length anchor) 2) (string= "h:" anchor :end2 2))
       (let* ((handle (subseq anchor 2))
              (label (second (first (handles-in kernel handle)))))
-        (list (or label handle) "thing" (list handle) nil))
+        ;; What it was bound to is a name for it too (a peer's id and her name).
+        (list (or label handle) "thing" (remove nil (list handle label)) nil))
       (let ((e (graph-entity kernel anchor)))
         (when e
           (let ((names (entity-names kernel (first e))))

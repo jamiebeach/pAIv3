@@ -8,10 +8,16 @@
 ;;; material without the agent remembering to remember. The write-up is
 ;;; checked before it is kept; an episode is sealed once, and how far the
 ;;; conversation is covered is recorded in the ledger.
+;;;
+;;; Exchanges with each fleet peer are sealed the same way (design note
+;;; interaction-recall §7), one audience at a time: the operator's from the
+;;; conversation, a peer's from the interactions the experience index keeps.
+;;; A peer episode is the agent's own memory, kept operator-only, so one
+;;; peer never recalls what passed with another.
 
 (define-setting "memory.episodes"
   :type :boolean :default :false :group "Memory"
-  :description "Seal finished stretches of conversation with the operator into episode memories.")
+  :description "Seal finished stretches of conversation with the operator, and of exchanges with each fleet peer, into episode memories.")
 (define-setting "memory.episode_quiet_seconds"
   :type :integer :min 60 :max 604800 :default 7200 :group "Memory"
   :description "How long the conversation must be quiet before its episode is sealed.")
@@ -27,8 +33,9 @@
 
 (define-event-type "memory.episode.sealed"
   :schema (("first_event_id" :integer) ("last_event_id" :integer) ("turns" :integer)
-           ("memory_id" :string) ("subjects" :array) ("retrieval_cues" :array)
-           ("unresolved_threads" :array) ("model" :string)))
+           ;; Empty lists are left out of an event, so these may be absent.
+           ("memory_id" :string) ("subjects" :array :optional) ("retrieval_cues" :array :optional)
+           ("unresolved_threads" :array :optional) ("model" :string) ("audience" :string :optional)))
 
 (define-projection "memory_episodes"
   :kind :inline
@@ -37,12 +44,12 @@
            "CREATE INDEX IF NOT EXISTS memory_episodes_last_idx ON memory_episodes(audience,last_event_id)")
   :reduce (lambda (db e)
             (let ((p (event-payload e)))
-              (sql-exec db "INSERT INTO memory_episodes(event_id,audience,first_event_id,last_event_id,turns,memory_id,at) VALUES(?1,'operator',?2,?3,?4,?5,?6)"
-                        (event-id e) (obj-get p "first_event_id") (obj-get p "last_event_id")
+              (sql-exec db "INSERT INTO memory_episodes(event_id,audience,first_event_id,last_event_id,turns,memory_id,at) VALUES(?1,?2,?3,?4,?5,?6,?7)"
+                        (event-id e) (or (obj-get p "audience") "operator") (obj-get p "first_event_id") (obj-get p "last_event_id")
                         (obj-get p "turns") (obj-get p "memory_id") (event-at e)))))
 
-(defun episodes-sealed-through (kernel)
-  (or (sql-value (kernel-db kernel) "SELECT last_event_id FROM memory_episodes WHERE audience=?1 ORDER BY last_event_id DESC LIMIT 1" "operator") 0))
+(defun episodes-sealed-through (kernel &optional (audience "operator"))
+  (or (sql-value (kernel-db kernel) "SELECT last_event_id FROM memory_episodes WHERE audience=?1 ORDER BY last_event_id DESC LIMIT 1" audience) 0))
 
 ;;; Finding the next episode
 
@@ -65,10 +72,12 @@ conversation has been quiet since."
     (when (and taken (>= (- now previous) quiet))
       (nreverse taken))))
 
-(defun next-episode (kernel)
-  (split-episode (sql-rows (kernel-db kernel)
-                           "SELECT event_id,kind,speaker,rendered,at FROM working_dialogue WHERE audience=?1 AND event_id>?2 AND kind IN (?3,?4) ORDER BY event_id LIMIT 400"
-                           "operator" (episodes-sealed-through kernel) "turn" "reply")
+(defun next-episode (kernel &optional (audience "operator"))
+  (split-episode (if (equal audience "operator")
+                     (sql-rows (kernel-db kernel)
+                               "SELECT event_id,kind,speaker,rendered,at FROM working_dialogue WHERE audience=?1 AND event_id>?2 AND kind IN (?3,?4) ORDER BY event_id LIMIT 400"
+                               "operator" (episodes-sealed-through kernel) "turn" "reply")
+                     (experience-items-after kernel audience (episodes-sealed-through kernel audience)))
                  (now)
                  :quiet (setting kernel "memory.episode_quiet_seconds")
                  :max-turns (setting kernel "memory.episode_max_turns")
@@ -92,13 +101,13 @@ conversation has been quiet since."
                                                 "description" "Questions or promises left open at the end."))
                  "required" (list "synopsis" "subjects" "retrieval_cues" "unresolved_threads")))))
 
-(defun episode-messages (kernel rows)
+(defun episode-messages (kernel rows &optional (audience "operator"))
   (list (obj "role" "system"
-             "content" (format nil "You are ~a, writing a memory of a conversation you had with the operator. ~
+             "content" (format nil "You are ~a, writing a memory of ~:[an exchange you had with a fellow agent of your fleet, on your boards~;a conversation you had with the operator~]. ~
 Write a faithful, retrieval-oriented account of the episode below: keep the operator's concrete words, the people, ~
 places and things named, decisions, events in their life, and what was left open. Do not add anything the episode ~
 does not say. If it is about a story or other fiction, say so, so it is never remembered as real. ~
-Call write_episode exactly once." (kernel-agent-id kernel)))
+Call write_episode exactly once." (kernel-agent-id kernel) (equal audience "operator")))
         (obj "role" "user"
              "content" (format nil "~{~a~^~%~}" (mapcar (lambda (r) (format nil "[S~d] ~a" (first r) (fourth r))) rows)))))
 
@@ -125,16 +134,19 @@ Call write_episode exactly once." (kernel-agent-id kernel)))
                    (%strings (obj-get proposal "retrieval_cues") 16)
                    (%strings (obj-get proposal "unresolved_threads") 8))))))
 
-(defun episode-memory-text (rows synopsis cues threads)
-  (format nil "~a~@[~%Still open: ~{~a~^; ~}~]~@[~%Cues: ~{~a~^, ~}~]~%(Conversation of ~a, S~d to S~d.)"
-          synopsis threads cues (subseq (fifth (first rows)) 0 10) (first (first rows)) (first (car (last rows)))))
+(defun episode-memory-text (rows synopsis cues threads &optional (audience "operator"))
+  (format nil "~a~@[~%Still open: ~{~a~^; ~}~]~@[~%Cues: ~{~a~^, ~}~]~%(~:[Fleet exchange~;Conversation~] of ~a, S~d to S~d.)"
+          synopsis threads cues (equal audience "operator")
+          (subseq (fifth (first rows)) 0 10) (first (first rows)) (first (car (last rows)))))
 
 (defun seal-episode (kernel work)
-  "Seal the oldest finished episode of conversation into a memory."
-  (let ((rows (next-episode kernel)))
+  "Seal the oldest finished episode with the work's audience (its entity)
+into a memory."
+  (let* ((audience (or (getf work :entity) "operator"))
+         (rows (next-episode kernel audience)))
     (when rows
       (let* ((profile (profile-for kernel "episodes"))
-             (reply (complete kernel profile (episode-messages kernel rows)
+             (reply (complete kernel profile (episode-messages kernel rows audience)
                               :tools (list +episode-tool+) :work-id (getf work :id) :lane "episodes"))
              (call (find "write_episode" (obj-get reply "tool_calls")
                          :key (lambda (c) (obj-get (obj-get c "function") "name")) :test #'equal))
@@ -145,22 +157,23 @@ Call write_episode exactly once." (kernel-agent-id kernel)))
                                     :reason (or why "the episode was not written up with write_episode")))
           (destructuring-bind (synopsis subjects cues threads) admitted
             (let ((memory (form-memory kernel :kind "episode"
-                                              :content (episode-memory-text rows synopsis cues threads)
+                                              :content (episode-memory-text rows synopsis cues threads audience)
                                               :topic (format nil "~{~a~^; ~}" (subseq subjects 0 (min 3 (length subjects))))
                                               :owner "self" :source-event-id (first (car (last rows))))))
               (append! kernel "memory.episode.sealed"
                        (obj "first_event_id" (first (first rows)) "last_event_id" (first (car (last rows)))
                             "turns" (length rows) "memory_id" memory "subjects" subjects
                             "retrieval_cues" cues "unresolved_threads" threads
-                            "model" (provider-profile-model profile)))
+                            "model" (provider-profile-model profile) "audience" audience))
               (obj "memory" memory "turns" (length rows)))))))))
 
 (define-handler "memory.seal" :run #'seal-episode :paid t :estimate-microusd 10000)
 
 (defun request-episode-sealing (kernel)
-  "When an episode of conversation is finished, seal it."
+  "When an episode with the operator, or with a peer, is finished, seal it."
   (when (and (eq t (setting kernel "memory.episodes"))
-             (not (work-pending-p kernel "memory.seal" "operator"))
-             (< (spent-today kernel "episodes") (* 1000000 (setting kernel "memory.episodes_daily_usd")))
-             (next-episode kernel))
-    (request-work kernel "memory.seal" "operator" (obj) :priority :maintenance)))
+             (< (spent-today kernel "episodes") (* 1000000 (setting kernel "memory.episodes_daily_usd"))))
+    (dolist (audience (cons "operator" (peer-audiences kernel)))
+      (when (and (not (work-pending-p kernel "memory.seal" audience))
+                 (next-episode kernel audience))
+        (request-work kernel "memory.seal" audience (obj) :priority :maintenance)))))

@@ -114,6 +114,10 @@ mention that restricted information exists. Tuned for nomic-embed-text.")
   :default *withheld-threshold*
   :description "How close a restricted memory must be to the question before I say restricted information exists (cosine distance; lower is stricter).")
 
+(defun memory-strength (kernel memory-id)
+  "MEMORY-ID's strength (0 to 1), or NIL."
+  (sql-value (kernel-db kernel) "SELECT strength FROM memory_nodes WHERE id=?1 LIMIT 1" memory-id))
+
 (defun withheld-topics (kernel query-vector audience &key (threshold (setting kernel "memory.withheld_threshold")))
   "Topic labels of closely matching memories AUDIENCE may not receive."
   (let ((excluded (set-difference (sensitivities-for kernel "operator")
