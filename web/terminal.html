@@ -386,6 +386,9 @@ function renderMarkdown(raw) {
   text = text.replace(/`([^`]+)`/g, '<code>$1</code>');
   text = text.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
   text = text.replace(/(?<!\*)\*([^*]+)\*(?!\*)/g, '<em>$1</em>');
+  // The agent's own images only: a path into its image store, nothing remote.
+  text = text.replace(/!\[([^\]]*)\]\((\/api\/v2\/images\/[0-9a-f]{32})\)/g,
+    '<img src="$2" alt="$1" loading="lazy" style="max-width:min(100%,420px);border-radius:8px;border:1px solid var(--border);display:block;margin:6px 0">');
   text = text.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
   text = text.replace(/\u0000(\d+)\u0000/g, (m, i) => blocks[+i]);
   return text.split(/\n{2,}/).map(p => p.trim() ? ('<p>' + p.replace(/\n/g,'<br>') + '</p>') : '').join('');

@@ -35,6 +35,7 @@
                  (:file "memory")
                  (:file "web")
                  (:file "beads")
+                 (:file "imagegen")
                  (:file "coding-agent")
                  (:file "observability")
                  (:file "concerns")

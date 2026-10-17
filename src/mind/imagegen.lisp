@@ -1,0 +1,107 @@
+(in-package #:pai-v3.mind)
+
+;;; Making images (bead v3-6nl; operator decision 2026-10-17: Runware, with
+;;; Z-Image Turbo). The agent describes an image; the provider makes it; it
+;;; is kept with the images the operator sends, in the encrypted blob store,
+;;; and recorded as an event with its prompt and cost, so what the agent has
+;;; made can be listed and its spending capped by day. The provider's key is
+;;; the secret named runware, bound to its host: the agent never sees it.
+
+(define-setting "images.generation_url"
+  :type :string :default "https://api.runware.ai/v1" :group "Images"
+  :description "The Runware API endpoint images are made through. Empty: no image making.")
+(define-setting "images.generation_model"
+  :type :string :default "runware:z-image@turbo" :group "Images"
+  :description "The model images are made with, by its Runware identifier.")
+(define-setting "images.generation_daily_usd"
+  :type :number :min 0 :max 50 :default 1.0d0 :group "Images"
+  :description "Most US dollars of image making a day (UTC). At the limit, image making waits for the next day.")
+
+(define-event-type "image.generated"
+  :schema (("image_id" :string) ("prompt" :string) ("model" :string)
+           ("width" :integer) ("height" :integer) ("cost_usd" :number) ("thought_id" :integer :optional)))
+
+(define-projection "generated_images"
+  :kind :inline
+  :consumes ("image.generated")
+  :tables ("CREATE TABLE IF NOT EXISTS generated_images (event_id INTEGER PRIMARY KEY, image_id TEXT NOT NULL, prompt TEXT NOT NULL, model TEXT NOT NULL, cost_usd REAL NOT NULL, day TEXT NOT NULL, at TEXT NOT NULL, thought_id INTEGER)"
+           "CREATE INDEX IF NOT EXISTS generated_images_day_idx ON generated_images(day)")
+  :reduce (lambda (db e)
+            (let ((p (event-payload e)))
+              (sql-exec db "INSERT INTO generated_images(event_id,image_id,prompt,model,cost_usd,day,at,thought_id) VALUES(?1,?2,?3,?4,?5,?6,?7,?8)"
+                        (event-id e) (obj-get p "image_id") (obj-get p "prompt") (obj-get p "model")
+                        (obj-get p "cost_usd") (subseq (event-at e) 0 10) (event-at e) (obj-get p "thought_id")))))
+
+(defparameter +image-sizes+
+  '(("square" 1024 1024) ("portrait" 832 1216) ("landscape" 1216 832))
+  "Shapes an image may take, in pixels; multiples of 64, as the models want.")
+
+(defun images-spent-today (kernel)
+  (or (sql-value (kernel-db kernel) "SELECT sum(cost_usd) FROM generated_images WHERE day=?1 LIMIT 1"
+                 (subseq (now-iso8601) 0 10))
+      0))
+
+(defun %uuid-v4 ()
+  (let ((b (ironclad:random-data 16)))
+    (setf (aref b 6) (logior #x40 (logand (aref b 6) #x0f)) (aref b 8) (logior #x80 (logand (aref b 8) #x3f)))
+    (let ((h (ironclad:byte-array-to-hex-string b)))
+      (format nil "~a-~a-~a-~a-~a" (subseq h 0 8) (subseq h 8 12) (subseq h 12 16) (subseq h 16 20) (subseq h 20)))))
+
+(defvar *image-post*
+  (lambda (url headers body)
+    (http-request :post url :headers headers :body body :read-timeout 120))
+  "(lambda (url headers body)) -> body, status. Replaced in tests.")
+
+(defun generate-image (kernel thought-id prompt &key (size "square"))
+  "Make an image of PROMPT. Returns the text the agent sees."
+  (let ((url (setting kernel "images.generation_url"))
+        (model (setting kernel "images.generation_model"))
+        (shape (assoc size +image-sizes+ :test #'equal))
+        (limit (setting kernel "images.generation_daily_usd")))
+    (cond ((equal url "") "Image making is off: images.generation_url is not set.")
+          ((not (and (stringp prompt) (<= 3 (length (string-trim " " prompt)) 2000)))
+           "Describe the image in 3 to 2000 characters.")
+          ((null shape) (format nil "size is one of ~{~a~^, ~}." (mapcar #'first +image-sizes+)))
+          ((>= (images-spent-today kernel) limit)
+           (format nil "Today's image budget (US$~,2f) is spent; image making resumes tomorrow (UTC)." limit))
+          (t
+           (multiple-value-bind (body status)
+               (funcall *image-post* url
+                        (list (cons "Content-Type" "application/json")
+                              (cons "Authorization" (list :secret "runware" "Bearer ~a")))
+                        (json-encode (list (obj "taskType" "imageInference"
+                                                "taskUUID" (%uuid-v4)
+                                                "positivePrompt" prompt "model" model
+                                                "width" (second shape) "height" (third shape)
+                                                "numberResults" 1 "outputType" "base64Data"
+                                                "outputFormat" "PNG" "includeCost" t))))
+             (let* ((answer (ignore-errors (json-parse body)))
+                    (result (and (hash-table-p answer) (first (obj-get answer "data"))))
+                    (data (and result (obj-get result "imageBase64Data"))))
+               (if (not (and (eql status 200) (stringp data)))
+                   (format nil "The image was not made (HTTP ~a): ~a" status
+                           (let ((e (and (hash-table-p answer) (first (obj-get answer "errors")))))
+                             (or (and e (obj-get e "message"))
+                                 (subseq (or body "") 0 (min 300 (length (or body "")))))))
+                   (let ((id (store-image kernel (format nil "data:image/png;base64,~a" data)))
+                         (cost (let ((c (obj-get result "cost"))) (if (realp c) (float c 1d0) 0d0))))
+                     (append! kernel "image.generated"
+                              (obj "image_id" id "prompt" prompt "model" model
+                                   "width" (second shape) "height" (third shape) "cost_usd" cost
+                                   "thought_id" thought-id))
+                     (format nil "Made image ~a (US$~,4f). To show it, put this in your reply on a line of its own:~%![~a](/api/v2/images/~a)"
+                             id cost (substitute #\Space #\] (subseq prompt 0 (min 80 (length prompt)))) id)))))))))
+
+(define-tool "generate_image"
+  :description "Make an image from a description, with the image model the operator chose. prompt: what the image shows,
+concretely (subject, setting, style, light, composition); size: square, portrait or landscape. The image is kept, and
+the result says how to show it in a reply. Each image costs money and there is a daily budget, so make one when it is
+wanted, not several to choose from."
+  :summary "Make an image from a description."
+  :available :operator-trust
+  :parameters (obj "type" "object"
+                   "properties" (obj "prompt" (obj "type" "string")
+                                     "size" (obj "type" "string" "enum" (mapcar #'first +image-sizes+)))
+                   "required" (list "prompt"))
+  :run (lambda (kernel thought-id args)
+         (generate-image kernel thought-id (obj-get args "prompt") :size (or (obj-get args "size") "square"))))
