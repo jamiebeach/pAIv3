@@ -68,9 +68,13 @@ peer's board message or notification."
            (and (listp ids) (remove-if-not #'stringp ids))))))
 
 (defun with-images (kernel messages ids profile)
-  "MESSAGES with the images IDS added to the last (user) message when PROFILE
-can see, else with a note that they were not seen."
-  (let* ((last (car (last messages)))
+  "MESSAGES with the images IDS added to the last message, when it is a user
+message, else in a user message of their own (a tool result cannot carry an
+image), when PROFILE can see; else with a note that they were not seen."
+  (let* ((messages (if (equal "user" (obj-get (car (last messages)) "role" "user"))
+                       messages
+                       (append messages (list (obj "role" "user" "content" "(The images in front of me.)")))))
+         (last (car (last messages)))
          (text (obj-get last "content" ""))
          (content
            (if (provider-profile-vision profile)

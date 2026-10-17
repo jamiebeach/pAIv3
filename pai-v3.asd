@@ -39,6 +39,7 @@
                  (:file "web")
                  (:file "beads")
                  (:file "imagegen")
+                 (:file "seeing")
                  (:file "coding-agent")
                  (:file "observability")
                  (:file "concerns")

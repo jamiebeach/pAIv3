@@ -472,7 +472,7 @@ TOOLS NIL asks for an answer with no tools offered."
   (let* ((kernel (mind-kernel mind)) (thought (mind-thought mind))
          (id (getf thought :id))
          (tools (and tools (tools-for thought)))
-         (images (turn-images kernel thought))
+         (images (thought-images kernel thought))
          (profile (let ((p (profile-for kernel (%purpose thought) (funcall *route-signals* kernel thought))))
                     ;; A turn with images asks for a model that can see, if one is routed.
                     (if (and images (not (provider-profile-vision p)))
