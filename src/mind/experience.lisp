@@ -285,7 +285,9 @@ or identifiers), newest first, as (kind at text ref event-id)."
            (when rows
              (append! kernel "memory.recalled" (obj "memory_ids" (mapcar #'first rows) "thought_id" id)))
            (if rows
-               (format nil "~{- ~a~^~%~}" (mapcar #'second rows))
+               (format nil "~{~a~^~%~}"
+                       (mapcar (lambda (r) (format nil "- ~a (~a)" (second r) (or (memory-origin kernel (first r)) "a memory")))
+                               rows))
                "Nothing comes to mind.")))))
 
 (define-tool "remember"

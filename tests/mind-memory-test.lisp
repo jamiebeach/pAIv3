@@ -121,4 +121,18 @@
       (is (work-pending-p k "memory.embed" "m-lost") "queued again")
       (is (null (pai-v3.mind::request-missing-embeddings k)) "and not looked at again until it is due"))))
 
+(deftest a-recalled-memory-says-where-it-came-from
+  (with-temp-kernel (k)
+    (change-setting k "operator.name" "Sam" :origin (obj "principal_type" "operator") :reason "test")
+    (append! k "memory.formed" (obj "memory_id" "turn-1-2-user-0000" "kind" "observation"
+                                   "content" "Nine files, 316 assertions." "sensitivity" "operator-only"
+                                   "owner" "self" "strength" 0.5d0))
+    (append! k "memory.formed" (obj "memory_id" "m-own" "kind" "insight" "content" "I think best at night."
+                                   "sensitivity" "operator-only" "owner" "self" "strength" 0.5d0))
+    (is (search "of a message from Sam" (pai-v3.mind::memory-origin k "turn-1-2-user-0000"))
+        "something the operator said is remembered as theirs, never as first-hand experience")
+    (is (search "a memory from" (pai-v3.mind::memory-origin k "turn-1-2-user-0000")) "with when")
+    (is (search "insight I kept" (pai-v3.mind::memory-origin k "m-own")))
+    (is (null (pai-v3.mind::memory-origin k "no-such-memory")))))
+
 (run-suite "mind-memory")

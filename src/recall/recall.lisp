@@ -125,7 +125,11 @@ nearest VECTOR, within the association distance."
         (when memories
           (append! kernel "memory.recalled" (obj "memory_ids" (mapcar #'first memories) "thought_id" thought)))
         (append (mapcar (lambda (text) (list text (estimate-tokens text))) texts)
-                (mapcar (lambda (row) (list (second row) (estimate-tokens (second row)))) memories)
+                (mapcar (lambda (row)
+                          ;; Where it came from, so it is never taken for first-hand experience.
+                          (let ((text (format nil "~a (~a)" (second row) (or (memory-origin kernel (first row)) "a memory"))))
+                            (list text (estimate-tokens text))))
+                        memories)
                 (unless vector
                   (let ((note "(Remembering by meaning is unavailable just now; only what was named comes to mind.)"))
                     (list (list note (estimate-tokens note))))))))))

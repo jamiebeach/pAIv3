@@ -114,6 +114,23 @@ mention that restricted information exists. Tuned for nomic-embed-text.")
   :default *withheld-threshold*
   :description "How close a restricted memory must be to the question before I say restricted information exists (cosine distance; lower is stricter).")
 
+(defun memory-origin (kernel memory-id)
+  "Where MEMORY-ID came from, said plainly, so a recalled memory is never
+mistaken for the agent's own first-hand experience: when it was formed,
+and from what (a message the operator sent, a reply of mine, an episode,
+something I chose to remember)."
+  (let ((row (sql-row (kernel-db kernel) "SELECT kind,owner,created_at FROM memory_nodes WHERE id=?1 LIMIT 1" memory-id)))
+    (when row
+      (destructuring-bind (kind owner at) row
+        (format nil "a memory from ~a, ~a"
+                (or (ignore-errors (subseq (local-stamp kernel at) 4 14)) (subseq at 0 10))
+                (cond ((search "-user-" memory-id)
+                       (format nil "of a message from ~a" (setting kernel "operator.name")))
+                      ((or (search "-agent-" memory-id) (search "-assistant-" memory-id)) "of something I said")
+                      ((equal kind "episode") "of a conversation")
+                      ((equal owner "self") (format nil "~a I kept" (string-downcase kind)))
+                      (t (string-downcase kind))))))))
+
 (defun memory-strength (kernel memory-id)
   "MEMORY-ID's strength (0 to 1), or NIL."
   (sql-value (kernel-db kernel) "SELECT strength FROM memory_nodes WHERE id=?1 LIMIT 1" memory-id))

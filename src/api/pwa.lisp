@@ -101,6 +101,10 @@ becomes a stimulus (pai-v3.mind:coding-agent-message)."
                                             "secrets" (remove-if-not (lambda (n) (search (first r) n)) (mapcar #'first (secret-names)))))
                            (google-accounts kernel)))
                   ((equal what "graph") (list (graph-health kernel)))
+                  ;; find:<words>: the experience search the agent itself uses, as the operator sees it.
+                  ((uiop:string-prefix-p "find:" what)
+                   (mapcar (lambda (r) (obj "kind" (first r) "at" (second r) "snippet" (third r) "ref" (fourth r)))
+                           (search-experience kernel (substitute #\Space #\+ (subseq what 5)) "operator" :limit limit)))
                   ((equal what "duplicates")
                    ;; Live facts sharing their ends and relation: how many also share their statement.
                    (list (obj "same_ends" (rows "SELECT subject,predicate,object,count(*),count(DISTINCT lower(trim(coalesce(text,'')))) FROM graph_facts WHERE status=?1 GROUP BY subject,predicate,object,character HAVING count(*)>1 LIMIT 200" "active"))))
