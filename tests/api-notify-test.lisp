@@ -123,6 +123,13 @@ instead of sent."
       (let ((responding (request-thought k "responding" "the operator asked")))
         (is (search "Phone: woken" (funcall run k responding (obj "topic" "update" "importance" 2 "summary" "Here is the answer you asked for.")))
             "an answer in the operator's own conversation is never shadowed"))
+      (change-setting k "outreach.shadow_exempt" (list "noticing") :origin *operator*)
+      (is (search "Phone:" (funcall run k noticing (obj "topic" "important-mail" "importance" 2 "summary" "Mail and calendar are trusted now.")))
+          "an exempt kind of thought is sent")
+      (let ((quiet (request-thought k "introspection" "quiet time")))
+        (is (search "Kept for the operator's review" (funcall run k quiet (obj "topic" "update" "importance" 2 "summary" "A thought from quiet time.")))
+            "the rest stay in shadow"))
+      (signals setting-refused (change-setting k "outreach.shadow_exempt" (list "anything") :origin *operator*))
       (change-setting k "outreach.shadow" :false :origin *operator*)
       (is (search "Phone:" (funcall run k noticing (obj "topic" "update" "importance" 2 "summary" "Shadow mode off: this one goes.")))))))
 

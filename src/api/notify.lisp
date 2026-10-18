@@ -331,6 +331,12 @@ deliver it if so. Returns the decision."
   :type :boolean :default :false :group "Notifications"
   :description "Keep messages I start on my own for the operator's review instead of sending them.")
 
+(define-setting "outreach.shadow_exempt"
+  :type :array :default '() :group "Notifications"
+  :validate (lambda (v) (unless (every (lambda (o) (member o pai-v3.mind::+origins+ :test #'equal)) v)
+                          (format nil "each entry is one of ~{~a~^, ~}" pai-v3.mind::+origins+)))
+  :description "Kinds of thought whose messages are sent even in shadow mode, once their judgment has been checked: noticing (mail, calendar and reminders), concern, introspection, private, unbidden, work, docket.")
+
 (define-event-type "outreach.withheld"
   :schema (("thought_id" :integer) ("origin" :string) ("topic" :string) ("importance" :integer)
            ("summary" :string) ("message" :string :optional)))
@@ -397,7 +403,8 @@ deliver it if so. Returns the decision."
                           0)
                       *notify-messages-per-day*)
                   "I have sent enough messages to the operator today; it can wait for the next conversation.")
-                 ((and (eq t (setting kernel "outreach.shadow")) (not (equal origin "responding")))
+                 ((and (eq t (setting kernel "outreach.shadow")) (not (equal origin "responding"))
+                       (not (member origin (setting kernel "outreach.shadow_exempt") :test #'equal)))
                   (append! kernel "outreach.withheld"
                            (obj "thought_id" id "origin" (or origin "unknown") "topic" topic "importance" importance
                                 "summary" (subseq summary 0 (min 300 (length summary)))
