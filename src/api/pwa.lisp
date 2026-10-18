@@ -112,6 +112,11 @@ becomes a stimulus (pai-v3.mind:coding-agent-message)."
                    ;; This agent's board: the LIMIT most active threads, with their posts.
                    (mapcar (lambda (th) (board-thread-json kernel (obj-get th "thread_id")))
                            (let ((all (board-index-json kernel))) (subseq all 0 (min limit (length all))))))
+                  ;; The watch's passes over mail and calendar, with each item's score and reasons.
+                  ((equal what "attention")
+                   (mapcar (lambda (id) (let ((e (event-by-id kernel id))) (obj "event_id" id "at" (event-at e) "pass" (event-payload e))))
+                           (latest-event-ids kernel "attention.pass" limit)))
+                  ((equal what "shadow") (shadow-outreach kernel limit))
                   ((equal what "formation")
                    (mapcar (lambda (id) (let ((e (event-by-id kernel id))) (obj "event_id" id "at" (event-at e) "run" (event-payload e))))
                            (latest-event-ids kernel "graph.formation.done" limit)))

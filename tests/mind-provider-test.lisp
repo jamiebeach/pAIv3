@@ -30,6 +30,21 @@
       (is (= 12300 (spent-today k "background")) "reported cost becomes spend")
       (is (string= "ready" (projection-status k "provider_calibration"))))))
 
+(deftest a-local-server-without-a-key-is-sent-none
+  (let ((local (pai-v3.mind::%profile (obj "name" "judge" "base_url" "http://127.0.0.1:1234/v1" "model" "q" "local" t)))
+        (remote (pai-v3.mind::%profile (obj "name" "main" "base_url" "https://example.com/v1" "model" "m"))))
+    (is (null (pai-v3.mind::provider-profile-secret local)))
+    (is (equal "provider" (pai-v3.mind::provider-profile-secret remote)) "a remote profile still names its key")
+    (with-temp-kernel (k)
+      (let ((sent nil))
+        (setf (pai-v3.mind::provider-profile-transport local)
+              (lambda (url headers body &key stream-fn timeout allow-private)
+                (declare (ignore url body stream-fn timeout allow-private))
+                (setf sent headers)
+                (values 200 nil (ok-body "ok"))))
+        (complete k local (user "hi"))
+        (is (null (assoc "Authorization" sent :test #'string=)) "no Authorization header")))))
+
 (deftest streaming-delivers-deltas-and-keeps-the-whole
   (with-temp-kernel (k)
     (let* ((seen '())

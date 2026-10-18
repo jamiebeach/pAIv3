@@ -183,8 +183,9 @@ signals PROVIDER-FAILURE with a class on failure."
                                  "reasoning" (provider-profile-reasoning profile)
                                  "stream" (if on-delta t :false)
                                  "usage" (obj "include" t))))
-         (headers (list (cons "Content-Type" "application/json")
-                        (cons "Authorization" (list :secret (provider-profile-secret profile) "Bearer ~a"))))
+         (headers (cons (cons "Content-Type" "application/json")
+                        (and (provider-profile-secret profile)
+                             (list (cons "Authorization" (list :secret (provider-profile-secret profile) "Bearer ~a"))))))
          (content (make-string-output-stream))
          (tool-calls '()) (finish nil) (usage (obj)) (stream-error nil)
          (raw '()) (raw-count 0)          ; the last chunks as sent, kept for a failure

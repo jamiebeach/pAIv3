@@ -62,7 +62,9 @@ route conditions. The affect module installs a richer one.")
 
 (defun %profile (p)
   (make-provider-profile :name (obj-get p "name") :base-url (obj-get p "base_url") :model (obj-get p "model")
-                         :secret (obj-get p "secret" "provider") :local (eq t (obj-get p "local"))
+                         :local (eq t (obj-get p "local"))
+                         ;; A local server without a key is sent none.
+                         :secret (obj-get p "secret" (if (eq t (obj-get p "local")) nil "provider"))
                          :max-tokens (obj-get p "max_tokens" 4096)
                          :vision (eq t (obj-get p "vision"))
                          :all-tools (eq t (obj-get p "all_tools"))
