@@ -102,6 +102,30 @@ instead of sent."
     (is (not (pai-v3.mind::tool-available-p (gethash "notify_operator" *tools*) '(:audience "peer:x")))
         "a peer cannot make me notify the operator")))
 
+;;; Shadow mode (docs/charges-and-attention.md §5)
+
+(deftest shadow-mode-keeps-what-i-start-and-sends-what-i-am-asked
+  (with-notify (k)
+    (change-setting k "outreach.shadow" t :origin *operator*)
+    (let* ((run (pai-v3.mind::tool-run (gethash "notify_operator" *tools*)))
+           (noticing (request-thought k "noticing" "new mail" :audience "external"))
+           (said (funcall run k noticing (obj "topic" "important-mail" "importance" 2 "summary" "The landlord wrote about the lease."))))
+      (is (search "Kept for the operator's review" said))
+      (is (null *pushed*) "nothing reached the phone")
+      (is (null (sql-value (kernel-db k) "SELECT 1 FROM working_dialogue WHERE kind=?1 AND rendered LIKE ?2 LIMIT 1" "notice" "%landlord%"))
+          "nor the terminal")
+      (let ((kept (pai-v3.api::shadow-outreach k 10)))
+        (is (= 1 (length kept)))
+        (is (equal "noticing" (obj-get (first kept) "origin")))
+        (pai-v3.api::rate-outreach k (obj-get (first kept) "id") "useful")
+        (is (equal "useful" (obj-get (first (pai-v3.api::shadow-outreach k 10)) "rating")) "the operator's rating is kept")
+        (signals error (pai-v3.api::rate-outreach k (obj-get (first kept) "id") "meh") "only the three ratings"))
+      (let ((responding (request-thought k "responding" "the operator asked")))
+        (is (search "Phone: woken" (funcall run k responding (obj "topic" "update" "importance" 2 "summary" "Here is the answer you asked for.")))
+            "an answer in the operator's own conversation is never shadowed"))
+      (change-setting k "outreach.shadow" :false :origin *operator*)
+      (is (search "Phone:" (funcall run k noticing (obj "topic" "update" "importance" 2 "summary" "Shadow mode off: this one goes.")))))))
+
 (deftest reminders-reach-the-phone
   (with-notify (k)
     (post-notice k :channel "reminder" :audience "operator" :text "Take the bins out")

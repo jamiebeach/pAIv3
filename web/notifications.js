@@ -182,3 +182,52 @@ document.getElementById('telegram-remove').addEventListener('click', async () =>
 });
 
 refreshTelegram().catch(error => say(error.message));
+
+// Messages kept in shadow mode, for the operator to rate.
+async function refreshShadow() {
+  const section = document.getElementById('shadow-review');
+  const list = document.getElementById('shadow-list');
+  let body;
+  try { body = await api('/api/notifications/shadow'); } catch (error) { return; }
+  section.hidden = !(body.shadow || body.messages.length);
+  list.textContent = '';
+  if (!body.messages.length) {
+    const li = document.createElement('li');
+    li.className = 'muted';
+    li.textContent = 'Nothing kept yet.';
+    list.appendChild(li);
+  }
+  for (const m of body.messages) {
+    const li = document.createElement('li');
+    const when = document.createElement('div');
+    when.className = 'when';
+    when.textContent = new Date(m.at).toLocaleString() + ' · ' + m.topic + ' · importance ' + m.importance;
+    const summary = document.createElement('div');
+    summary.textContent = m.summary;
+    li.append(when, summary);
+    if (m.message && m.message !== m.summary) {
+      const more = document.createElement('div');
+      more.className = 'muted';
+      more.style.whiteSpace = 'pre-wrap';
+      more.textContent = m.message;
+      li.appendChild(more);
+    }
+    const rate = document.createElement('div');
+    rate.className = 'rate';
+    for (const [value, label] of [['useful', 'Useful'], ['noise', 'Noise'], ['wrong', 'Wrong']]) {
+      const b = document.createElement('button');
+      b.textContent = label;
+      if (m.rating === value) b.className = 'chosen';
+      b.addEventListener('click', async () => {
+        try {
+          await api('/api/notifications/shadow', { method: 'POST', headers: HEADERS, body: JSON.stringify({ id: m.id, rating: value }) });
+          refreshShadow();
+        } catch (error) { say(error.message); }
+      });
+      rate.appendChild(b);
+    }
+    li.appendChild(rate);
+    list.appendChild(li);
+  }
+}
+refreshShadow();

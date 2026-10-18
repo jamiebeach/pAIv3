@@ -83,6 +83,7 @@
                  (:file "boards")
                  (:file "notify")
                  (:file "google")
+                 (:file "attention")
                  (:file "files")
                  (:file "pwa")))
    (:module "src/recall"

@@ -320,6 +320,58 @@ deliver it if so. Returns the decision."
 
 (pushnew 'notify-periodic *periodic-hooks*)
 
+;;; Shadow mode (docs/charges-and-attention.md §5): outreach the agent starts
+;;; on its own is decided and written, then kept for the operator to review
+;;; instead of being sent. The operator rates each (useful, noise, wrong) on
+;;; the notifications page; that is how the agent's judgment is checked
+;;; before it may interrupt. Answers within a conversation the operator
+;;; started are never shadowed.
+
+(define-setting "outreach.shadow"
+  :type :boolean :default :false :group "Notifications"
+  :description "Keep messages I start on my own for the operator's review instead of sending them.")
+
+(define-event-type "outreach.withheld"
+  :schema (("thought_id" :integer) ("origin" :string) ("topic" :string) ("importance" :integer)
+           ("summary" :string) ("message" :string :optional)))
+(define-event-type "outreach.rated" :schema (("withheld_event_id" :integer) ("rating" :string)))
+
+(define-projection "outreach"
+  :kind :inline
+  :consumes ("outreach.withheld" "outreach.rated")
+  :tables ("CREATE TABLE IF NOT EXISTS outreach_shadow (event_id INTEGER PRIMARY KEY, kind TEXT NOT NULL DEFAULT 'withheld', thought_id INTEGER NOT NULL, origin TEXT NOT NULL, topic TEXT NOT NULL, importance INTEGER NOT NULL, summary TEXT NOT NULL, message TEXT, at TEXT NOT NULL, rating TEXT)"
+           "CREATE INDEX IF NOT EXISTS outreach_shadow_kind_idx ON outreach_shadow(kind,event_id)")
+  :reduce
+  (lambda (db e)
+    (let ((p (event-payload e)))
+      (if (string= (event-type e) "outreach.withheld")
+          (sql-exec db "INSERT INTO outreach_shadow(event_id,thought_id,origin,topic,importance,summary,message,at) VALUES(?1,?2,?3,?4,?5,?6,?7,?8)"
+                    (event-id e) (obj-get p "thought_id") (obj-get p "origin") (obj-get p "topic") (obj-get p "importance")
+                    (obj-get p "summary") (%given (obj-get p "message")) (event-at e))
+          (sql-exec db "UPDATE outreach_shadow SET rating=?2 WHERE event_id=?1"
+                    (obj-get p "withheld_event_id") (obj-get p "rating"))))))
+
+(defparameter +outreach-ratings+ '("useful" "noise" "wrong"))
+
+(defun %root-origin (kernel thought-id)
+  "The origin of the root of THOUGHT-ID: what started this line of thinking."
+  (let ((root (sql-value (kernel-db kernel) "SELECT root_id FROM thoughts WHERE id=?1 LIMIT 1" thought-id)))
+    (and root (sql-value (kernel-db kernel) "SELECT origin FROM thoughts WHERE id=?1 LIMIT 1" root))))
+
+(defun shadow-outreach (kernel limit)
+  "The newest withheld messages, as objects for the page."
+  (mapcar (lambda (r)
+            (destructuring-bind (id origin topic importance summary message at rating) r
+              (obj "id" id "origin" origin "topic" topic "importance" importance "summary" summary
+                   "message" (or message :null) "at" at "rating" (or rating :null))))
+          (sql-rows (kernel-db kernel) "SELECT event_id,origin,topic,importance,summary,message,at,rating FROM outreach_shadow WHERE kind=?1 ORDER BY event_id DESC LIMIT ?2"
+                    "withheld" limit)))
+
+(defun rate-outreach (kernel id rating)
+  (unless (member rating +outreach-ratings+ :test #'equal) (error "rating is useful, noise or wrong"))
+  (unless (sql-value (kernel-db kernel) "SELECT 1 FROM outreach_shadow WHERE event_id=?1 LIMIT 1" id) (error "no such message"))
+  (append! kernel "outreach.rated" (obj "withheld_event_id" id "rating" rating)))
+
 ;;; The agent's tool
 
 (define-tool "notify_operator"
@@ -334,9 +386,9 @@ deliver it if so. Returns the decision."
   ;; The operator's own thoughts, and digests of their mail and calendar.
   :available '("operator" "external")
   :run (lambda (kernel id args)
-         (declare (ignore id))
          (let ((topic (obj-get args "topic")) (importance (obj-get args "importance"))
-               (summary (obj-get args "summary")) (message (%given (obj-get args "message"))))
+               (summary (obj-get args "summary")) (message (%given (obj-get args "message")))
+               (origin (%root-origin kernel id)))
            (cond ((not (assoc topic +notify-topics+ :test #'equal)) "Choose a topic from the list.")
                  ((not (typep importance '(integer 1 3))) "importance is 1, 2 or 3.")
                  ((not (and (stringp summary) (plusp (length summary)))) "Give a short summary.")
@@ -345,6 +397,12 @@ deliver it if so. Returns the decision."
                           0)
                       *notify-messages-per-day*)
                   "I have sent enough messages to the operator today; it can wait for the next conversation.")
+                 ((and (eq t (setting kernel "outreach.shadow")) (not (equal origin "responding")))
+                  (append! kernel "outreach.withheld"
+                           (obj "thought_id" id "origin" (or origin "unknown") "topic" topic "importance" importance
+                                "summary" (subseq summary 0 (min 300 (length summary)))
+                                "message" (and message (subseq message 0 (min 1500 (length message))))))
+                  "Kept for the operator's review, not sent: I am in shadow mode, so messages I start on my own are shown to the operator later to check my judgment. Nothing more to do.")
                  (t (let* ((event (post-notice kernel :channel "notify" :audience "operator"
                                                       :importance (if (= importance 3) "high" "normal")
                                                       :text (if message (subseq message 0 (min 1500 (length message))) summary)))
@@ -396,6 +454,12 @@ deliver it if so. Returns the decision."
     (handler-case
         (cond
           ((string= path "/api/notifications/state") (reply 200 (%notify-state k)))
+          ((string= path "/api/notifications/shadow")
+           (when (eq method :post)
+             (let ((b (body-json)))
+               (rate-outreach k (obj-get b "id") (obj-get b "rating"))))
+           (reply 200 (obj "shadow" (if (eq t (setting k "outreach.shadow")) t :false)
+                           "messages" (shadow-outreach k 40))))
           ((string= path "/api/notifications/policy")
            (when (eq method :post)
              (let ((merged (%merge (setting k "notifications.policy") (body-json))))

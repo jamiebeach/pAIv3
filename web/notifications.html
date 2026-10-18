@@ -17,6 +17,10 @@
   textarea { width: 100%; box-sizing: border-box; min-height: 260px; font: 12px/1.4 ui-monospace, monospace; background: transparent; color: var(--fg); border: 1px solid var(--line); border-radius: 6px; padding: 8px; }
   .muted { color: var(--muted); }
   li { display: flex; gap: 8px; align-items: center; margin: 4px 0; }
+  #shadow-list li { display: block; border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; margin: 0 0 8px; }
+  #shadow-list .when { font-size: 12px; color: var(--muted); }
+  #shadow-list .rate { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
+  #shadow-list button.chosen { border-color: var(--accent); color: var(--accent); }
   #status { min-height: 1.5em; }
 </style>
 </head>
@@ -26,6 +30,11 @@
   <h1>Notifications</h1>
   <p class="muted">Summaries only, with a link into this chat. Nothing sensitive is sent through the push service.</p>
   <div id="status" role="status" aria-live="polite"></div>
+  <section id="shadow-review" hidden>
+    <h2 style="font-size:15px">Kept for review</h2>
+    <p class="muted">Shadow mode is on: messages I would have started on my own are kept here instead of sent. Mark each one so my judgment can be checked before I may interrupt you.</p>
+    <ul id="shadow-list" style="list-style:none;padding:0"></ul>
+  </section>
   <section id="delivery">
     <h2 style="font-size:15px">Delivery state</h2>
     <p id="state-summary" class="muted">Loading&hellip;</p>

@@ -131,14 +131,26 @@ what is waiting on the operator, what the agent is watching for
 (anticipations), and when the operator was last active. It is kept
 current without a model.
 
-**Appraisal.** Each percept is scored from features, not prose:
-relevance to a charge, to an anticipation or to an open concern
-(embedding distance and exact entity matches), urgency (time to a
-deadline or event), novelty with habituation (repeats decay), and the
-operator's state (quiet hours, busy, recently interrupted). A very cheap
-model may answer bounded questions (is this mail personal or bulk?) where
-rules cannot. Feature values and the score are recorded, so thresholds
-can be calibrated against what the operator found useful.
+**Appraisal.** Each percept is scored in layers, cheapest first, each
+adding its reasons:
+
+1. *Rules* say how it arrived and when: a person, a list or a machine
+   (from the message's own headers and the mail service's categories);
+   account security; an event that is soon, new, moved, clashing or
+   cancelled. Rules never decide relevance.
+2. *Relevance*: the percept is embedded and compared with what the agent
+   knows matters (the operator's stated interests, its open concerns, its
+   work). A list message about something the operator cares about is
+   raised.
+3. *The judge*: what is still unsure goes, in one batch, to a small model:
+   a local model on the operator's machine, or the JEV judge for calibrated
+   choices. It may raise an item, never lower one.
+
+A layer that is unavailable is skipped and the pass says so. Feature
+values, reasons and scores are recorded, so thresholds can be calibrated
+against what the operator found useful. Reading the item is still a
+thought: System-1 decides how soon and how much attention, never what the
+item means.
 
 **The stream.** Every pass writes a short stream record: what was
 noticed, what was set aside, what was escalated. This is the evidence the
