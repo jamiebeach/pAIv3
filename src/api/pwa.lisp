@@ -438,7 +438,7 @@ localhost), the URL to send it to; passkeys only work at the agent's origin."
       ((string= path "/oauth/google/return")
        (values (google-route agent method path nil) t))
 
-      ((or (uiop:string-prefix-p "/oauth/google/" path) (string= path "/api/google/disconnect"))
+      ((or (uiop:string-prefix-p "/oauth/google/" path) (uiop:string-prefix-p "/api/google/" path))
        (values (let ((origin (%signed-in agent)))
                  (cond ((null origin) (reply 401 (obj "error" "sign in first")))
                        ((and (eq method :post) (not (same-origin-p agent))) (reply 403 (obj "error" (%refusal agent))))

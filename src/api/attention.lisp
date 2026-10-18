@@ -377,9 +377,11 @@ Returns how the judge went, or NIL when there was none to ask."
 
 (define-slot-source :present (kernel request max)
   ;; What the operator's calendar holds next.
-  (let* ((account (first (first (google-accounts kernel))))
-         (rows (and account (sql-rows (kernel-db kernel) "SELECT summary,start_at,location FROM calendar_events WHERE account=?1 AND start_at>=?2 ORDER BY start_at LIMIT 5"
-                                      account (%iso-now)))))
+  (let ((rows (subseq-safe (sort (loop for (account) in (google-accounts kernel)
+                                         append (sql-rows (kernel-db kernel) "SELECT summary,start_at,location FROM calendar_events WHERE account=?1 AND start_at>=?2 ORDER BY start_at LIMIT 5"
+                                                          account (%iso-now)))
+                                   #'string< :key #'second)
+                             5)))
     (when rows
       (let ((text (format nil "Next on the operator's calendar: ~{~a~^; ~}."
                           (mapcar (lambda (r) (format nil "~a at ~a~@[ (~a)~]" (first r) (second r) (third r))) rows))))

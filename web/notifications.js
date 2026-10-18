@@ -231,3 +231,34 @@ async function refreshShadow() {
   }
 }
 refreshShadow();
+
+// Google accounts for mail and calendar.
+async function refreshAccounts() {
+  const list = document.getElementById('account-list');
+  let body;
+  try { body = await api('/api/google/accounts'); } catch (error) { return; }
+  document.getElementById('mail-state').textContent = body.mail_enabled ? '' : 'Mail reading is switched off (mail.enabled in settings).';
+  list.textContent = '';
+  const live = body.accounts.filter(a => a.status === 'connected');
+  if (!live.length) addLine(list, 'No account connected yet.');
+  for (const a of live) {
+    const li = document.createElement('li');
+    li.textContent = a.account + ' — ' + a.mail_seen + ' messages seen since ' + new Date(a.connected_at).toLocaleDateString();
+    const off = document.createElement('button');
+    off.textContent = 'Disconnect';
+    off.addEventListener('click', async () => {
+      try {
+        await api('/api/google/disconnect', { method: 'POST', headers: HEADERS, body: JSON.stringify({ account: a.account }) });
+        say('Disconnected ' + a.account + '.'); refreshAccounts();
+      } catch (error) { say(error.message); }
+    });
+    li.appendChild(off);
+    list.appendChild(li);
+  }
+}
+document.getElementById('account-connect').addEventListener('click', () => {
+  const name = document.getElementById('account-name').value.trim();
+  if (!/^[A-Za-z0-9_-]{1,40}$/.test(name)) { say('Name the account with letters, digits, - and _ (for example work).'); return; }
+  location.href = '/oauth/google/connect?account=' + encodeURIComponent(name);
+});
+refreshAccounts();

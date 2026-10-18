@@ -35,6 +35,14 @@
     <p class="muted">Shadow mode is on: messages I would have started on my own are kept here instead of sent. Mark each one so my judgment can be checked before I may interrupt you.</p>
     <ul id="shadow-list" style="list-style:none;padding:0"></ul>
   </section>
+  <section id="google-accounts">
+    <h2 style="font-size:15px">Mail and calendar accounts</h2>
+    <p class="muted">Read-only. Mail is read from the moment an account is connected; the calendar from now ahead.</p>
+    <p id="mail-state" class="muted"></p>
+    <ul id="account-list"></ul>
+    <p><input id="account-name" type="text" autocapitalize="none" autocorrect="off" spellcheck="false" autocomplete="off" aria-label="Account name" placeholder="A short name, such as work" style="width:100%;box-sizing:border-box;padding:6px;font-size:16px"></p>
+    <p><button id="account-connect" class="primary">Connect a Google account</button></p>
+  </section>
   <section id="delivery">
     <h2 style="font-size:15px">Delivery state</h2>
     <p id="state-summary" class="muted">Loading&hellip;</p>
