@@ -461,9 +461,27 @@ localhost), the URL to send it to; passkeys only work at the agent's origin."
                      (t (files-route agent method path)))
                t))
 
+      ((and (eq method :post) (string= path "/api/board/post"))
+       (values (cond ((not (%signed-in agent)) (reply 401 (obj "error" "sign in first")))
+                     ((not (same-origin-p agent)) (reply 403 (obj "error" (%refusal agent))))
+                     (t (handler-case
+                            (let ((b (body-json)))
+                              (reply 200 (operator-post k (obj-get b "text")
+                                                        :title (%given (obj-get b "title"))
+                                                        :thread-id (%given (obj-get b "thread_id"))
+                                                        :reply-to (%given (obj-get b "reply_to"))
+                                                        :owner (%given (obj-get b "owner"))
+                                                        :tell (let ((tell (obj-get b "tell")))
+                                                                (cond ((equal tell "all") :all)
+                                                                      ((listp tell) tell))))))
+                          (board-error (e) (reply 400 (obj "error" (board-error-reason e)))))))
+               t))
+
       ((and (eq method :get) (uiop:string-prefix-p "/api/board" path))
        (values (cond ((not (%signed-in agent)) (reply 401 (obj "error" "sign in first")))
-                     ((string= path "/api/board/threads") (reply 200 (obj "threads" (board-index-json k))))
+                     ((string= path "/api/board/threads")
+                      (reply 200 (obj "threads" (board-index-json k)
+                                      "peers" (mapcar (lambda (p) (obj "id" (first p) "name" (second p))) (fleet-peers k)))))
                      ((string= path "/api/board/fleet") (reply 200 (obj "boards" (fleet-board-overview k))))
                      ((string= path "/api/board/fleet-thread")
                       (let ((thread (fleet-board-thread k (hunchentoot:get-parameter "owner") (hunchentoot:get-parameter "id"))))
@@ -602,7 +620,7 @@ localhost), the URL to send it to; passkeys only work at the agent's origin."
                                                    (mapcar (lambda (url) (pai-v3.mind::store-image k url)) (obj-get b "images"))
                                                  (error (e) (return-from %pwa-route
                                                               (values (reply 400 (obj "error" (princ-to-string e))) t)))))
-                                       (turn (receive-turn k :channel "web" :audience "operator" :speaker "Operator"
+                                       (turn (receive-turn k :channel "web" :audience "operator" :speaker (setting k "operator.name")
                                                              :text (if (zerop (length text)) "(an image)" text) :images images
                                                              :origin (progn (setf (gethash "channel" origin) "web") origin)))
                                        (thought (request-thought k "responding" "The operator spoke."

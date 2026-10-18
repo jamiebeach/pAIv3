@@ -36,6 +36,16 @@
   .topic .board { display: flex; align-items: center; gap: 6px; font-size: 13px; }
   .topic .board .avatar { width: 22px; height: 22px; font-size: 11px; margin: 0; }
   .tabs { margin-bottom: 6px; }
+  .composer { border: 1px solid var(--line); border-radius: 8px; background: var(--panel); padding: 12px 14px; margin: 0 0 14px; }
+  .composer input[type=text], .composer textarea { width: 100%; font: inherit; font-size: 16px; color: var(--fg); background: var(--bg);
+                                                  border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; margin: 0 0 8px; }
+  .composer textarea { min-height: 96px; resize: vertical; }
+  .composer .tell { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 13px; color: var(--muted); margin: 0 0 10px; }
+  .composer .row { display: flex; gap: 8px; align-items: center; justify-content: flex-end; flex-wrap: wrap; }
+  .composer .status { font-size: 13px; color: var(--muted); margin-right: auto; }
+  .btn { font: inherit; font-size: 14px; padding: 6px 14px; border-radius: 6px; border: 1px solid var(--accent); background: var(--accent); color: #fff; cursor: pointer; }
+  .btn.quiet { background: transparent; color: var(--accent); }
+  .postbar .reply-link { margin-left: 10px; }
   .unreachable { color: var(--muted); font-size: 13px; border: 1px dashed var(--line); border-radius: 6px; padding: 8px 12px; margin: 0 0 10px; }
   .topic .title { font-weight: 600; font-size: 15px; overflow-wrap: anywhere; }
   .topic .by, .topic .last { font-size: 12px; color: var(--muted); }
@@ -184,8 +194,62 @@
       var forum = el('div', { class: 'forum' }, [el('div', { class: 'head' + (fleet ? ' fleet' : '') }, head)]);
       if (!shown.length) forum.appendChild(el('p', { class: 'empty', style: 'padding:16px', text: threads.length ? 'No ' + filter + ' threads.' : 'No threads yet.' }));
       shown.forEach(function (t) { forum.appendChild(topicRow(t, fleet)); });
-      view.replaceChildren.apply(view, [bar].concat(notes, [forum]));
+      var parts = [bar].concat(notes);
+      if (!fleet) {
+        var holder = el('div', {});
+        var open = el('button', { type: 'button', class: 'btn quiet', text: 'New thread' });
+        open.onclick = function () {
+          holder.replaceChildren(composer(b.peers || [], null, function (r) {
+            location.href = '/board-view?id=' + encodeURIComponent(r.thread_id);
+          }));
+          open.remove();
+        };
+        parts.push(el('div', { style: 'margin:0 0 10px' }, [open]), holder);
+      }
+      view.replaceChildren.apply(view, parts.concat([forum]));
     }).catch(fail);
+  }
+
+  function post(body) {
+    return fetch('/api/board/post', { method: 'POST', credentials: 'same-origin',
+                                      headers: { 'Content-Type': 'application/json', 'X-PAI-Request': 'same-origin' },
+                                      body: JSON.stringify(body) })
+      .then(function (r) { return r.json().then(function (b) { if (!r.ok) throw new Error(b.error || r.status); return b; }); });
+  }
+
+  // A form for a new thread (no threadId) or a reply; peers may be told.
+  function composer(peers, threadId, onDone, owner, defaultReply) {
+    var title = threadId ? null : el('input', { type: 'text', placeholder: 'Title', maxlength: '240' });
+    var text = el('textarea', { placeholder: threadId ? 'Write a reply…' : 'Write a post…', maxlength: '4000' });
+    var replyTo = defaultReply || null, replyNote = el('span', { class: 'status' });
+    var boxes = peers.map(function (p) { return { id: p.id, box: el('input', { type: 'checkbox', value: p.id }), name: p.name }; });
+    var all = el('input', { type: 'checkbox' });
+    all.onchange = function () { boxes.forEach(function (b) { b.box.checked = all.checked; }); };
+    var status = el('span', { class: 'status' });
+    var send = el('button', { type: 'button', class: 'btn', text: threadId ? 'Reply' : 'Post' });
+    var form = el('div', { class: 'composer' }, [
+      title, text,
+      peers.length ? el('div', { class: 'tell' }, [el('span', { text: 'Also tell:' }),
+        el('label', {}, [all, ' Everyone'])].concat(boxes.map(function (b) { return el('label', {}, [b.box, ' ' + b.name]); }))) : null,
+      el('div', { class: 'row' }, [replyNote, status, send])
+    ]);
+    send.onclick = function () {
+      var tell = boxes.filter(function (b) { return b.box.checked; }).map(function (b) { return b.id; });
+      send.disabled = true; status.textContent = 'Posting…';
+      post({ title: title ? title.value : null, text: text.value, thread_id: threadId || null, reply_to: replyTo, owner: owner || null,
+             tell: (all.checked && tell.length === boxes.length) ? 'all' : tell })
+        .then(function (r) {
+          status.textContent = r.told && r.told.length ? 'Posted; told ' + r.told.join(', ') + '.' : 'Posted.';
+          if (r.waiting && r.waiting.length) status.textContent += ' ' + r.waiting.join(', ') + ' will be told when reachable.';
+          setTimeout(function () { onDone(r); }, 600);
+        })
+        .catch(function (e) { status.textContent = 'Not posted: ' + e.message; send.disabled = false; });
+    };
+    form.replyTo = function (msgId, n, author) {
+      replyTo = msgId; replyNote.textContent = 'Replying to #' + n + ' (' + author + ')';
+      text.focus(); form.scrollIntoView({ block: 'center' });
+    };
+    return form;
   }
 
   function imageUrl(owner, threadId, id) {
@@ -196,6 +260,7 @@
   function thread(id, owner) {
     var url = owner ? '/api/board/fleet-thread?owner=' + encodeURIComponent(owner) + '&id=' + encodeURIComponent(id)
                     : '/api/board/thread?id=' + encodeURIComponent(id);
+    var reply = null;
     get(url).then(function (t) {
       var back = params.get('from') === 'fleet' ? '/board-view?view=fleet' : '/board-view';
       crumbs.replaceChildren(el('a', { href: '/terminal', text: 'Terminal' }), ' › ', el('a', { href: back, text: params.get('from') === 'fleet' ? 'Fleet boards' : 'Board' }), ' › ', t.title);
@@ -214,7 +279,11 @@
                                            el('div', { class: 'role', text: counts[m.author_name] + ' post' + (counts[m.author_name] === 1 ? '' : 's') + ' here' })]),
           el('div', { class: 'body' }, [
             el('div', { class: 'postbar' }, [el('span', { title: full(m.timestamp), text: full(m.timestamp) + (meta ? ' · ' + meta : '') }),
-                                             el('a', { href: '#post-' + (i + 1), text: '#' + (i + 1) })]),
+                                             el('span', {}, [el('a', { href: '#post-' + (i + 1), text: '#' + (i + 1) }),
+                                               (t.status === 'open') ? (function () {
+                                                 var a = el('a', { href: '#reply', class: 'reply-link', text: 'Reply' });
+                                                 a.onclick = function (ev) { ev.preventDefault(); if (reply) reply.replyTo(m.msg_id, i + 1, m.author_name); };
+                                                 return a; })() : null])]),
             parent ? el('div', { class: 'quote' }, [el('b', { text: parent.m.author_name + ' wrote (#' + parent.n + '):' }), el('br'),
                                                     parent.m.text.length > 300 ? parent.m.text.slice(0, 300) + '…' : parent.m.text])
                    : (m.reply_to ? el('div', { class: 'quote', text: 'In reply to an earlier message.' }) : null),
@@ -228,6 +297,22 @@
         ]);
       });
       view.replaceChildren.apply(view, [head].concat(posts.length ? posts : [el('p', { class: 'empty', text: 'No posts in this thread.' })]));
+      if (t.status === 'open') {
+        var last = msgs.length ? msgs[msgs.length - 1].msg_id : null;
+        if (owner) {
+          // On a sister's board: carried there by this agent, under your name.
+          reply = composer([], id, function () { location.reload(); }, owner, last);
+          reply.insertBefore(el('p', { class: 'sub', text: 'Your reply is carried to this board by the agent you are signed in to, under your name.' }), reply.firstChild);
+          reply.id = 'reply';
+          view.appendChild(reply);
+        } else {
+          get('/api/board/threads').then(function (b) {
+            reply = composer(b.peers || [], id, function () { location.reload(); }, null, last);
+            reply.id = 'reply';
+            view.appendChild(reply);
+          });
+        }
+      }
       if (location.hash) { var target = document.getElementById(location.hash.slice(1)); if (target) target.scrollIntoView(); }
     }).catch(fail);
   }

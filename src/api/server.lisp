@@ -201,7 +201,7 @@ for native clients that send it as a bearer token."
            (with-operator (origin agent)
              (let* ((b (body-json))
                     (channel (obj-get b "channel" "web"))
-                    (turn (receive-turn k :channel channel :audience "operator" :speaker "Operator"
+                    (turn (receive-turn k :channel channel :audience "operator" :speaker (setting k "operator.name")
                                           :text (obj-get b "text" "")
                                           :origin (progn (setf (gethash "channel" origin) channel) origin)))
                     (thought (request-thought k "responding" "The operator spoke."

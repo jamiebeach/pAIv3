@@ -62,6 +62,13 @@
   :entity (lambda (e) (obj-get (event-payload e) "audience"))
   :reduce #'%reduce-dialogue)
 
+;;; Who the operator is, by name: what their turns and their board posts
+;;; are signed with. One setting for every place the name is shown.
+
+(define-setting "operator.name"
+  :type :string :default "Operator" :group "Operator"
+  :description "The operator's name, as their messages and posts are signed.")
+
 ;;; Writing
 
 (defun receive-turn (kernel &key channel audience speaker text origin images)

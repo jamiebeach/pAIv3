@@ -149,3 +149,63 @@ To join in, answer there with post_fleet_message. It is their board: read it as 
          (%tool-text (lambda ()
                        (read-peer-board kernel (obj-get args "peer") (%given (obj-get args "thread_id"))
                                         (getf (thought-row kernel id) :audience))))))
+
+;;; The operator on the board (operator request 2026-10-17): posting on this
+;;; agent's board, a new thread or a reply, and telling chosen peers, for
+;;; messages to the group. The owner, whose operator is signed in, is woken
+;;; with the operator's authority; a peer is told through the fleet, so it
+;;; hears the operator's words by this agent's account, without authority.
+
+(defun operator-post (kernel text &key title thread-id reply-to tell owner)
+  "Post TEXT as the operator on my board, or on OWNER's (a peer id) through
+me: a new thread titled TITLE, or a reply in THREAD-ID (to REPLY-TO). TELL
+lists peer ids to notify about a post on my board, or :all. Returns an
+object describing what was done."
+  (when (and owner (not (equal owner "self")))
+    (return-from operator-post (%relay-operator-post kernel owner text title thread-id reply-to)))
+  (unless (and (stringp text) (< 0 (length (string-trim " " text)) 4001)) (%board-refuse "write 1 to 4000 characters"))
+  (when (and (null thread-id) (not (and (stringp title) (plusp (length (string-trim " " title))))))
+    (%board-refuse "a new thread needs a title"))
+  (let* ((peers (if (eq tell :all) (mapcar #'first (fleet-peers kernel)) (remove-if-not #'stringp tell)))
+         (operation-id (fleet-uuid))
+         (name (setting kernel "operator.name")))
+    (dolist (p peers) (unless (fleet-peer kernel p) (%board-refuse "~a is not one of my peers" p)))
+    (multiple-value-bind (msg-id thread)
+        (board-post kernel :thread-id thread-id :new-thread-title (and (null thread-id) (string-trim " " title))
+                           :author-id "operator" :author-name name :created-by "operator"
+                           :text text :reply-to reply-to :scope "fleet" :operation-id operation-id
+                           :request-key (json-encode (list (or thread-id :null) text)))
+      ;; The owner: the operator, signed in, on its board.
+      (request-thought kernel "work"
+                       (format nil "~a, the operator, posted on my board in thread ~a (message ~a)~@[, replying to ~a~]~:[~;, and asked for ~{~a~^, ~} to be told~]:~%~%~a~%~%~
+Answer there with reply_fleet_board_message (thread_id ~a, reply_to ~a) if a reply is warranted."
+                               name thread msg-id reply-to peers
+                               (mapcar (lambda (p) (second (fleet-peer kernel p))) peers)
+                               text thread msg-id)
+                       :audience "operator")
+      ;; The peers: told as a tag is, saying whose words they are.
+      (let ((told '()) (waiting '()))
+        (dolist (p peers)
+          (let ((note-id (format nil "board-notification:~a:~a" msg-id p)))
+            (%journal kernel "notification-queued" note-id p
+                      (obj "notification" (obj "operation_id" note-id "text" text "board_owner_id" (fleet-agent-id kernel)
+                                               "thread_id" thread "message_id" msg-id "reply_to" msg-id
+                                               "intent" "request" "chain_depth" 1 "tagged" t
+                                               "relayed_operator" name)))
+            (if (ignore-errors (%deliver-notification kernel note-id))
+                (push (second (fleet-peer kernel p)) told)
+                (push (second (fleet-peer kernel p)) waiting))))
+        (obj "thread_id" thread "msg_id" msg-id "told" (reverse told) "waiting" (reverse waiting))))))
+
+(defun %relay-operator-post (kernel owner text title thread-id reply-to)
+  "The operator's post on peer OWNER's board, carried by me under their name."
+  (unless (fleet-peer kernel owner) (%board-refuse "~a is not one of my peers" owner))
+  (when (and (null thread-id) (not (and (stringp title) (plusp (length (string-trim " " title))))))
+    (%board-refuse "a new thread needs a title"))
+  (when (and thread-id (null reply-to)) (%board-refuse "say which message you are answering"))
+  (multiple-value-bind (said thread msg-id)
+      (fleet-post kernel owner text :thread-id thread-id :reply-to reply-to :new-thread (null thread-id)
+                                    :title (and title (string-trim " " title)) :intent "request"
+                                    :relayed-operator (setting kernel "operator.name"))
+    (declare (ignore said))
+    (obj "thread_id" thread "msg_id" msg-id "owner" owner "told" '() "waiting" '())))

@@ -454,6 +454,18 @@
           (is (equal "Graph orphans" (obj-get (first (obj-get (first (obj-get fleet "boards")) "threads")) "title"))
               "my own board leads the fleet view"))
         (is (= 404 (raw-get "/api/board/fleet-image?owner=self&thread=x&id=y" :token token)))
+        (is (= 401 (pwa-post "/api/board/post" (obj "title" "Hi" "text" "Hello"))) "posting is signed in only")
+        (multiple-value-bind (status body) (pwa-post "/api/board/post" (obj "title" "Group" "text" "Hello all") :token token)
+          (is (= 200 status))
+          (is (stringp (obj-get body "thread_id"))))
+        (is (= 400 (pwa-post "/api/board/post" (obj "text" "no title") :token token)) "a refusal says why")
+        (change-setting k "operator.name" "Sam" :origin (obj "principal_type" "operator") :reason "test")
+        (pwa-post "/api/v2/send" (obj "message" "Hello from the terminal") :token token)
+        (is (equal "Sam" (sql-value (kernel-db k) "SELECT speaker FROM working_dialogue WHERE kind=?1 ORDER BY event_id DESC LIMIT 1" "turn"))
+            "the operator's turns are signed with operator.name")
+        (let ((posted (nth-value 1 (pwa-post "/api/board/post" (obj "title" "Named" "text" "Signed?") :token token))))
+          (is (equal "Sam" (third (first (pai-v3.api::board-messages k (obj-get posted "thread_id")))))
+              "and so are the operator's posts"))
         (is (= 200 (raw-get "/board-view" :token token)))))))
 
 (deftest the-files-view-stays-in-the-workspace
