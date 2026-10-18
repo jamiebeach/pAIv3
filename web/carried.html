@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#101216">
+<title>Carrying</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<script src="/app-shell.js" defer></script>
+<style>
+  :root { color-scheme: dark light; --bg: #101216; --panel: #161a21; --fg: #e6e8ec; --muted: #9aa3b2; --line: #2a2f3a; --accent: #7aa2ff; }
+  @media (prefers-color-scheme: light) { :root { --bg: #f3f4f7; --panel: #ffffff; --fg: #1b1e24; --muted: #5b6575; --line: #d7dbe2; --accent: #2f5bd8; } }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.5 system-ui, sans-serif; }
+  main { max-width: 760px; margin: 0 auto; padding: calc(12px + env(safe-area-inset-top)) 16px 32px; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  h2 { font-size: 15px; margin: 22px 0 8px; }
+  .sub, .muted { color: var(--muted); font-size: 13px; }
+  .item { border: 1px solid var(--line); border-radius: 8px; background: var(--panel); padding: 10px 12px; margin: 0 0 8px; }
+  .item .what { font-weight: 600; overflow-wrap: anywhere; }
+  .item .why { margin: 2px 0 4px; overflow-wrap: anywhere; }
+  .item .meta { font-size: 12px; color: var(--muted); }
+  .row { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+  button { font: inherit; font-size: 14px; padding: 5px 12px; border: 1px solid var(--line); background: transparent; color: var(--fg); border-radius: 6px; cursor: pointer; }
+  button.primary { border-color: var(--accent); color: var(--accent); }
+  input, textarea { width: 100%; font: inherit; font-size: 16px; color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; margin: 0 0 8px; }
+  label { display: block; font-size: 12px; color: var(--muted); margin: 0 0 2px; }
+  #status { min-height: 1.5em; color: var(--muted); }
+  details { margin: 14px 0; }
+  summary { cursor: pointer; color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Carrying</h1>
+  <p class="sub">Things I keep in mind for you and come back to until they are done. I add them myself when I notice a commitment or something you are waiting for; you can add, change or close them here.</p>
+  <div id="status" role="status" aria-live="polite"></div>
+  <div id="open"></div>
+  <details id="adder">
+    <summary>Add something to carry</summary>
+    <p></p>
+    <label for="f-what">What</label><input id="f-what" type="text" maxlength="240" placeholder="Timesheet submitted">
+    <label for="f-why">Why it matters</label><textarea id="f-why" rows="2" maxlength="600"></textarea>
+    <label for="f-due">Due (optional)</label><input id="f-due" type="datetime-local">
+    <label for="f-consider">Look at it again at (optional)</label><input id="f-consider" type="datetime-local">
+    <label for="f-condition">Or when this turns up (optional)</label><input id="f-condition" type="text" maxlength="300" placeholder="New material on the certification">
+    <div class="row"><button id="f-add" class="primary">Carry it</button></div>
+  </details>
+  <h2>Finished lately</h2>
+  <div id="closed"></div>
+</main>
+<script src="/carried.js"></script>
+</body>
+</html>

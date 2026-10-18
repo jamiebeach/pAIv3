@@ -19,6 +19,7 @@
    #:observed-history #:observed-live #:model-capture #:*capture-hook*
    #:raise-concern #:close-concern #:open-concerns #:concern-row #:quiet-tick #:salience-of
    #:docket-items #:open-work #:transition-work #:reopen-work
+   #:carry-add #:carry-revise #:carry-consider-now #:carry-close #:carried-items #:carried-due #:carried-item
    ;; knowledge graph
    #:lineage-hop #:lineage-path #:render-lineage #:form-entity #:admit-fact #:retract-fact #:merge-entities
    #:graph-entity #:find-entities #:entity-facts #:fact-evidence #:graph-health #:graph-refused #:predicate-allows-p

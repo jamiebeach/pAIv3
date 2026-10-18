@@ -239,4 +239,47 @@
       (is (search "dividend was paid" (first (first (noticing-thoughts k)))) "LOOK raised it")
       (is (= 400 (obj-get (last-payload k "provider.call.completed") "microusd")) "and its cost is recorded"))))
 
+;;; Carried items and the watch
+
+(defun tomorrow-local (hours)
+  (let ((at (+ (now) (round (* hours 3600)))))
+    (format nil "~aT~a" (subseq (iso8601 at) 0 10) (subseq (iso8601 at) 11 16))))
+
+(deftest an-item-that-has-come-due-brings-one-thought-once
+  (with-watch (k)
+    (let ((id (carry-add k :what "Submit the timesheet" :why "Due by 10 tomorrow" :consider-at (tomorrow-local 0.2) :by "operator")))
+      (is (= 0 (pai-v3.api::consider-carried k)) "not yet due")
+      (append! k "carried.revised" (obj "id" id "consider_at" (iso8601 (- (now) 5))))
+      (is (= 1 (pai-v3.api::consider-carried k)))
+      (let ((thoughts (sql-rows (kernel-db k) "SELECT reason,audience FROM thoughts WHERE origin=?1 LIMIT 5" "noticing")))
+        (is (= 1 (length thoughts)))
+        (is (equal "operator" (second (first thoughts))) "the operator's own thought, which can notify and make work")
+        (is (search "Submit the timesheet" (first (first thoughts))))
+        (is (search "Why it matters: Due by 10 tomorrow" (first (first thoughts)))))
+      (is (= 0 (pai-v3.api::consider-carried k)) "claimed first, so it does not come again")
+      (is (= 1 (obj-get (carried-item k id) "times_considered")))
+      (is (eq :null (obj-get (carried-item k id) "consider_at")) "until it is carried on to a later time"))))
+
+(deftest due-items-wait-through-quiet-hours
+  (with-watch (k)
+    (let ((id (carry-add k :what "Call the dentist" :why "Booking" :by "operator")))
+      (append! k "carried.revised" (obj "id" id "consider_at" (iso8601 (- (now) 5))))
+      (change-setting k "notifications.policy" (obj "quiet_hours" (obj "enabled" t "start_minute" 0 "end_minute" 1439)) :origin *operator*)
+      (is (eql nil (pai-v3.api::consider-carried k)))
+      (is (null (noticing-thoughts k)))
+      (change-setting k "notifications.policy" (obj "quiet_hours" (obj "enabled" :false "start_minute" 0 "end_minute" 0)) :origin *operator*)
+      (is (= 1 (pai-v3.api::consider-carried k)) "looked at once the hours end"))))
+
+(deftest mail-near-a-carried-condition-is-raised-and-points-to-it
+  (with-watch (k)
+    (with-meaning
+      (let ((id (carry-add k :what "Check on the certification" :why "New material may appear" :condition "an agent framework tutorial" :by "operator")))
+        (seen-mail k "m1" "Digest <news@letters.example>" "A new agent framework tutorial" :bulk t)
+        (seen-mail k "m2" "Shop <deals@shop.example>" "Big sale" :bulk t)
+        (is (= 1 (attend k)))
+        (let ((reason (first (first (noticing-thoughts k)))))
+          (is (search "agent framework tutorial" reason))
+          (is (search (format nil "carried [~a]" id) reason) "the reason names what it is close to")
+          (is (search "carry tool" reason) "and the thought is told it can carry or ask for a look"))))))
+
 (run-suite "api-attention")

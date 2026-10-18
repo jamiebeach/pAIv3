@@ -351,7 +351,7 @@ last look, from the record alone: no model call."
       (when (and latest (> latest seen))
         (let ((id (request-thought
                    kernel "introspection"
-                   "Quiet time, after a conversation. Look back over the recent conversation and your open concerns. Is anything worth looking into later: a question you could not settle, something you said you would check, a curiosity, a problem in yourself? Raise at most two concerns with the concern tool, or reinforce one you already hold. If nothing warrants it, raise nothing and say so in a line.")))
+                   "Quiet time, after a conversation. Look back over the recent conversation and your open concerns. Is anything worth looking into later: a question you could not settle, something you said you would check, a curiosity, a problem in yourself? Raise at most two concerns with the concern tool, or reinforce one you already hold. Also ask: did the operator say, or did you promise, anything that should be kept in mind for them and returned to, such as a deadline, something they must do or are waiting on, a commitment, or a plan they mentioned in passing? They may not have thought of asking. If so, carry it with the carry tool (what it is, why it matters to them, when to look at it again), unless it is already among the things you are carrying. If nothing warrants either, do nothing and say so in a line.")))
           (append! kernel "quiet.reviewed"
                    (obj "through_event_id" (sql-value db "SELECT max(event_id) FROM working_dialogue WHERE audience=?1 LIMIT 1" "operator")
                         "thought_id" id))
@@ -427,7 +427,9 @@ material, nothing."
                          (format nil "Quiet time, with nothing in hand. Let your mind wander over what is already in you, ~
 as a person's does when nothing is happening.~%~{~%A memory: ~a~}~@[~%~%Earlier, in summary: ~a~]~%~%~
 Follow whatever is interesting in it, briefly. If something deserves real attention later, raise a concern. ~
-If it does not, let it go: a line on what crossed your mind is enough. Do not go over the same ground twice."
+If, as you wander, you realise something from recent days that the operator needs kept in mind and returned to ~
+(a deadline, a plan, something they are waiting on) and it is not already among the things you are carrying, carry it with the carry tool. ~
+If none of this applies, let it go: a line on what crossed your mind is enough. Do not go over the same ground twice."
                                  (mapcar #'second seeds)
                                  (and summary (if (> (length summary) 1200) (subseq summary 0 1200) summary))))))
                 (append! kernel "quiet.ruminated" (obj "memory_ids" (mapcar #'first seeds) "thought_id" id))

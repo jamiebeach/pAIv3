@@ -117,6 +117,7 @@ becomes a stimulus (pai-v3.mind:coding-agent-message)."
                    (mapcar (lambda (id) (let ((e (event-by-id kernel id))) (obj "event_id" id "at" (event-at e) "pass" (event-payload e))))
                            (latest-event-ids kernel "attention.pass" limit)))
                   ((equal what "shadow") (shadow-outreach kernel limit))
+                  ((equal what "carried") (carried-items kernel :limit limit))
                   ((equal what "formation")
                    (mapcar (lambda (id) (let ((e (event-by-id kernel id))) (obj "event_id" id "at" (event-at e) "run" (event-payload e))))
                            (latest-event-ids kernel "graph.formation.done" limit)))
@@ -147,7 +148,7 @@ assets. Returns the compiler's output."
   '(("/" . "terminal.html") ("/terminal" . "terminal.html") ("/dashboard" . "observability.html")
     ("/graph" . "graph-explorer.html") ("/g" . "graph-explorer.html") ("/affect" . "affect.html")
     ("/notifications" . "notifications.html") ("/settings" . "settings.html")
-    ("/board-view" . "board.html"))
+    ("/board-view" . "board.html") ("/carried" . "carried.html"))
   "Pages that need a signed-in operator. /login is open.")
 
 (defun %named (name body)
@@ -443,6 +444,13 @@ localhost), the URL to send it to; passkeys only work at the agent's origin."
                  (cond ((null origin) (reply 401 (obj "error" "sign in first")))
                        ((and (eq method :post) (not (same-origin-p agent))) (reply 403 (obj "error" (%refusal agent))))
                        (t (google-route agent method path origin))))
+               t))
+
+      ((uiop:string-prefix-p "/api/carried" path)
+       (values (let ((origin (%signed-in agent)))
+                 (cond ((null origin) (reply 401 (obj "error" "not signed in")))
+                       ((and (eq method :post) (not (same-origin-p agent))) (reply 403 (obj "error" (%refusal agent))))
+                       (t (carried-route agent method path origin))))
                t))
 
       ((uiop:string-prefix-p "/api/notifications/" path)

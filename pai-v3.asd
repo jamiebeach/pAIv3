@@ -44,6 +44,7 @@
                  (:file "observability")
                  (:file "concerns")
                  (:file "docket")
+                 (:file "carried")
                  (:file "graph")
                  (:file "graph-import")
                  (:file "graph-read")
@@ -84,6 +85,7 @@
                  (:file "notify")
                  (:file "google")
                  (:file "attention")
+                 (:file "carried")
                  (:file "files")
                  (:file "pwa")))
    (:module "src/recall"

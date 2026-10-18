@@ -42,6 +42,7 @@ list of (text tokens) rows, most relevant first.")
           (:stream    :max 600   :source :stream    :title "What I noticed between thoughts")
           (:concerns  :max 600   :source :concerns  :title "What I am looking into")
           (:docket    :max 600   :source :docket    :title "Work I am keeping")
+          (:carried   :max 700   :source :carried   :title "Things I am carrying for the operator")
           (:restricted :max 200  :source :restricted :title "Not for this audience")))
 
 (define-context-profile "private-cognition"
@@ -56,7 +57,8 @@ list of (text tokens) rows, most relevant first.")
           (:present   :max 300   :source :present   :title "The operator's day")
           (:stream    :max 600   :source :stream    :title "What I noticed between thoughts")
           (:concerns  :max 600   :source :concerns  :title "What I am looking into")
-          (:docket    :max 600   :source :docket    :title "Work I am keeping")))
+          (:docket    :max 600   :source :docket    :title "Work I am keeping")
+          (:carried   :max 700   :source :carried   :title "Things I am carrying for the operator")))
 
 ;;; Sources available in phase 3. Others (state, summary, recall, knowledge,
 ;;; scheduled, restricted) arrive with their modules; until then they report

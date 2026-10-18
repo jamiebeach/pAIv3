@@ -98,6 +98,7 @@
     register({id:'affect', label:'Affect', href:'/affect', current:path === '/affect'});
     register({id:'settings', label:'Settings', href:'/settings', current:path === '/settings'});
     register({id:'board', label:'Board', href:'/board-view', current:path === '/board-view'});
+    register({id:'carried', label:'Carrying', href:'/carried', current:path === '/carried'});
     window.dispatchEvent(new CustomEvent('pai-shell-ready'));
   }
 

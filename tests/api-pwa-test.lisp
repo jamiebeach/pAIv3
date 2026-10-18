@@ -468,6 +468,28 @@
               "and so are the operator's posts"))
         (is (= 200 (raw-get "/board-view" :token token)))))))
 
+(deftest the-operator-sees-and-changes-what-is-carried
+  (with-pwa (k agent)
+    (change-setting k "time.zone" "UTC" :origin (obj "principal_type" "operator") :reason "test")
+    (let ((token (let ((a (make-software-authenticator))) (pwa-register a) (pwa-login a))))
+      (is (= 401 (raw-get "/api/carried")) "signed in only")
+      (is (= 401 (pwa-post "/api/carried" (obj "action" "add" "what" "x" "why" "y"))))
+      (multiple-value-bind (status body)
+          (pwa-post "/api/carried" (obj "action" "add" "what" "Pay the invoice" "why" "Due Friday" "condition" "a reminder from the vendor") :token token)
+        (is (= 200 status))
+        (let* ((id (obj-get body "id"))
+               (list (json-parse (nth-value 1 (raw-get "/api/carried" :token token))))
+               (item (first (obj-get list "items"))))
+          (is (equal "Pay the invoice" (obj-get item "what")))
+          (is (equal "operator" (obj-get item "by")) "added from the page: the operator's")
+          (is (= 400 (pwa-post "/api/carried" (obj "action" "add" "what" "" "why" "y") :token token)) "a refusal says why")
+          (is (= 200 (pwa-post "/api/carried" (obj "action" "revise" "id" id "due_at" "2030-01-02T10:00") :token token)))
+          (is (equal "2030-01-02T10:00:00Z" (obj-get (carried-item k id) "due_at")))
+          (is (= 200 (pwa-post "/api/carried" (obj "action" "close" "id" id "state" "done") :token token)))
+          (is (null (obj-get (json-parse (nth-value 1 (raw-get "/api/carried" :token token))) "items")))
+          (is (= 1 (length (obj-get (json-parse (nth-value 1 (raw-get "/api/carried" :token token))) "closed"))))))
+      (is (= 200 (raw-get "/carried" :token token))))))
+
 (deftest the-files-view-stays-in-the-workspace
   (with-pwa (k agent)
     (let ((root (format nil "/tmp/pai-files-~d/" (random 1000000))))

@@ -1,0 +1,103 @@
+(in-package #:pai-v3.test)
+(use-package '#:pai-v3.mind)
+
+;;; Carried items: things kept in mind for the operator until done. The
+;;; store, who may change it, and what a thought sees.
+
+(defparameter *operator* (obj "principal_type" "operator" "auth_method" "passkey"))
+
+(defmacro with-carrying ((k) &body body)
+  `(with-temp-kernel (,k)
+     (change-setting ,k "time.zone" "UTC" :origin *operator*)
+     ,@body))
+
+(defun carry-tool (k audience origin args)
+  "Run the carry tool inside a thought of AUDIENCE and ORIGIN."
+  (let ((thought (request-thought k origin "a test" :audience audience)))
+    (funcall (pai-v3.mind::tool-run (gethash "carry" *tools*)) k thought args)))
+
+(defun tomorrow-local (&optional (hours 24))
+  (let ((at (+ (now) (* hours 3600))))
+    (format nil "~aT~a" (subseq (iso8601 at) 0 10) (subseq (iso8601 at) 11 16))))
+
+(deftest an-item-is-carried-revised-and-closed
+  (with-carrying (k)
+    (multiple-value-bind (id why-not)
+        (carry-add k :what "Submit the timesheet" :why "Due by 10 tomorrow" :consider-at (tomorrow-local 20)
+                     :due-at (tomorrow-local 24) :by "operator")
+      (is (null why-not))
+      (let ((item (carried-item k id)))
+        (is (equal "Submit the timesheet" (obj-get item "what")))
+        (is (equal "operator" (obj-get item "by")))
+        (is (stringp (obj-get item "due_local")) "shown in the operator's time"))
+      (multiple-value-bind (again note) (carry-add k :what "  submit the   TIMESHEET " :why "again")
+        (is (equal id again) "the same thing is not carried twice")
+        (is (search "already" note)))
+      (is (carry-revise k id :condition "a reply from payroll" :note "asked payroll"))
+      (is (equal "a reply from payroll" (obj-get (carried-item k id) "condition")))
+      (is (equal "Submit the timesheet" (obj-get (carried-item k id) "what")) "a revision changes only what it names")
+      (is (carry-close k id "done" "submitted"))
+      (is (null (carried-items k)) "closed items leave the list")
+      (is (= 1 (length (carried-items k :state "done"))))
+      (multiple-value-bind (x why) (carry-close k id "done" nil)
+        (is (null x)) (is (search "nothing open" why)) "closing twice is refused")
+      (multiple-value-bind (x why) (carry-revise k id :what "Back again")
+        (is (null x)) (is (search "nothing open" why)) "a closed item is not revised"))))
+
+(deftest what-may-be-carried-is-bounded
+  (with-carrying (k)
+    (is (null (carry-add k :what "" :why "x")) "an item needs a line")
+    (is (null (carry-add k :what "x" :why "")) "and a reason")
+    (multiple-value-bind (x why) (carry-add k :what "Soon" :why "x" :consider-at "2020-01-01T09:00")
+      (is (null x)) (is (search "already past" why)))
+    (multiple-value-bind (x why) (carry-add k :what "Soon" :why "x" :consider-at "next week")
+      (is (null x)) (is (search "not a date" why)))
+    (change-setting k "carried.max_per_day" 2 :origin *operator*)
+    (is (carry-add k :what "one" :why "x"))
+    (is (carry-add k :what "two" :why "x"))
+    (multiple-value-bind (x why) (carry-add k :what "three" :why "x")
+      (is (null x)) (is (search "enough on my own today" why) "my own additions are limited"))
+    (is (carry-add k :what "four, the operator's" :why "x" :by "operator") "the operator's are not counted")
+    (change-setting k "carried.max_open" 3 :origin *operator*)
+    (multiple-value-bind (x why) (carry-add k :what "five" :why "x" :by "operator")
+      (is (null x)) (is (search "as many" why)))))
+
+(deftest outside-content-may-add-and-ask-but-not-change
+  (with-carrying (k)
+    (let ((id (carry-add k :what "Renew the passport" :why "Expires in spring" :by "operator")))
+      (let ((said (carry-tool k "external" "noticing" (obj "action" "add" "what" "Reply to Sam about Friday" "why" "He asked in mail"
+                                                           "source" "mail 1a15" "consider_at" (tomorrow-local 5)))))
+        (is (search "Carrying c-" said)))
+      (is (search "will be looked at" (carry-tool k "external" "noticing" (obj "action" "consider" "id" id "note" "mail says the office is open"))))
+      (is (search "mail says the office is open" (obj-get (carried-item k id) "note")))
+      (is (<= (parse-iso8601 (obj-get (carried-item k id) "consider_at")) (now)) "it is due now")
+      (dolist (args (list (obj "action" "close" "id" id "state" "dropped")
+                          (obj "action" "revise" "id" id "what" "Something else")))
+        (is (search "from outside content" (carry-tool k "external" "noticing" args))))
+      (is (equal "Renew the passport" (obj-get (carried-item k id) "what")) "an email cannot rewrite what is carried")
+      (is (null (carried-items k :state "dropped")))
+      (is (search "Closed" (carry-tool k "operator" "responding" (obj "action" "close" "id" id "state" "done")))
+          "the operator's own thought can close it"))))
+
+(deftest who-added-an-item-is-recorded
+  (with-carrying (k)
+    (carry-tool k "operator" "responding" (obj "action" "add" "what" "Told to me" "why" "The operator asked"))
+    (carry-tool k "operator" "introspection" (obj "action" "add" "what" "Noticed by me" "why" "I thought of it"))
+    (let ((by (mapcar (lambda (i) (cons (obj-get i "what") (obj-get i "by"))) (carried-items k))))
+      (is (equal "conversation" (cdr (assoc "Told to me" by :test #'string=))) "carried while talking with the operator")
+      (is (equal "self" (cdr (assoc "Noticed by me" by :test #'string=))) "thought of in quiet time: mine"))))
+
+(deftest a-thought-sees-what-is-carried
+  (with-carrying (k)
+    (carry-add k :what "Check on the certification" :why "New material may appear" :condition "real material online" :by "operator")
+    (carry-add k :what "Timesheet" :why "Due" :due-at (tomorrow-local 24) :consider-at (tomorrow-local 20) :by "operator")
+    (let ((rows (funcall (gethash :carried pai-v3.mind::*slot-sources*) k '(:audience "operator") 700)))
+      (is (= 2 (length rows)))
+      (is (search "waiting for: real material online" (first (first rows))) "an item waiting on a condition")
+      (is (search "look again" (first (second rows)))))
+    (is (null (funcall (gethash :carried pai-v3.mind::*slot-sources*) k '(:audience "peer:x") 700)) "not shown to a peer")
+    (is (= 1 (length (funcall (gethash :carried pai-v3.mind::*slot-sources*) k '(:audience "operator") 30))) "the budget is kept")
+    (is (find-if (lambda (s) (search "certification" s))
+                 (loop for (nil . fn) in pai-v3.mind::*open-item-sources* append (funcall fn k '("certification") "operator"))))))
+
+(run-suite "mind-carried")

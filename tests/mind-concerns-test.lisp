@@ -125,6 +125,8 @@
       (is id)
       (is (equal "introspection" (getf (thought-row k id) :origin)))
       (is (search "Look back over the recent conversation" (getf (thought-row k id) :reason)))
+      (is (search "carry it with the carry tool" (getf (thought-row k id) :reason)) "and asks whether anything should be carried")
+      (is (search "They may not have thought of asking" (getf (thought-row k id) :reason)))
       (sql-exec (kernel-db k) "UPDATE thoughts SET status='ended' WHERE id=?1" id))
     (is (equal "nothing open" (nth-value 1 (quiet-tick k))) "one review per stretch of conversation")))
 
@@ -136,6 +138,7 @@
       (is id)
       (is (equal "introspection" (getf (thought-row k id) :origin)))
       (is (search "North Wind" (getf (thought-row k id) :reason)) "seeded with a memory")
+      (is (search "carry it with the carry tool" (getf (thought-row k id) :reason)) "wandering may notice something to carry")
       (sql-exec (kernel-db k) "UPDATE thoughts SET status='ended' WHERE id=?1" id))
     (is (equal "nothing open" (nth-value 1 (quiet-tick k))) "not again until it is due")
     (advance (* 6 3600))
