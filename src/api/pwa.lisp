@@ -100,6 +100,14 @@ becomes a stimulus (pai-v3.mind:coding-agent-message)."
                                             "events_seen" (or (sql-value db "SELECT count(*) FROM calendar_events WHERE account=?1 AND start_at>=?2 LIMIT 1" (first r) "") 0)
                                             "secrets" (remove-if-not (lambda (n) (search (first r) n)) (mapcar #'first (secret-names)))))
                            (google-accounts kernel)))
+                  ((equal what "graph") (list (graph-health kernel)))
+                  ((equal what "duplicates")
+                   ;; Live facts sharing their ends and relation: how many also share their statement.
+                   (list (obj "same_ends" (rows "SELECT subject,predicate,object,count(*),count(DISTINCT lower(trim(coalesce(text,'')))) FROM graph_facts WHERE status=?1 GROUP BY subject,predicate,object,character HAVING count(*)>1 LIMIT 200" "active"))))
+                  ((equal what "board")
+                   ;; This agent's board: the LIMIT most active threads, with their posts.
+                   (mapcar (lambda (th) (board-thread-json kernel (obj-get th "thread_id")))
+                           (let ((all (board-index-json kernel))) (subseq all 0 (min limit (length all))))))
                   ((equal what "formation")
                    (mapcar (lambda (id) (let ((e (event-by-id kernel id))) (obj "event_id" id "at" (event-at e) "run" (event-payload e))))
                            (latest-event-ids kernel "graph.formation.done" limit)))

@@ -8,7 +8,7 @@
 #   tools/dev-agent.sh sync --restart  copy the source in and restart
 #   tools/dev-agent.sh threads          print what each thread is doing (when it hangs)
 #   tools/dev-agent.sh peek <what> [n]  read the running agent: dialogue,
-#                                        calls (raw model responses) or thoughts
+#                                        calls (raw model responses), thoughts or board
 #   tools/dev-agent.sh pai <command>   run the pai CLI from source while the
 #                                        agent is stopped (reads stdin)
 #   tools/dev-agent.sh rebuild <name>...  stop the agent, rebuild those
