@@ -254,6 +254,26 @@ for native clients that send it as a bearer token."
                                                            :origin origin
                                                            :reason (obj-get b "reason" "changed from the app"))))))))
 
+          ((and (eq method :get) (string= path "/v1/folders"))
+           (with-operator (origin agent)
+             (let ((result (host-folder-request k (obj "action" "folders"))))
+               (reply (if (obj-get result "error") 503 200) result))))
+
+          ((and (eq method :post) (string= path "/v1/folders"))
+           (with-operator (origin agent)
+             (if (not (stepped-up-p k (session-token)))
+                 (reply 403 (obj "error" "step-up required" "step_up" t))
+                 (let* ((body (body-json)) (folders (obj-get body "folders")) (request (obj)))
+                   (if (not (and (hash-table-p body) (nth-value 1 (gethash "folders" body))
+                                 (listp folders) (<= (length folders) 16)))
+                       (reply 400 (obj "error" "Supply a folders array, at most 16 entries."))
+                       (progn
+                         (setf (gethash "folders" request) folders)
+                         (let ((result (host-folder-request k request :admin t)))
+                           (unless (obj-get result "error")
+                             (append! k "host.folders.changed" (obj "folders" folders "origin" origin)))
+                           (reply (if (obj-get result "error") 400 200) result))))))))
+
           ((and (eq method :get) (string= path "/v1/secrets"))
            (with-operator (origin agent)
              (reply 200 (obj "secrets" (mapcar (lambda (s) (obj "name" (first s) "hosts" (second s)

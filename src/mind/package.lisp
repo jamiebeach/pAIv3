@@ -16,6 +16,7 @@
    ;; web
    #:*http-get* #:*fetch-allow-private* #:html-text #:search-experience
    #:beads #:*beads-post* #:coding-agent-message #:coding-agent-for-token
+   #:host-folder-request #:*host-files-post*
    #:observed-history #:observed-live #:model-capture #:*capture-hook*
    #:raise-concern #:close-concern #:open-concerns #:concern-row #:quiet-tick #:salience-of
    #:avatar-image-id #:docket-items #:open-work #:transition-work #:reopen-work

@@ -586,4 +586,37 @@
       (is (equal "Nova" (obj-get manifest "short_name")) "a home-screen app is named for its agent")
       (is (equal "/terminal" (obj-get manifest "start_url")) "and keeps the rest"))))
 
+(deftest folder-permissions-need-an-operator-and-a-fresh-passkey
+  (with-pwa (k agent)
+    (change-setting k "host_files.url" "http://host.docker.internal:8770"
+                    :origin (obj "principal_type" "operator"))
+    (let ((saved *host-files-post*) (calls nil))
+      (unwind-protect
+           (progn
+             ;; Request threads need the global transport seam, not a LET binding.
+             (setf *host-files-post*
+                   (lambda (url headers body)
+                     (push (list url headers body) calls)
+                     (values "{\"folders\":[]}" 200)))
+             (is (= 401 (raw-get "/v1/folders")))
+             (is (= 401 (pwa-post "/v1/folders" (json-parse "{\"folders\":[]}"))))
+             (is (null calls))
+             (let* ((a (make-software-authenticator))
+                    (token (progn (pwa-register a) (pwa-login a))))
+               (is (= 200 (raw-get "/v1/folders" :token token)))
+               (is (equal '(:secret "host-files" "Bearer ~a")
+                          (cdr (assoc "Authorization" (second (first calls)) :test #'equal))))
+               (setf calls nil)
+               (sql-exec (kernel-db k) "UPDATE auth_devices SET last_stepup_at=NULL WHERE credential_id=?1" (b64 (authn-cred-id a)))
+               (is (= 403 (pwa-post "/v1/folders" (json-parse "{\"folders\":[]}") :token token)))
+               (is (null calls) "no administrative request before verification")
+               (pwa-login a)
+               (is (= 400 (pwa-post "/v1/folders" (obj) :token token)) "missing array cannot revoke silently")
+               (is (null calls))
+               (is (= 200 (pwa-post "/v1/folders" (json-parse "{\"folders\":[]}") :token token)))
+               (is (equal "{\"folders\":[]}" (third (first calls))))
+               (is (equal '(:secret "host-files-admin" "Bearer ~a")
+                          (cdr (assoc "Authorization" (second (first calls)) :test #'equal))))))
+        (setf *host-files-post* saved)))))
+
 (run-suite "api-pwa")

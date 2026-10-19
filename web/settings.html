@@ -28,5 +28,17 @@
 <p class="intro">Every setting this agent has. A change is saved to the ledger at once and asks for your passkey. Most changes take effect at once; a few that are read only when the agent starts need a restart. The agent cannot change these, except the few it is allowed to within bounds.</p>
 <div class="tools"><input id="filter" type="search" placeholder="Find a setting (name, group or words in its description)" aria-label="Find a setting"><label><input id="changed-only" type="checkbox"> changed only</label></div>
 
+<section class="status" aria-label="Shared folders">
+  <h2 style="font-size:14px;margin-top:0">Folders</h2>
+  <p>Project folders this agent may read on your computer. Files stay read-only. Git metadata is allowed; credential files and detected secrets are withheld.</p>
+  <div id="folders-status" role="status">Loading folders…</div>
+  <div id="folders-list"></div>
+  <form id="folder-add" style="display:grid;gap:8px;margin-top:10px">
+    <label>Folder name <input id="folder-id" required pattern="[A-Za-z0-9_-]{1,48}" placeholder="project"></label>
+    <label>Full path on your computer <input id="folder-path" required placeholder="Z:\projects\example"></label>
+    <button type="submit">Share read-only folder</button>
+  </form>
+  <button id="folders-refresh" type="button" style="margin-top:8px">Refresh folders</button>
+</section>
 <div id="status" class="status">Loading current settings…</div><div id="settings" class="settings"></div>
 </main></body></html>

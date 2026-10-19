@@ -38,6 +38,7 @@
                  (:file "memory")
                  (:file "web")
                  (:file "beads")
+                 (:file "host-files")
                  (:file "imagegen")
                  (:file "seeing")
                  (:file "coding-agent")

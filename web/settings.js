@@ -58,6 +58,54 @@
     if (!result.ok) throw new Error(result.json.error || ('Not saved (' + result.status + ').'));
   }
 
+  let folders = [];
+  const folderStatus = document.getElementById('folders-status');
+  const folderList = document.getElementById('folders-list');
+  const folderForm = document.getElementById('folder-add');
+  async function refreshFolders() {
+    const result = await call('GET', '/v1/folders');
+    folderForm.querySelector('button').disabled = !result.ok;
+    folderList.replaceChildren();
+    if (!result.ok) { folderStatus.textContent = result.json.error || 'Folder bridge unavailable.'; return; }
+    folders = result.json.folders || [];
+    folderStatus.textContent = folders.length ? 'Shared with this agent only.' : 'No folders shared.';
+    for (const folder of folders) {
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex;gap:8px;align-items:center;margin:8px 0;overflow-wrap:anywhere';
+      const label = document.createElement('span');
+      label.textContent = folder.id + ' — ' + folder.path;
+      const remove = document.createElement('button');
+      remove.textContent = 'Stop sharing';
+      remove.style.width = 'auto';
+      remove.onclick = () => saveFolders(folders.filter(f => f.id !== folder.id));
+      row.append(label, remove); folderList.append(row);
+    }
+  }
+  async function saveFolders(next) {
+    folderForm.querySelector('button').disabled = true;
+    try {
+      let result = await call('POST', '/v1/folders', { folders: next });
+      if (result.status === 403 && result.json.step_up) {
+        folderStatus.textContent = 'Confirm folder access with your passkey…';
+        await stepUp();
+        result = await call('POST', '/v1/folders', { folders: next });
+      }
+      if (!result.ok) throw new Error(result.json.error || 'Folder permissions were not saved.');
+      folderForm.reset();
+      await refreshFolders();
+    } catch (error) {
+      folderStatus.textContent = error.name === 'NotAllowedError' ? 'Cancelled.' : error.message;
+    } finally { folderForm.querySelector('button').disabled = false; }
+  }
+  folderForm.onsubmit = event => {
+    event.preventDefault();
+    const id = document.getElementById('folder-id').value.trim();
+    const path = document.getElementById('folder-path').value.trim();
+    saveFolders([...folders.filter(f => f.id !== id), { id, path }]);
+  };
+  document.getElementById('folders-refresh').onclick = () => refreshFolders().catch(e => { folderStatus.textContent = e.message; });
+  refreshFolders().catch(e => { folderStatus.textContent = e.message; });
+
   // One editor per kind of value. read() returns the value to save, or throws a message.
   function editorFor(row) {
     if (row.type === 'boolean') {
