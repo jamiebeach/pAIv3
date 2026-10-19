@@ -122,6 +122,11 @@
       (change-setting k "avatar.image" image :origin *operator*)
       (is (equal image (pai-v3.mind:avatar-image-id k :self)))
       (sql-exec (pai-v3.mind::%image-db k) "DELETE FROM images WHERE id=?1" image)
-      (is (null (pai-v3.mind:avatar-image-id k :self)) "its image gone, the letter is shown again"))))
+      (is (null (pai-v3.mind:avatar-image-id k :self)) "its image gone, the letter is shown again"))
+    (let ((tool (gethash "set_avatar" *tools*)))
+      (is (pai-v3.mind::tool-available-p tool '(:audience "operator")) "in conversation and quiet time")
+      (is (pai-v3.mind::tool-available-p tool '(:audience "peer:aria")) "and when answering a sister on a board")
+      (is (not (pai-v3.mind::tool-available-p tool '(:audience "external"))) "but not in a thought made of outside content")
+      (is (member "work" (pai-v3.mind::tool-core tool) :test #'string=) "in hand when replying, so she remembers it is there"))))
 
 (run-suite "mind-carried")

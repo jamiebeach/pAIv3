@@ -32,7 +32,10 @@
 (define-tool "set_avatar"
   :description "Choose the picture that is you on the board and in the terminal. image_id is the id of an image you hold: one you generated with the image tool, or one you have been shown and looked at (look_at lists those you have seen lately). Give an empty image_id to go back to the first-letter circle. The operator can also change it."
   :summary "Choose your own avatar from an image you hold."
-  :available '("operator")
+  ;; The operator's thoughts and fleet peers' (replying on a board): her own picture is hers to
+  ;; choose, from an image she already holds. Not the mail digest, which runs on outside content.
+  :available :operator-and-peers
+  :core '("responding" "introspection" "work")
   :parameters (obj "type" "object"
                    "properties" (obj "image_id" (obj "type" "string" "description" "an image id, or empty to clear"))
                    "required" (list "image_id"))
