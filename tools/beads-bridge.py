@@ -4,7 +4,8 @@ The agent's container mounts nothing, so it cannot run bw itself. This serves
 one route, POST /run, that takes {"action": ..., ...} and runs bw with a
 fixed argument list: no shell, and only reading plus comment and create.
 ping names a bead for the coding agent: it is appended to the inbox file,
-which the coding agent watches. patch saves a proposed diff for a bead under
+which the coding agent watches. Creating a bead and commenting on one ping
+as well, so any agent's filing reaches the coding agent without a second call. patch saves a proposed diff for a bead under
 private/patches/, notes it on the bead and pings; the coding agent reviews
 and applies it, the agent never does. Writes are rate-limited per day.
 Nothing can close, delete, reopen or sync. Requests need the shared token as
@@ -164,7 +165,11 @@ def run(args):
     if code == 0 and argv[0] == "create":
         new_id = out.splitlines()[-1].strip()
         bw(["label", new_id, "+from-agent"])
+        # Filing a bead is itself a ping, so the coding agent hears of it without a second call.
+        ping({"id": new_id, "text": "new bead: " + (args.get("description") or args.get("text") or "")[:900]}, args.get("title", ""))
         out = f"Created {new_id}."
+    if code == 0 and args.get("action") == "comment":
+        ping({"id": args.get("id"), "text": "comment: " + (args.get("text") or "")[:900]}, "")
     return code, out
 
 
