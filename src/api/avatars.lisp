@@ -8,8 +8,12 @@
 ;;; resized in the browser to a small square, stored like any image, and its
 ;;; id set as the setting.
 
-(defparameter *peer-avatar-minutes* 10)
-(defvar *peer-avatars* (make-hash-table :test 'equal) "peer id -> (fetched-at mime octets) or (fetched-at nil nil)")
+(defparameter *peer-avatar-seconds* 300 "How long a sister's picture is kept before she is asked again.")
+(defparameter *peer-avatar-none-seconds* 20
+  "How long \"she has none\" (or \"she could not be reached\") is believed: briefly, so a picture she
+chooses soon after a page was loaded shows at the next one.")
+(defvar *peer-avatars* (make-hash-table :test 'equal)
+  "(my id . peer id) -> (fetched-at mime octets); mime and octets are NIL when she had none.")
 (defvar *peer-avatars-lock* (bt:make-lock "peer avatars"))
 
 (defun own-avatar (kernel who)
@@ -26,9 +30,9 @@
            (and (stringp url) (ignore-errors (multiple-value-list (pai-v3.mind::%parse-data-url url))))))))
 
 (defun peer-avatar (kernel peer-id)
-  "(mime octets) of PEER-ID's avatar, remembered for *peer-avatar-minutes*; NIL when she has none or cannot be reached."
+  "(mime octets) of PEER-ID's avatar, remembered for *peer-avatar-seconds* (a miss only for *peer-avatar-none-seconds*); NIL when she has none or cannot be reached."
   (let ((hit (bt:with-lock-held (*peer-avatars-lock*) (gethash (cons (kernel-agent-id kernel) peer-id) *peer-avatars*))))
-    (if (and hit (< (- (now) (first hit)) (* 60 *peer-avatar-minutes*)))
+    (if (and hit (< (- (now) (first hit)) (if (second hit) *peer-avatar-seconds* *peer-avatar-none-seconds*)))
         (and (second hit) (list (second hit) (third hit)))
         (let ((fresh (%fetch-peer-avatar kernel peer-id)))
           (bt:with-lock-held (*peer-avatars-lock*)

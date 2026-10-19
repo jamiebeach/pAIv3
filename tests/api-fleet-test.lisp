@@ -161,6 +161,13 @@
       (is (equal "image/png" (pai-v3.api::avatar-for a b-id)) "the earlier answer is kept for a few minutes")
       (clrhash pai-v3.api::*peer-avatars*)
       (is (null (pai-v3.api::avatar-for a b-id)) "and forgotten after, so her change shows")
+      ;; "She has none" is believed only briefly: a page loaded before she chose must not hide her picture.
+      (change-setting b "avatar.image" (pai-v3.mind::store-image b +tiny-png+) :origin (obj "principal_type" "self"))
+      (is (null (pai-v3.api::avatar-for a b-id)) "within the moment, the miss is still believed")
+      (let ((pai-v3.api::*peer-avatar-none-seconds* 0))
+        (is (equal "image/png" (pai-v3.api::avatar-for a b-id)) "after it, her new picture shows"))
+      (change-setting b "avatar.image" "" :origin (obj "principal_type" "self"))
+      (clrhash pai-v3.api::*peer-avatars*)
       (is (null (pai-v3.api::avatar-for a "not-a-peer")) "a stranger has none")
       ;; Mine, by either name.
       (change-setting a "avatar.image" (pai-v3.mind::store-image a +tiny-png+) :origin (obj "principal_type" "self"))
