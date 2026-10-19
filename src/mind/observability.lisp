@@ -205,12 +205,12 @@ runtime parameters, and messages from coding agents."
               ;; The attention register is the agent's open concerns (v3-clp.7).
               (let* ((concerns (open-concerns kernel))
                      (rows (mapcar (lambda (r)
-                                     (destructuring-bind (id kind question rationale salience steps attended last note) r
+                                     (destructuring-bind (id kind question rationale salience steps attended last note next) r
                                        (obj "motive_id" id "status" (if (find id private :key (lambda (p) (search id (third p))))
                                                                         "attending" "open")
                                             "phase" kind "question" question "rationale" rationale
                                             "salience" salience "steps" steps "attended" attended
-                                            "last_attended_at" last "progress" note)))
+                                            "last_attended_at" last "progress" note "next_look_at" next)))
                                    concerns))
                      (o (obj "open_motive_count" (length concerns) "curiosity_count" (length concerns))))
                 (setf (gethash "curiosities" o) rows)

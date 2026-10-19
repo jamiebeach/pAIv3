@@ -62,4 +62,17 @@
     (sql-exec (kernel-db k) "UPDATE t_sum SET total=total+1 WHERE k=1")
     (is (not (verify-projection k "test.sum" (format nil "/tmp/pai-v3-verify-~d.sqlite3" (random 1000000)))))))
 
+(deftest concern-horizons-survive-replay-with-old-notes
+  (with-temp-kernel (k)
+    (let ((c (pai-v3.mind:raise-concern k "Await the synthetic report")))
+      (append! k "concern.noted" (obj "concern_id" c "text" "Old note without a horizon"))
+      (append! k "concern.noted" (obj "concern_id" c "text" "Wait"
+                                     "next_look_at" "2027-01-01T12:00:00Z"))
+      (append! k "concern.noted" (obj "concern_id" c "text" "A later note preserves it"))
+      (is (eq :done (rebuild-projection k "concerns" :page-size 2)))
+      (is (equal "2027-01-01T12:00:00Z" (nth 10 (pai-v3.mind:concern-row k c))))
+      (append! k "concern.noted" (obj "concern_id" c "text" "Clear" "next_look_at" ""))
+      (is (eq :done (rebuild-projection k "concerns" :page-size 2)))
+      (is (null (nth 10 (pai-v3.mind:concern-row k c)))))))
+
 (run-suite "maintenance-rebuild")

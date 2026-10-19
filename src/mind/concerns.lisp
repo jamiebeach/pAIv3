@@ -72,7 +72,7 @@
 (define-event-type "concern.reinforced"
   :schema (("concern_id" :string) ("rationale" :string) ("salience" :number)))
 (define-event-type "concern.noted"
-  :schema (("concern_id" :string) ("text" :string)))
+  :schema (("concern_id" :string) ("text" :string) ("next_look_at" :string :optional)))
 (define-event-type "concern.closed"
   :schema (("concern_id" :string) ("status" :string) ("reason" :string)))   ; satisfied | retired | parked
 
@@ -110,7 +110,11 @@
          (sql-exec db "UPDATE concerns SET salience=?2,rationale=?3,updated_at=?4 WHERE id=?1"
                    (f "concern_id") (f "salience") (f "rationale") (event-at e)))
         ((string= type "concern.noted")
-         (sql-exec db "UPDATE concerns SET note=?2,updated_at=?3 WHERE id=?1" (f "concern_id") (f "text") (event-at e)))
+         (sql-exec db "UPDATE concerns SET note=?2,updated_at=?3 WHERE id=?1" (f "concern_id") (f "text") (event-at e))
+         ;; Omitted means keep the horizon; an empty string explicitly clears it.
+         (when (nth-value 1 (gethash "next_look_at" p))
+           (sql-exec db "UPDATE concerns SET next_look_at=nullif(?2,'') WHERE id=?1"
+                     (f "concern_id") (f "next_look_at"))))
         ((string= type "concern.closed")
          (sql-exec db "UPDATE concerns SET status=?2,note=coalesce(?3,note),updated_at=?4 WHERE id=?1"
                    (f "concern_id") (f "status") (f "reason") (event-at e)))
@@ -138,9 +142,10 @@
 
 (define-projection "concerns"
   :kind :inline
+  :version 2
   :consumes ("concern.raised" "concern.reinforced" "concern.noted" "concern.closed"
              "thought.requested" "thought.step" "thought.ended" "quiet.reviewed" "quiet.ruminated")
-  :tables ("CREATE TABLE IF NOT EXISTS concerns (id TEXT PRIMARY KEY, kind TEXT NOT NULL, question TEXT NOT NULL, normalised TEXT NOT NULL, rationale TEXT NOT NULL, features TEXT NOT NULL, salience REAL NOT NULL, status TEXT NOT NULL, steps INTEGER NOT NULL, attended INTEGER NOT NULL, last_attended_at TEXT, note TEXT, created_at TEXT NOT NULL, created_day TEXT NOT NULL, updated_at TEXT NOT NULL, source_event_id INTEGER NOT NULL)"
+  :tables ("CREATE TABLE IF NOT EXISTS concerns (id TEXT PRIMARY KEY, kind TEXT NOT NULL, question TEXT NOT NULL, normalised TEXT NOT NULL, rationale TEXT NOT NULL, features TEXT NOT NULL, salience REAL NOT NULL, status TEXT NOT NULL, steps INTEGER NOT NULL, attended INTEGER NOT NULL, last_attended_at TEXT, note TEXT, created_at TEXT NOT NULL, created_day TEXT NOT NULL, updated_at TEXT NOT NULL, source_event_id INTEGER NOT NULL, next_look_at TEXT)"
            "CREATE INDEX IF NOT EXISTS concerns_day ON concerns(created_day)"
            ;; Concerns the runtime raised from a failed thought: looked at at once.
            "CREATE TABLE IF NOT EXISTS concern_failures (concern_id TEXT PRIMARY KEY)"
@@ -152,14 +157,14 @@
   :reduce #'%reduce-concerns)
 
 (defun open-concerns (kernel)
-  "Open concerns, most salient first: (id kind question rationale salience steps attended last-attended note)."
+  "Open concerns: (id kind question rationale salience steps attended last-attended note next-look-at)."
   (sql-rows (kernel-db kernel)
-            "SELECT id,kind,question,rationale,salience,steps,attended,last_attended_at,note FROM concerns WHERE status=?1 ORDER BY salience DESC LIMIT 64"
+            "SELECT id,kind,question,rationale,salience,steps,attended,last_attended_at,note,next_look_at FROM concerns WHERE status=?1 ORDER BY salience DESC LIMIT 64"
             "open"))
 
 (defun concern-row (kernel id)
   (sql-row (kernel-db kernel)
-           "SELECT id,kind,question,rationale,salience,steps,attended,last_attended_at,note,status FROM concerns WHERE id=?1 LIMIT 1"
+           "SELECT id,kind,question,rationale,salience,steps,attended,last_attended_at,note,status,next_look_at FROM concerns WHERE id=?1 LIMIT 1"
            id))
 
 (defun %new-today (kernel)
@@ -207,15 +212,18 @@
   :description "Keep track of what I mean to look into in quiet time. action:
 raise (question, rationale; optionally kind curiosity|follow-up|repair|introspection, and
 0-1 scores goal_relevance, personal_relevance, urgency, uncertainty, predicted_value), list,
-note (id, text: progress so far), satisfy (id, text: what I found), retire (id, text: why I am
+note (id, text: progress so far; optional next_look_at: UTC YYYY-MM-DDTHH:MM:SSZ to wait until,
+empty string to clear the wait, omitted to keep it), satisfy (id, text: what I found), retire (id, text: why I am
 letting it go). Raising a question I already hold reinforces it. Open concerns are capped, so I
-raise what matters, and close what is done."
+raise what matters, and close what is done. A wait written only in text does not schedule it.
+next_look_at extends the global revisit minimum; it never shortens it."
   :summary "Keep track of what I mean to look into in quiet time."
   :available '("operator" "coding-agent")
   :parameters (obj "type" "object"
                    "properties" (obj "action" (obj "type" "string" "enum" (list "raise" "list" "note" "satisfy" "retire"))
                                      "id" (obj "type" "string") "question" (obj "type" "string")
                                      "rationale" (obj "type" "string") "text" (obj "type" "string")
+                                     "next_look_at" (obj "type" "string" "description" "For note: UTC YYYY-MM-DDTHH:MM:SSZ; empty clears, omit preserves.")
                                      "kind" (obj "type" "string")
                                      "goal_relevance" (obj "type" "number") "personal_relevance" (obj "type" "number")
                                      "urgency" (obj "type" "number") "uncertainty" (obj "type" "number")
@@ -240,14 +248,19 @@ raise what matters, and close what is done."
               (let ((open (open-concerns kernel)))
                 (if (null open) "No open concerns."
                     (format nil "~{~a~^~%~}"
-                            (loop for (cid kind question nil salience steps attended nil note) in open
-                                  collect (format nil "~a [~a, salience ~,2f, ~d steps, attended ~d] ~a~@[~%  so far: ~a~]"
-                                                  cid kind salience steps attended question note))))))
+                            (loop for (cid kind question nil salience steps attended nil note next) in open
+                                  collect (format nil "~a [~a, salience ~,2f, ~d steps, attended ~d] ~a~@[~%  so far: ~a~]~@[~%  next look: ~a~]"
+                                                  cid kind salience steps attended question note next))))))
              ((not (and (stringp id) (concern-row kernel id))) "Give the id of a concern I hold.")
              ((not (equal "open" (tenth (concern-row kernel id)))) "That concern is already closed.")
              ((equal action "note")
-              (append! kernel "concern.noted" (obj "concern_id" id "text" (or (obj-get args "text") "")))
-              "Noted.")
+              (multiple-value-bind (next supplied) (gethash "next_look_at" args)
+                (if (and supplied (not (%concern-time-p next)))
+                    "Give next_look_at as UTC YYYY-MM-DDTHH:MM:SSZ, or an empty string to clear it."
+                    (let ((p (obj "concern_id" id "text" (or (obj-get args "text") ""))))
+                      (when supplied (setf (gethash "next_look_at" p) next))
+                      (append! kernel "concern.noted" p)
+                      "Noted."))))
              ((member action '("satisfy" "retire") :test #'equal)
               (close-concern kernel id (if (equal action "satisfy") "satisfied" "retired") (or (obj-get args "text") ""))
               (format nil "~:(~a~)d ~a." action id))
@@ -266,9 +279,9 @@ raise what matters, and close what is done."
                         (and note (if (> (length note) 300) (format nil "~a…" (subseq note 0 300)) note)))))
 
 (define-slot-source :concerns (kernel request max)
-  (loop for (id kind question nil nil steps nil nil note) in (open-concerns kernel)
-        collect (format nil "- ~a (~a, ~a, ~d steps so far)~@[: so far, ~a~]" question kind id steps
-                        (and note (if (> (length note) 200) (format nil "~a…" (subseq note 0 200)) note)))))
+  (loop for (id kind question nil nil steps nil nil note next) in (open-concerns kernel)
+        collect (format nil "- ~a (~a, ~a, ~d steps so far)~@[: so far, ~a~]~@[; next look: ~a~]" question kind id steps
+                        (and note (if (> (length note) 200) (format nil "~a…" (subseq note 0 200)) note)) next)))
 
 ;;; Quiet time
 
@@ -281,6 +294,17 @@ midnight UTC, the rest opening evenly through the day (v2's pacing)."
     (round (* daily (+ burst (* (- 1 burst) fraction))))))
 
 (defun %seconds-since (iso) (and iso (- (now) (parse-iso8601 iso))))
+
+(defun %concern-time-p (text)
+  "Accept only canonical UTC seconds, or the explicit clear marker."
+  (and (stringp text)
+       (or (zerop (length text))
+           (and (= 20 (length text))
+                (ignore-errors (string= text (iso8601 (parse-iso8601 text))))))))
+
+(defun %concern-waiting-p (row)
+  (let ((next (tenth row)))
+    (and next (string> next (now-iso8601)))))
 
 (defun %raise-from-failures (kernel)
   "Raise a repair concern for each thought that failed or parked since the
@@ -326,7 +350,8 @@ last look, from the record alone: no model call."
   "At the cap, retire the stalest investigated concern idle long enough."
   (let ((open (open-concerns kernel)) (idle (* 60 (setting kernel "concerns.rotation_idle_minutes"))))
     (when (and (plusp idle) (>= (length open) (setting kernel "concerns.max_open")))
-      (let ((stalest (first (sort (remove-if-not (lambda (r) (and (eighth r) (> (%seconds-since (eighth r)) idle)))
+      (let ((stalest (first (sort (remove-if-not (lambda (r) (and (not (%concern-waiting-p r))
+                                                               (eighth r) (> (%seconds-since (eighth r)) idle)))
                                                  (copy-list open))
                                   #'string< :key #'eighth))))
         (when stalest
@@ -367,14 +392,14 @@ coding agent. 5. Tell the operator in a line what failed and what you did, with 
 
 (defun %concern-thought (kernel row)
   "Start a thought for the concern ROW."
-  (destructuring-bind (id kind question rationale salience steps attended last note) row
-    (declare (ignore salience last))
+  (destructuring-bind (id kind question rationale salience steps attended last note next) row
+    (declare (ignore salience last next))
     (request-thought
      kernel "concern"
      (format nil "~:[Quiet time~;A failure, looked at at once~]. You are looking into one of your concerns (~a, ~a):~%~%~a~%~%~
 Why it matters: ~a~@[~%~%Where you got to before: ~a~]~%~%This is visit ~d. Two budgets apply, in model calls: ~
 this thought may make up to ~d, and this concern may spend ~d in total across all its visits, of which ~d are used. ~
-Work on it now. Use the concern tool to note progress, satisfy it when it is settled, or retire it ~
+Work on it now. Use the concern tool to note progress (with next_look_at if it should wait), satisfy it when it is settled, or retire it ~
 if it is not worth more.~:[ If it is a problem in yourself, find or open a bead and ping the coding agent.~;~%~%~a~]"
              (zerop attended) id kind question rationale note (1+ attended)
              (getf (%policy kernel "concern") :max-calls) (setting kernel "concerns.lifetime_steps") steps
@@ -384,7 +409,8 @@ if it is not worth more.~:[ If it is a problem in yourself, find or open a bead 
 (defun %start-failure-repair (kernel)
   "A repair concern raised from a failure and not yet looked at starts at
 once, ahead of the operator's grace period: its evidence is freshest now."
-  (let ((pick (find-if (lambda (r) (and (equal "repair" (second r)) (zerop (seventh r))
+  (let ((pick (find-if (lambda (r) (and (not (%concern-waiting-p r))
+                                        (equal "repair" (second r)) (zerop (seventh r))
                                         (sql-value (kernel-db kernel) "SELECT 1 FROM concern_failures WHERE concern_id=?1 LIMIT 1" (first r))))
                        (open-concerns kernel))))
     (when pick (%concern-thought kernel pick))))
@@ -392,7 +418,8 @@ once, ahead of the operator's grace period: its evidence is freshest now."
 (defun %start-concern (kernel)
   "A thought for the most salient open concern ready to be attended."
   (let* ((revisit (setting kernel "quiet.revisit_seconds"))
-         (ready (remove-if (lambda (r) (and (eighth r) (< (%seconds-since (eighth r)) revisit)))
+         (ready (remove-if (lambda (r) (or (%concern-waiting-p r)
+                                          (and (eighth r) (< (%seconds-since (eighth r)) revisit))))
                            (open-concerns kernel))))
     (when ready
       (%concern-thought kernel (first (sort (copy-list ready) #'> :key (lambda (r) (%effective-salience kernel r))))))))
