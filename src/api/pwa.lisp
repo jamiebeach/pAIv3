@@ -144,6 +144,15 @@ becomes a stimulus (pai-v3.mind:coding-agent-message)."
                   ;; Which secrets exist and the hosts each may be sent to: names only, never values.
                   ((equal what "secrets")
                    (mapcar (lambda (r) (obj "name" (first r) "hosts" (second r) "updated_at" (third r))) (secret-names)))
+                  ((uiop:string-prefix-p "work:" what)
+                   (cons (obj "now" (now-iso8601) "daily_limit_microusd" (setting kernel "budget.daily_microusd")
+                              "spent_today_microusd" (spent-today kernel))
+                         (mapcar (lambda (r)
+                                   (destructuring-bind (id status priority next deferred class reason) r
+                                     (obj "work_id" id "status" status "priority" priority "next_at" next
+                                          "deferred_reason" deferred "last_class" class "last_reason" reason)))
+                                 (rows "SELECT id,status,priority,next_at,deferred_reason,last_class,last_reason FROM v3_work WHERE handler=?1 AND entity=?2 ORDER BY id DESC LIMIT ?3"
+                                       "thought" (subseq what 5) limit))))
                   ((equal what "carried") (carried-items kernel :limit limit))
                   ((equal what "formation")
                    (mapcar (lambda (id) (let ((e (event-by-id kernel id))) (obj "event_id" id "at" (event-at e) "run" (event-payload e))))
