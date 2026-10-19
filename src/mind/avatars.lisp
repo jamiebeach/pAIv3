@@ -65,7 +65,8 @@ operator's own thoughts, those the operator sent. Pictures others posted are not
                       (change-setting kernel "avatar.image" "" :origin (obj "principal_type" "self") :reason "cleared by me")
                       "Back to the first-letter circle.")
                      ((not (image-row kernel image))
-                      "Not done: I do not hold an image with that id. Generate one, or use an id from look_at.")
+                      (format nil "Not done: ~a is not an image I hold.~:[~; A memory id (m-...) or fact id (f-...) is not a picture's.~] Call set_avatar with no image_id to list the pictures I made, or generate one."
+                              image (and (> (length image) 2) (member (char image 0) '(#\m #\f)) (char= (char image 1) #\-))))
                      (t (change-setting kernel "avatar.image" image :origin (obj "principal_type" "self") :reason "chosen by me")
                         "That is my avatar now; it shows on the board and in the terminal."))
              (setting-refused (e) (format nil "Not done: ~a" (setting-refused-reason e)))

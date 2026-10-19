@@ -152,6 +152,6 @@ answer more about a picture from earlier in the conversation."
            (dolist (id (subseq mine 0 (min 4 (length mine))))
              (append! kernel "image.looked" (obj "image_id" id "thought_id" thought-id)))
            (cond ((null ids) "Name the images to look at.")
-                 ((null mine) "None of those is an image I can look at.")
+                 ((null mine) "None of those is an image I can look at. An image id is 32 hex digits; a memory id (m-...) or fact id (f-...) is not one. set_avatar with no image_id lists the pictures I made.")
                  (t (format nil "Looking at ~{~a~^, ~}; ~:[it is~;they are~] in front of me at my next step."
                             (subseq mine 0 (min 4 (length mine))) (rest mine)))))))

@@ -291,20 +291,28 @@ or identifiers), newest first, as (kind at text ref event-id)."
                "Nothing comes to mind.")))))
 
 (define-tool "remember"
-  :description "Keep something as a memory. Say who may hear it again: operator-only (the default), household, peers, public, or granted:<topic>."
+  :description "Keep something as a memory. Say who may hear it again: operator-only (the default), household, peers, public, or granted:<topic>. To keep a note about pictures, name their image ids in images: the ids go into the memory, so it leads back to them. A memory's own id (m-...) or a fact's (f-...) is not a picture's id."
   :parameters (obj "type" "object"
                    "properties" (obj "content" (obj "type" "string")
+                                     "images" (obj "type" "array" "items" (obj "type" "string")
+                                                   "description" "ids of pictures this memory is about")
                                      "kind" (obj "type" "string" "description" "fact, episode, preference or insight")
                                      "sensitivity" (obj "type" "string")
                                      "topic" (obj "type" "string" "description" "What it is about, for telling others it exists without saying it."))
                    "required" (list "content"))
   :run (lambda (kernel id args)
-         (let ((sensitivity (obj-get args "sensitivity" "operator-only")))
-           (if (not (valid-sensitivity-p sensitivity))
-               (format nil "~a is not a sensitivity. Use operator-only, household, peers, public or granted:<topic>." sensitivity)
+         (let* ((sensitivity (obj-get args "sensitivity" "operator-only"))
+                (images (remove-if-not #'stringp (or (obj-get args "images") '())))
+                (missing (find-if-not (lambda (i) (image-row kernel i)) images)))
+           (cond
+             ((not (valid-sensitivity-p sensitivity))
+               (format nil "~a is not a sensitivity. Use operator-only, household, peers, public or granted:<topic>." sensitivity))
+             (missing
+              (format nil "~a is not an image I hold, so nothing was remembered. An image id is 32 hex digits (set_avatar with no image_id lists the pictures I made); a memory id (m-...) or fact id (f-...) is not one." missing))
+             (t
                (let ((memory (form-memory kernel :kind (obj-get args "kind" "fact")
-                                                 :content (obj-get args "content" "")
+                                                 :content (format nil "~a~@[~%(pictures: ~{~a~^ ~})~]" (obj-get args "content" "") images)
                                                  :sensitivity sensitivity
                                                  :topic (obj-get args "topic")
                                                  :owner "self" :source-event-id id)))
-                 (format nil "Remembered (~a, ~a)." memory sensitivity))))))
+                 (format nil "Remembered (~a, ~a)." memory sensitivity)))))))

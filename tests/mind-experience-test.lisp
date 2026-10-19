@@ -114,4 +114,27 @@
     (is (null (pai-v3.mind::experience-near k (embed "garden") "peer:someone")) "scoped by audience")
     (is (zerop (pai-v3.mind::request-missing-embeddings k :every 0)) "nothing is left to embed")))
 
+(deftest a-note-about-pictures-carries-their-ids
+  (with-experience (k)
+    (let* ((id (request-thought k "private" "note it"))
+           (picture (pai-v3.mind::store-image k "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="))
+           (said (run-tool k id "remember" (obj "content" "My portrait, rendered at dusk." "images" (list picture)))))
+      (is (search "Remembered" said))
+      (is (sql-value (kernel-db k) "SELECT 1 FROM memory_nodes WHERE content LIKE ?1 LIMIT 1" (format nil "%(pictures: ~a)%" picture))
+          "the picture's id is in the memory, so recall and search lead back to it")
+      (let ((refused (run-tool k id "remember" (obj "content" "A portrait" "images" (list "m-RJWDWLQX21YI")))))
+        (is (search "not an image I hold" refused) "a memory id is not a picture's")
+        (is (search "nothing was remembered" refused))
+        (is (search "m-RJWDWLQX21YI" refused)))
+      (is (null (sql-value (kernel-db k) "SELECT 1 FROM memory_nodes WHERE content LIKE ?1 LIMIT 1" "%A portrait%")) "and nothing was kept"))))
+
+(deftest asking-to-use-a-memory-id-as-a-picture-says-what-went-wrong
+  (with-experience (k)
+    (let ((id (request-thought k "private" "my face")))
+      (let ((said (run-tool k id "set_avatar" (obj "image_id" "f-Cl8oeHWCPjBZ"))))
+        (is (search "not an image I hold" said))
+        (is (search "fact id (f-...)" said) "it says what the id was")
+        (is (search "with no image_id to list" said) "and how to find the pictures"))
+      (is (search "memory id (m-...)" (run-tool k id "look_at" (obj "images" (list "m-RJWDWLQX21YI"))))))))
+
 (run-suite "mind-experience")
