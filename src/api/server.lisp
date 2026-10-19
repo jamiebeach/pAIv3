@@ -101,6 +101,26 @@ host name would otherwise sign each other out.")
       (let ((auth (hunchentoot:header-in* :authorization)))
         (and auth (> (length auth) 7) (string-equal "Bearer " auth :end2 7) (subseq auth 7)))))
 
+;;; Secrets set from the app. The app manages some names itself (a signing key,
+;;; the tokens of a connected account, a peer's shared key); replacing one by
+;;; hand would silently break what depends on it, so those are refused.
+
+(defparameter +managed-secret-prefixes+ '("google-" "fleet-peer-" "web-push-"))
+
+(defun %secret-problem (name hosts &optional (changing t))
+  "Why NAME and HOSTS may not be used for a secret set from the app, or NIL."
+  (flet ((host-ok (h) (and (stringp h) (< 0 (length h) 254)
+                           (every (lambda (c) (or (alphanumericp c) (find c "-.*"))) h)
+                           (find #\. h) (not (search ".." h))
+                           (or (not (find #\* h)) (and (> (length h) 2) (string= "*." h :end2 2) (not (find #\* h :start 1)))))))
+    (cond ((not (and (stringp name) (< 0 (length name) 65) (alphanumericp (char name 0))
+                     (every (lambda (c) (or (and (alphanumericp c) (not (upper-case-p c))) (find c "-_"))) name)))
+           "a secret's name is lower-case letters, digits, - and _ (up to 64)")
+          ((find-if (lambda (p) (uiop:string-prefix-p p name)) +managed-secret-prefixes+)
+           "the app manages that one itself")
+          ((and changing (not (and (consp hosts) (every #'host-ok hosts))))
+           "name the hosts it may be sent to, such as api.example.com or *.example.com (no https://, paths or spaces)"))))
+
 (defun same-origin-p (agent)
   "Cross-site protection: state-changing browser requests must come from our
 origin and carry the client header (a simple form cannot set it)."
@@ -246,12 +266,14 @@ for native clients that send it as a bearer token."
                  (reply 403 (obj "error" "step-up required" "step_up" t))
                  (let ((b (body-json)))
                    (if (string= path "/v1/secrets")
-                       (progn
+                       (let ((problem (%secret-problem (obj-get b "name") (obj-get b "hosts"))))
+                         (when problem (error 'keyring-error :message problem))
                          (set-secret (obj-get b "name" "") (obj-get b "value" "") (obj-get b "hosts"))
                          (append! k "secret.set" (obj "name" (obj-get b "name") "hosts" (obj-get b "hosts")
                                                       "origin" origin))
                          (reply 200 (obj "name" (obj-get b "name") "hosts" (obj-get b "hosts"))))
-                       (progn
+                       (let ((problem (%secret-problem (obj-get b "name") nil nil)))
+                         (when problem (error 'keyring-error :message problem))
                          (remove-secret (obj-get b "name" ""))
                          (append! k "secret.removed" (obj "name" (obj-get b "name" "") "origin" origin))
                          (reply 200 (obj "name" (obj-get b "name")))))))))

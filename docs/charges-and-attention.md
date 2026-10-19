@@ -230,7 +230,67 @@ Operator reactions are the feedback that tunes appraisal thresholds and
 outreach limits. The account also makes the operator's decision explicit:
 keep a charge, move it to another agent, or drop it.
 
-## 8. Releases
+## 8. Access without credentials
+
+Most charges need the agent to be signed in to something: a mailbox, a
+code host, a wearable's service, a brokerage. The agent must be able to act
+as the operator there without ever holding the credential. Hiding the
+credential stops it being stolen, copied or leaked through a page or a
+prompt; it does not stop misuse, so scope and approval matter as much as
+hiding.
+
+**What exists.** A secret store; an outbound guard that attaches a named
+secret to a request only for the hosts the secret is bound to, and refuses a
+raw secret anywhere else; and the Google connect flow, in which the operator
+signs in at the service and the token goes straight into the store.
+
+**What is missing, in order of effort.**
+
+1. *A pasted key.* A page in the app where the operator adds a secret: its
+   name, the hosts it may be sent to, and its value. The value goes from the
+   operator's browser to the store and is never shown again. This replaces
+   entering secrets at a terminal.
+2. *OAuth for any service that offers it.* The Google flow generalised: a
+   table of services (authorisation address, token address, scopes, hosts).
+   Scoped, refreshable, revocable tokens are the best credential there is.
+3. *The agent asks.* A tool, request_access(service, why), puts a task in the
+   operator's app ("The agent asks you to connect the code host, for pull
+   requests on this project"). The operator completes it; the agent is told
+   it is done and then uses the secret by name.
+4. *A browser the agent drives but does not hold.* For services with only a
+   login. See below.
+
+**Limits on every secret.** Allowed hosts; allowed methods and paths
+(read-only by default); the operator's approval for anything that writes or
+moves money; responses scanned so a secret a service echoes back is
+redacted; every use recorded.
+
+**The browser sidecar.** The browser runs outside the agent's container, in
+its own sandbox, with a profile per service. The operator signs in there,
+by watching and taking over when the agent asks (a login, a two-factor
+code); the profile keeps the session. The agent drives it through a narrow
+interface: go to an address, click, type, read the page as text, take a
+screenshot. It has no way to run script in a page, read cookies or storage,
+or export the profile, so it never holds a session. The operator can watch
+the agent work and take control at any time.
+
+Rules for the sidecar:
+
+- Each profile is limited to its service's hosts; the agent cannot send an
+  authenticated profile somewhere else.
+- A page is outside content. An agent working in a signed-in profile can be
+  steered by text on the page, so reading is the default and any write
+  (submit, send, pay, change) waits for the operator.
+- Password fields are masked in screenshots; the agent's typing of a stored
+  value is done by the sidecar, not by the agent.
+- Two-factor and consent steps are always handed to the operator.
+- A session cookie can do anything the account can, unlike a scoped token,
+  so the sidecar is for services that offer nothing better.
+
+What it unlocks: a wearable's service with no personal interface, a
+brokerage's read-only views, any site the operator uses daily.
+
+## 9. Releases
 
 1. **Days and commitments.** The watch over mail and calendar, the present,
    the stream, the morning brief, service outreach, in shadow mode first.
@@ -246,7 +306,7 @@ keep a charge, move it to another agent, or drop it.
 
 Each release is one charge or one mechanism, usable on its own.
 
-## 9. Open questions
+## 10. Open questions
 
 - The first assignment of charges (proposed: shared fiction, health,
   people and warmth to the production agent; days, work and current

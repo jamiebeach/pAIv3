@@ -488,7 +488,9 @@
           (is (= 200 (pwa-post "/api/carried" (obj "action" "close" "id" id "state" "done") :token token)))
           (is (null (obj-get (json-parse (nth-value 1 (raw-get "/api/carried" :token token))) "items")))
           (is (= 1 (length (obj-get (json-parse (nth-value 1 (raw-get "/api/carried" :token token))) "closed"))))))
-      (is (= 200 (raw-get "/carried" :token token))))))
+      (is (= 200 (raw-get "/carried" :token token)))
+      (is (= 200 (raw-get "/secrets" :token token)) "the secrets page is served to a signed-in operator")
+      (is (= 302 (raw-get "/secrets")) "and sends anyone else to sign in"))))
 
 (deftest the-files-view-stays-in-the-workspace
   (with-pwa (k agent)

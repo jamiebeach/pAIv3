@@ -99,6 +99,7 @@
     register({id:'settings', label:'Settings', href:'/settings', current:path === '/settings'});
     register({id:'board', label:'Board', href:'/board-view', current:path === '/board-view'});
     register({id:'carried', label:'Carrying', href:'/carried', current:path === '/carried'});
+    register({id:'secrets', label:'Secrets', href:'/secrets', current:path === '/secrets'});
     window.dispatchEvent(new CustomEvent('pai-shell-ready'));
   }
 
