@@ -4,7 +4,8 @@
 # is copied into its volume, and the running agent loads what changed.
 #
 #   tools/dev-agent.sh create          make the container (run once)
-#   tools/dev-agent.sh sync            copy the source in and reload it live
+#   tools/dev-agent.sh sync            copy the source in and reload it live (restarts instead
+#                                        when kernel, trust or package files changed)
 #   tools/dev-agent.sh sync --restart  copy the source in and restart
 #   tools/dev-agent.sh threads          print what each thread is doing (when it hangs)
 #   tools/dev-agent.sh peek <what> [n]  read the running agent: dialogue,
@@ -27,6 +28,9 @@
 set -eu
 export MSYS_NO_PATHCONV=1
 cd "$(dirname "$0")/.."
+# A hash of the files a live reload cannot safely replace.
+risky_hash='find src/kernel src/trust pai-v3.asd src/*/package.lisp -type f | sort | xargs sha256sum | sed "s/ \*/  /" | sha256sum | cut -c1-16'
+
 env_file=${PAI_DEV_ENV:-private/dev-agent.env}
 [ -f "$env_file" ] && . "./$env_file"
 name=${PAI_DEV_NAME:-pai-dev}
@@ -66,8 +70,14 @@ case "${1:-}" in
     echo "Created $name. Start it with: docker start $name"
     ;;
   sync)
+    # Kernel, trust and package changes cannot be loaded into a running image
+    # safely (a live reload of kernel code once wedged an agent's database
+    # access), so they always restart it.
+    before=$(docker exec "$name" sh -c "cd /home/pai/v3 && $risky_hash" 2>/dev/null || echo none)
     copy_source
-    if [ "${2:-}" = "--restart" ]; then
+    after=$(sh -c "$risky_hash")
+    if [ "${2:-}" = "--restart" ] || [ "$before" != "$after" ]; then
+      [ "${2:-}" = "--restart" ] || echo "Kernel, trust or package files changed: restarting $name instead of reloading live."
       docker restart "$name" >/dev/null
       wait_up && echo "Restarted $name."
     else
