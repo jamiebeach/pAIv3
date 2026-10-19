@@ -107,6 +107,17 @@
     (let ((run (lambda (args) (funcall (pai-v3.mind::tool-run (gethash "set_avatar" *tools*)) k 1 args)))
           (image (pai-v3.mind::store-image k +px+)))
       (is (null (pai-v3.mind:avatar-image-id k :self)) "none to begin with")
+      ;; She can find her own pictures without remembering their ids.
+      (is (search "no pictures" (funcall run (obj))) "none made yet")
+      (append! k "image.seen" (obj "image_id" image "audience" "operator" "how" "made"))
+      (append! k "image.seen" (obj "image_id" (pai-v3.mind::store-image k "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mP8z8AARgAEyAFe3nqx3wAAAABJRU5ErkJggg==")
+                       "audience" "operator" "how" "posted"))
+      (let ((listed (funcall run (obj))))
+        (is (search image listed) "the picture she made is listed")
+        (is (null (search "posted" listed)) "a picture someone else posted is not offered"))
+      (is (search image (funcall (pai-v3.mind::tool-run (gethash "set_avatar" *tools*)) k
+                                 (request-thought k "work" "a sister wrote" :audience "peer:aria") (obj)))
+          "and when answering a sister")
       (is (search "Not done" (funcall run (obj "image_id" "00000000000000000000000000000000"))) "an image she does not hold")
       (is (search "Not done" (funcall run (obj "image_id" "not-an-id"))))
       (is (search "my avatar now" (funcall run (obj "image_id" image))))

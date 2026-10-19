@@ -122,6 +122,7 @@ becomes a stimulus (pai-v3.mind:coding-agent-message)."
                    (list (let ((o (avatar-summary kernel)))
                            (multiple-value-bind (mime octets) (own-avatar kernel :self)
                              (setf (gethash "self_picture" o) (if mime (obj "mime" mime "bytes" (length octets)) :null)))
+                           (setf (gethash "choices" o) (avatar-choices kernel 12))
                            (setf (gethash "peers" o)
                                  (mapcar (lambda (p)
                                            (let* ((error-text nil)
