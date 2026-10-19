@@ -25,14 +25,29 @@
   (push (list (hunchentoot:script-name*) (hunchentoot:query-string*)) *asked*)
   (setf (hunchentoot:content-type*) "application/json")
   (let ((path (hunchentoot:script-name*)))
-    (if (string= path "/gmail/v1/users/me/messages")
-        ;; Three ids, one of them older than the watermark (a search can be loose).
-        (json-encode (obj "messages" (list (obj "id" "new1") (obj "id" "new2") (obj "id" "old1"))))
-        (let ((id (subseq path (1+ (position #\/ path :from-end t)))))
-          (json-encode (obj "id" id "snippet" (format nil "snippet of ~a" id)
-                            "internalDate" (princ-to-string (if (string= id "old1") (- *mail-now-ms* 86400000) (+ *mail-now-ms* 60000)))
-                            "payload" (obj "headers" (list (obj "name" "From" "value" "someone@example.com")
-                                                           (obj "name" "Subject" "value" (format nil "About ~a" id))))))))))
+    (cond
+      ((string= path "/gmail/v1/users/me/messages")
+       ;; Three ids, one of them older than the watermark (a search can be loose).
+       (json-encode (obj "messages" (list (obj "id" "new1") (obj "id" "new2") (obj "id" "old1")))))
+      ((search "/attachments/" path)
+       (json-encode (obj "size" 70 "data" "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg")))
+      (t
+       (let* ((id (subseq path (1+ (position #\/ path :from-end t))))
+              (headers (list (obj "name" "From" "value" "someone@example.com")
+                             (obj "name" "Subject" "value" (format nil "About ~a" id)))))
+         (json-encode (obj "id" id "snippet" (if (string= id "att1") "" (format nil "snippet of ~a" id))
+                           "internalDate" (princ-to-string (if (string= id "old1") (- *mail-now-ms* 86400000) (+ *mail-now-ms* 60000)))
+                           "payload" (cond ((string= id "att1")
+                                            ;; Only attachments: a picture and a document.
+                                            (obj "mimeType" "multipart/mixed" "headers" headers
+                                                 "parts" (list (obj "mimeType" "image/png" "filename" "headshot.png"
+                                                                    "body" (obj "attachmentId" "A1" "size" 70))
+                                                               (obj "mimeType" "application/pdf" "filename" "cv.pdf"
+                                                                    "body" (obj "attachmentId" "A2" "size" 90000)))))
+                                           ((string= id "html1")
+                                            (obj "mimeType" "text/html" "headers" headers
+                                                 "body" (obj "data" (base64url-encode (babel:string-to-octets "<p>Hello <b>there</b></p>" :encoding :utf-8)))))
+                                           (t (obj "headers" headers))))))))))
 
 (hunchentoot:define-easy-handler (fake-calendar :uri (lambda (r) (uiop:string-prefix-p "/calendar/" (hunchentoot:script-name r)))) ()
   (push (list (hunchentoot:script-name*) (hunchentoot:query-string*)) *asked*)
@@ -155,5 +170,29 @@
         "the day ahead covers every account")
     (is (equal "work" (sql-value (kernel-db k) "SELECT account FROM mail_items WHERE id=?1 LIMIT 1" "w1"))
         "a message read without its account is looked up")))
+
+;;; What is attached (a message of only attachments read as empty, and looked like a fault)
+
+(deftest a-message-of-only-attachments-says-so-and-a-picture-can-be-opened
+  (with-google (k)
+    (connect k)
+    (let* ((thought (request-thought k "responding" "look at my mail" :audience "operator"))
+           (run (lambda (args) (funcall (pai-v3.mind::tool-run (gethash "mail" *tools*)) k thought args))))
+      (let ((said (funcall run (obj "action" "read" "id" "att1"))))
+        (is (search "(no text in the message itself)" said) "it is not a fault: there is no text")
+        (is (search "[1] headshot.png (image/png, 70 bytes)" said) "the attachments are listed by number")
+        (is (search "[2] cv.pdf (application/pdf, 88 KB)" said)))
+      (is (search "Hello there" (funcall run (obj "action" "read" "id" "html1"))) "a message of only HTML reads as text")
+      (let ((said (funcall run (obj "action" "attachment" "id" "att1" "index" 1))))
+        (is (search "Kept headshot.png as image" said))
+        (let* ((start (+ 10 (search " as image " said)))
+               (image (subseq said start (+ start 32))))
+          (is (every (lambda (c) (digit-char-p c 16)) image) "named by its content")
+          (is (pai-v3.mind::image-row k image) "kept in the image store")
+          (is (sql-value (kernel-db k) "SELECT 1 FROM seen_images WHERE image_id=?1 AND audience=?2 LIMIT 1" image "operator")
+              "and among those seen, so look_at can show it")))
+      (is (search "pictures only" (funcall run (obj "action" "attachment" "id" "att1" "index" 2))) "a document is not opened")
+      (is (search "is not one of them" (funcall run (obj "action" "attachment" "id" "att1" "index" 9))))
+      (is (search "no attachments" (funcall run (obj "action" "attachment" "id" "new1" "index" 1))) "a message with none"))))
 
 (run-suite "api-google")
