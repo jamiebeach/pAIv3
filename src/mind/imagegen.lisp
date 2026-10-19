@@ -76,6 +76,15 @@
     (http-request :post url :headers headers :body body :read-timeout 120))
   "(lambda (url headers body)) -> body, status. Replaced in tests.")
 
+(defun %reference-allowed-p (kernel thought-id image-id)
+  "Whether a thought may use IMAGE-ID as a reference: any, for the operator's thoughts; for a sister's, only a
+picture her audience has met or one the agent made, so a picture the operator showed in private cannot leak into one
+made for a sister."
+  (let ((audience (getf (thought-row kernel thought-id) :audience)))
+    (or (null audience) (equal audience "operator")
+        (sql-value (kernel-db kernel) "SELECT 1 FROM seen_images WHERE image_id=?1 AND audience=?2 LIMIT 1" image-id audience)
+        (sql-value (kernel-db kernel) "SELECT 1 FROM seen_images WHERE image_id=?1 AND audience=?2 AND how=?3 LIMIT 1" image-id "operator" "made"))))
+
 (defun generate-image (kernel thought-id prompt &key (size "square") references depicts)
   "Make an image of PROMPT. With REFERENCES (stored image ids), the reference
 model makes it, keeping who or what they show. Returns the text the agent
@@ -153,7 +162,12 @@ that keeps identity from references then makes it. Describe the new scene in the
 entity ids of who or what the image shows, so I can find it again as a picture of them (whoever the references
 show is linked anyway)."
   :summary "Make an image from a description."
-  :available :operator-trust
+  ;; Almost always at hand: the operator's thoughts and a sister's (answering her on a board),
+  ;; but not a thought made of outside content (the mail digest). Spend is capped by
+  ;; images.generation_daily_usd, and a sister's thought may use as references only pictures
+  ;; she has met or the agent made.
+  :available :operator-and-peers
+  :core t
   :parameters (obj "type" "object"
                    "properties" (obj "prompt" (obj "type" "string")
                                      "size" (obj "type" "string" "enum" (mapcar #'first +image-sizes+))
@@ -162,5 +176,7 @@ show is linked anyway)."
                    "required" (list "prompt"))
   :run (lambda (kernel thought-id args)
          (generate-image kernel thought-id (obj-get args "prompt") :size (or (obj-get args "size") "square")
-                         :references (let ((r (obj-get args "references"))) (and (consp r) (remove-if-not #'stringp r)))
+                         :references (let ((r (obj-get args "references")))
+                                       (and (consp r)
+                                            (remove-if-not (lambda (id) (and (stringp id) (%reference-allowed-p kernel thought-id id))) r)))
                          :depicts (let ((d (obj-get args "depicts"))) (and (consp d) (remove-if-not #'stringp d))))))

@@ -45,6 +45,17 @@
       (pai-v3.mind::request-captions k)
       (is (not (work-pending-p k "image.caption" id)) "no model is asked"))))
 
+(deftest a-picture-sent-to-a-sister-is-one-she-has-met
+  (with-temp-kernel (k)
+    (let ((id (pai-v3.mind::store-image k +shown-png+)))
+      (append! k "image.generated" (obj "image_id" id "prompt" "a calm portrait in dark clothes" "model" "m" "width" 1 "height" 1 "cost_usd" 0.001d0))
+      (is (null (search "calm portrait" (seen-slot k "peer:sister1"))) "a picture made for the operator is not yet in view for a sister")
+      (append! k "fleet.op" (obj "kind" "publication-intent" "operation_id" "op-1" "peer_id" "sister1"
+                                 "body" (obj "request" (obj "text" "Here is mine." "image_ids" (list id)))))
+      (is (search "calm portrait" (seen-slot k "peer:sister1")) "once posted to her, a thought answering her sees it, with its caption")
+      (is (null (search "calm portrait" (seen-slot k "peer:sister2"))) "and only the sister it was sent to")
+      (is (sql-value (kernel-db k) "SELECT 1 FROM seen_images WHERE image_id=?1 AND audience=?2 AND how=?3 LIMIT 1" id "peer:sister1" "shared")))))
+
 (deftest looking-again-puts-the-picture-in-view
   (with-temp-kernel (k)
     (let* ((id (pai-v3.mind::store-image k +shown-png+))

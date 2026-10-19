@@ -30,6 +30,7 @@
 
 (define-projection "seeing"
   :kind :inline
+  :version 2                    ; 2: a picture I send a peer is one that peer has met
   :consumes ("turn.received" "image.generated" "fleet.board.posted" "fleet.op" "image.seen" "image.captioned" "image.looked")
   :tables ("CREATE TABLE IF NOT EXISTS seen_images (image_id TEXT NOT NULL, audience TEXT NOT NULL, how TEXT NOT NULL, source TEXT, at TEXT NOT NULL, PRIMARY KEY(image_id,audience))"
            "CREATE INDEX IF NOT EXISTS seen_images_recent_idx ON seen_images(audience,at)"
@@ -49,10 +50,15 @@
                          (%seen db id (format nil "peer:~a" (obj-get p "author_id")) "posted" (obj-get p "author_name") nil at)
                          (%seen db id "operator" "posted" (obj-get p "author_name") nil at)))
                       ((string= type "fleet.op")
-                       (when (equal "notification-received" (obj-get p "kind"))
-                         (dolist (id (ids (obj-get (obj-get p "body") "images")))
-                           (%seen db id (format nil "peer:~a" (obj-get p "peer_id")) "posted" nil nil at)
-                           (%seen db id "operator" "posted" nil nil at))))
+                       (cond ((equal "notification-received" (obj-get p "kind"))
+                              (dolist (id (ids (obj-get (obj-get p "body") "images")))
+                                (%seen db id (format nil "peer:~a" (obj-get p "peer_id")) "posted" nil nil at)
+                                (%seen db id "operator" "posted" nil nil at)))
+                             ;; A picture I post on a peer's board is one that peer has now met,
+                             ;; so a thought answering her can see and remember it.
+                             ((equal "publication-intent" (obj-get p "kind"))
+                              (dolist (id (ids (obj-get (obj-get (obj-get p "body") "request") "image_ids")))
+                                (%seen db id (format nil "peer:~a" (obj-get p "peer_id")) "shared" nil nil at)))))
                       ((string= type "image.seen")
                        (%seen db (obj-get p "image_id") (obj-get p "audience") (obj-get p "how") (obj-get p "from")
                               (obj-get p "caption") at))
