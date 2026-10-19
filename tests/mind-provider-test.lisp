@@ -30,6 +30,46 @@
       (is (= 12300 (spent-today k "background")) "reported cost becomes spend")
       (is (string= "ready" (projection-status k "provider_calibration"))))))
 
+(defun thinking-only (completion reasoning)
+  (json-encode (obj "choices" (list (obj "message" (obj "content" "" "reasoning" "planning the chapter at length") "finish_reason" "length"))
+                    "usage" (obj "prompt_tokens" 100 "completion_tokens" completion "cost" 0.002
+                                 "completion_tokens_details" (obj "reasoning_tokens" reasoning)))))
+
+(deftest a-model-that-thinks-until-it-runs-out-is-asked-again-with-room
+  (with-temp-kernel (k)
+    (let* ((asked '())
+           (script (list (thinking-only 8192 8191) (ok-body "Chapter one begins." :cost 0.004)))
+           (p (make-provider-profile :name "voice" :base-url "http://fake" :model "m1" :max-tokens 8192
+                                     :transport (lambda (url headers body &key stream-fn timeout allow-private)
+                                                  (declare (ignore url headers stream-fn timeout allow-private))
+                                                  (push (obj-get (json-parse body) "max_tokens") asked)
+                                                  (values 200 nil (pop script)))))
+           (r (complete k p (user "write a chapter"))))
+      (is (equal "Chapter one begins." (obj-get r "content")) "the second ask answered")
+      (is (equal '(8192 32768) (reverse asked)) "with four times the room")
+      (is (= 1 (or (sql-value (kernel-db k) "SELECT count(*) FROM pai_events WHERE agent_id=?1 AND event_type=?2 LIMIT 1" "test-agent" "provider.call.failed") 0))
+          "the first attempt is still recorded as a failure")
+      (is (= 6000 (spent-today k "background")) "and both attempts are billed: 2000 + 4000 microusd"))))
+
+(deftest asking-again-happens-once-and-only-for-thinking
+  (with-temp-kernel (k)
+    (let* ((calls 0)
+           (p (make-provider-profile :name "voice" :base-url "http://fake" :model "m1" :max-tokens 8192
+                                     :transport (lambda (url headers body &key stream-fn timeout allow-private)
+                                                  (declare (ignore url headers body stream-fn timeout allow-private))
+                                                  (incf calls)
+                                                  (values 200 nil (thinking-only 32768 32767))))))
+      (signals provider-failure (complete k p (user "write a chapter")))
+      (is (= 2 calls) "one more ask, not a loop"))
+    (let* ((calls 0)
+           (p (make-provider-profile :name "voice" :base-url "http://fake" :model "m1" :max-tokens 8192
+                                     :transport (lambda (url headers body &key stream-fn timeout allow-private)
+                                                  (declare (ignore url headers body stream-fn timeout allow-private))
+                                                  (incf calls)
+                                                  (values 200 nil (thinking-only 50 2))))))
+      (signals provider-failure (complete k p (user "hi")))
+      (is (= 1 calls) "an empty answer that was not thinking is not asked again"))))
+
 (deftest a-local-server-without-a-key-is-sent-none
   (let ((local (pai-v3.mind::%profile (obj "name" "judge" "base_url" "http://127.0.0.1:1234/v1" "model" "q" "local" t)))
         (remote (pai-v3.mind::%profile (obj "name" "main" "base_url" "https://example.com/v1" "model" "m"))))

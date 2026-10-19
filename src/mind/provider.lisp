@@ -166,12 +166,18 @@ once the call completes. Content-free: counts only.")
   "(lambda (kernel call-event request-json response-json)) or NIL: keeps the
 exact exchange of a completed call for the observability page.")
 
-(defun complete (kernel profile messages &key tools on-delta work-id (lane "background"))
+(defparameter *room-to-answer-factor* 4
+  "When a model spends its whole output allowance thinking, ask again once with this many times the allowance.")
+(defparameter *room-to-answer-ceiling* 65536 "...but never more than this many output tokens.")
+
+(defun complete (kernel profile messages &key tools on-delta work-id (lane "background") grown)
   "Call PROFILE with MESSAGES (list of objects with role and content).
 Returns an object with \"content\", \"tool_calls\" and \"finish_reason\".
 With ON-DELTA, streams and calls it with each text fragment as it arrives.
 Records provider.call.completed and its spend, or provider.call.failed, and
-signals PROVIDER-FAILURE with a class on failure."
+signals PROVIDER-FAILURE with a class on failure. A reasoning model that
+spends its whole output allowance thinking and says nothing is asked again
+once with more room (GROWN marks that second ask)."
   (let* ((start (get-internal-real-time))
          (chars (%messages-chars messages))
          (estimate (estimate-tokens (make-string chars :initial-element #\x)))
@@ -277,14 +283,27 @@ signals PROVIDER-FAILURE with a class on failure."
                                           (or (obj-get stream-error "message") "unknown"))))
         (let ((text (get-output-stream-string content)))
           (when (and (zerop (length text)) (null tool-calls))
+            ;; The provider billed for what it generated, though nothing came of it.
+            (let ((microusd (%microusd profile usage (or (obj-get usage "prompt_tokens") 0) (or (obj-get usage "completion_tokens") 0))))
+              (when (plusp microusd) (record-spend kernel microusd :work-id work-id :lane lane)))
             ;; Say why it was empty, so a cause can be told from the note:
             ;; out of output tokens on reasoning, or a turn ended with nothing.
-            (fail :model status
-                  (format nil "empty response (finish: ~a~@[ · ~d completion tokens~]~@[, ~d reasoning~] · ~:d reasoning characters streamed)"
-                          (or finish "none")
-                          (obj-get usage "completion_tokens")
-                          (obj-get (obj-get usage "completion_tokens_details") "reasoning_tokens")
-                          reasoning-chars)))
+            (let* ((completion (obj-get usage "completion_tokens"))
+                   (reasoned (obj-get (obj-get usage "completion_tokens_details") "reasoning_tokens"))
+                   (why (format nil "empty response (finish: ~a~@[ · ~d completion tokens~]~@[, ~d reasoning~] · ~:d reasoning characters streamed)"
+                                (or finish "none") completion reasoned reasoning-chars)))
+              (if (and (not grown) (equal finish "length") (integerp completion) (integerp reasoned) (plusp completion)
+                       (>= reasoned (* 0.9 completion))
+                       (< (provider-profile-max-tokens profile) *room-to-answer-ceiling*))
+                  ;; It thought until it ran out of room, with no answer: the allowance was too small for this task.
+                  (progn
+                    (handler-case (fail :model status why) (provider-failure () nil))
+                    (let ((roomier (copy-provider-profile profile)))
+                      (setf (provider-profile-max-tokens roomier)
+                            (min *room-to-answer-ceiling* (* *room-to-answer-factor* (provider-profile-max-tokens profile))))
+                      (return-from complete
+                        (complete kernel roomier messages :tools tools :on-delta on-delta :work-id work-id :lane lane :grown t))))
+                  (fail :model status why))))
           (let* ((prompt (or (obj-get usage "prompt_tokens") 0))
                  (completion (or (obj-get usage "completion_tokens") 0))
                  (microusd (%microusd profile usage prompt completion)))
