@@ -100,4 +100,28 @@
     (is (find-if (lambda (s) (search "certification" s))
                  (loop for (nil . fn) in pai-v3.mind::*open-item-sources* append (funcall fn k '("certification") "operator"))))))
 
+(defparameter +px+ "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==")
+
+(deftest an-agent-chooses-her-own-avatar-and-the-operator-theirs
+  (with-carrying (k)
+    (let ((run (lambda (args) (funcall (pai-v3.mind::tool-run (gethash "set_avatar" *tools*)) k 1 args)))
+          (image (pai-v3.mind::store-image k +px+)))
+      (is (null (pai-v3.mind:avatar-image-id k :self)) "none to begin with")
+      (is (search "Not done" (funcall run (obj "image_id" "00000000000000000000000000000000"))) "an image she does not hold")
+      (is (search "Not done" (funcall run (obj "image_id" "not-an-id"))))
+      (is (search "my avatar now" (funcall run (obj "image_id" image))))
+      (is (equal image (pai-v3.mind:avatar-image-id k :self)))
+      (is (search image (sql-value (kernel-db k) "SELECT value_json FROM settings WHERE name=?1 LIMIT 1" "avatar.image")) "it is a setting, so it is in the ledger")
+      (is (search "first-letter" (funcall run (obj "image_id" ""))) "she can go back to the letter")
+      (is (null (pai-v3.mind:avatar-image-id k :self)))
+      ;; The operator's picture is the operator's to choose.
+      (signals setting-refused (change-setting k "operator.avatar" image :origin (obj "principal_type" "self")))
+      (change-setting k "operator.avatar" image :origin *operator*)
+      (is (equal image (pai-v3.mind:avatar-image-id k :operator)))
+      ;; Either can be changed by the operator too, and a picture that is gone is no picture.
+      (change-setting k "avatar.image" image :origin *operator*)
+      (is (equal image (pai-v3.mind:avatar-image-id k :self)))
+      (sql-exec (pai-v3.mind::%image-db k) "DELETE FROM images WHERE id=?1" image)
+      (is (null (pai-v3.mind:avatar-image-id k :self)) "its image gone, the letter is shown again"))))
+
 (run-suite "mind-carried")

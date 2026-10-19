@@ -57,6 +57,10 @@
   .ev.tool { color: var(--thinking); font-size: 11.5px; background: #05080b; border: 1px solid var(--border); border-radius: 6px; padding: 6px 10px; }
   .ev.command { color: var(--text); font: 12px ui-monospace, SFMono-Regular, Consolas, monospace; background: #05080b; border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; text-align: left; }
   .ev.final { color: var(--text); font-size: 14px; border-left: 3px solid var(--accent); padding-left: 10px; }
+  /* Pictures, when the agent and the operator have chosen them (Avatars page). */
+  header h1 .av { display: inline-block; width: 22px; height: 22px; border-radius: 50%; background: var(--agent-avatar) center / cover; vertical-align: -6px; margin-right: 8px; }
+  .has-agent-avatar .ev.final::before, .has-agent-avatar .ev.notice::before { content: ''; float: left; width: 26px; height: 26px; border-radius: 50%; margin: 1px 9px 2px 0; background: var(--agent-avatar) center / cover; }
+  .has-operator-avatar .ev.user::before { content: ''; display: inline-block; width: 20px; height: 20px; border-radius: 50%; margin-right: 8px; vertical-align: -5px; background: var(--operator-avatar) center / cover; }
   .ev.notice { color: var(--text); font-size: 14px; border: 1px solid var(--accent); border-left-width: 4px; border-radius: 6px; padding: 8px 10px; background: #0b1520; }
   .ev.notice .notice-head { font-size: 11px; color: var(--accent); text-transform: uppercase; letter-spacing: .04em; margin-bottom: 4px; }
   .ev.notice .notice-held { font-size: 11.5px; color: var(--dim); margin-top: 6px; }
@@ -810,6 +814,21 @@ document.getElementById('fm-upload-btn').addEventListener('click', async () => {
   finally { fmBusy = false; fmSave.disabled = fmTextarea.readOnly; fmPermissions(fmCanWrite); }
 });
 
+// Pictures, if chosen: draw them through CSS so no row needs to know.
+fetch('/api/avatars', {credentials: 'same-origin'}).then(r => r.ok ? r.json() : null).then(a => {
+  if (!a) return;
+  const root = document.documentElement;
+  if (a.self) {
+    root.style.setProperty('--agent-avatar', 'url("/api/avatar?who=self&v=' + a.self + '")');
+    root.classList.add('has-agent-avatar');
+    const title = document.querySelector('header h1');
+    if (title && !title.querySelector('.av')) { const dot = document.createElement('span'); dot.className = 'av'; title.prepend(dot); }
+  }
+  if (a.operator) {
+    root.style.setProperty('--operator-avatar', 'url("/api/avatar?who=operator&v=' + a.operator + '")');
+    root.classList.add('has-operator-avatar');
+  }
+}).catch(() => {});
 loadHistory();
 </script>
 </body>

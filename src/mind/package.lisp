@@ -18,7 +18,7 @@
    #:beads #:*beads-post* #:coding-agent-message #:coding-agent-for-token
    #:observed-history #:observed-live #:model-capture #:*capture-hook*
    #:raise-concern #:close-concern #:open-concerns #:concern-row #:quiet-tick #:salience-of
-   #:docket-items #:open-work #:transition-work #:reopen-work
+   #:avatar-image-id #:docket-items #:open-work #:transition-work #:reopen-work
    #:carry-add #:carry-revise #:carry-consider-now #:carry-close #:carried-items #:carried-due #:carried-item
    ;; knowledge graph
    #:lineage-hop #:lineage-path #:render-lineage #:form-entity #:admit-fact #:retract-fact #:merge-entities

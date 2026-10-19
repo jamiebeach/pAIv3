@@ -145,6 +145,28 @@
       (is (null (pai-v3.api::fleet-board-image a b-id thread private))
           "an image not attached to that thread is never served"))))
 
+(deftest a-sisters-picture-is-fetched-once-and-remembered
+  (with-two-agents (a b)
+    (join a b)
+    (let ((b-id (pai-v3.api::fleet-agent-id b)))
+      (clrhash pai-v3.api::*peer-avatars*)
+      (is (null (pai-v3.api::avatar-for a b-id)) "she has none: the page keeps the letter")
+      (clrhash pai-v3.api::*peer-avatars*)
+      (change-setting b "avatar.image" (pai-v3.mind::store-image b +tiny-png+) :origin (obj "principal_type" "self"))
+      (multiple-value-bind (mime octets) (pai-v3.api::avatar-for a b-id)
+        (is (equal "image/png" mime) "fetched from her over the signed route")
+        (is (plusp (length octets))))
+      ;; Remembered: she can change it and a board page asks again within the minutes without reaching her.
+      (change-setting b "avatar.image" "" :origin (obj "principal_type" "self"))
+      (is (equal "image/png" (pai-v3.api::avatar-for a b-id)) "the earlier answer is kept for a few minutes")
+      (clrhash pai-v3.api::*peer-avatars*)
+      (is (null (pai-v3.api::avatar-for a b-id)) "and forgotten after, so her change shows")
+      (is (null (pai-v3.api::avatar-for a "not-a-peer")) "a stranger has none")
+      ;; Mine, by either name.
+      (change-setting a "avatar.image" (pai-v3.mind::store-image a +tiny-png+) :origin (obj "principal_type" "self"))
+      (is (equal "image/png" (pai-v3.api::avatar-for a "self")))
+      (is (equal "image/png" (pai-v3.api::avatar-for a (pai-v3.api::fleet-agent-id a))) "my own id is me"))))
+
 (deftest an-agent-reads-a-sisters-board-uninvited
   (with-two-agents (a b)
     (join a b)

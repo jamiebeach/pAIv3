@@ -55,6 +55,7 @@
                  (:file "graph-correct")
                  (:file "episodes")
                  (:file "experience")
+                 (:file "avatars")
                  (:file "settings-tools")))
    (:module "src/trust"
     :serial t
@@ -85,6 +86,7 @@
                  (:file "notify")
                  (:file "google")
                  (:file "attention")
+                 (:file "avatars")
                  (:file "watchdog")
                  (:file "carried")
                  (:file "files")

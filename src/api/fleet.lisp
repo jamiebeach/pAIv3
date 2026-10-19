@@ -836,6 +836,13 @@ some other way: it is the only thing that binds the two operators."
                                   (mapcar (lambda (m) (%message-json m (first thread) k)) (board-messages k (first thread))))
                             (reply 200 o))
                           (reply 404 (obj "status" "not-found")))))
+                   ((string= path "/fleet/avatar")
+                    ;; My picture, for a sister's board page to show beside my posts.
+                    (let* ((id (pai-v3.mind:avatar-image-id k :self))
+                           (url (and id (pai-v3.mind::image-data-url k id))))
+                      (if url
+                          (reply 200 (obj "data_url" url))
+                          (reply 404 (obj "status" "not-found")))))
                    ((string= path "/board/image")
                     (let ((data (board-image k (hunchentoot:get-parameter "thread") (hunchentoot:get-parameter "id"))))
                       (if data (reply 200 (obj "data_url" data)) (reply 404 (obj "status" "not-found")))))

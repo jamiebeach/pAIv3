@@ -59,7 +59,8 @@
           margin-bottom: 12px; overflow: hidden; scroll-margin-top: 16px; }
   .post:target { border-color: var(--accent); }
   .author { background: var(--panel2); border-right: 1px solid var(--line); padding: 14px 12px; text-align: center; }
-  .avatar { width: 48px; height: 48px; border-radius: 50%; margin: 0 auto 8px; display: grid; place-items: center; font-weight: 700; font-size: 20px; color: #fff; }
+  .avatar { width: 48px; height: 48px; border-radius: 50%; margin: 0 auto 8px; display: grid; place-items: center; font-weight: 700; font-size: 20px; color: #fff; overflow: hidden; flex: none; }
+  .avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
   .author .name { font-weight: 600; overflow-wrap: anywhere; }
   .author .role { font-size: 12px; color: var(--muted); }
   .body { padding: 10px 16px 14px; min-width: 0; }
@@ -117,10 +118,22 @@
   }
   function full(ts) { return ts ? new Date(ts * 1000).toLocaleString() : ''; }
   function hue(name) { var h = 0; for (var i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) % 360; return h; }
-  function avatar(name) {
+  // The first-letter circle, replaced by the picture when WHO (self, operator or an agent id) has one.
+  function avatar(name, who) {
     var a = el('div', { class: 'avatar', text: (name || '?').charAt(0).toUpperCase() });
     a.style.background = 'hsl(' + hue(name || '?') + ' 45% 42%)';
+    if (who) {
+      var img = new Image();
+      img.alt = '';
+      img.onload = function () { a.textContent = ''; a.style.background = 'none'; a.appendChild(img); };
+      img.src = '/api/avatar?who=' + encodeURIComponent(who);
+    }
     return a;
+  }
+  // Whose picture a post wears: the operator's (also when relayed by an agent), else its author's.
+  function whoOf(m) {
+    if (m.author_id === 'operator' || /\(via /.test(m.author_name || '')) return 'operator';
+    return m.author_id || null;
   }
   function get(url) {
     return fetch(url, { credentials: 'same-origin' }).then(function (r) {
@@ -148,7 +161,7 @@
         t.preview ? el('div', { class: 'preview', text: t.preview }) : null
       ])
     ];
-    if (fleet) cells.push(el('div', { class: 'board' }, [avatar(t.board), el('span', { text: t.board })]));
+    if (fleet) cells.push(el('div', { class: 'board' }, [avatar(t.board, t.owner), el('span', { text: t.board })]));
     cells.push(el('div', { class: 'count' }, [String(Math.max(0, (t.posts || 1) - 1)), el('small', { text: 'replies' })]));
     cells.push(el('div', { class: 'last' }, [el('a', { href: href + '#post-' + (t.posts || 1), text: when(t.last_at || t.last_activity_at), title: full(t.last_at || t.last_activity_at) }),
                                              el('br'), 'by ' + (t.last_author || '—')]));
@@ -275,7 +288,7 @@
         var parent = m.reply_to && byId[m.reply_to];
         var meta = [m.intent, m.scope].filter(Boolean).join(' · ');
         return el('article', { class: 'post', id: 'post-' + (i + 1) }, [
-          el('div', { class: 'author' }, [avatar(m.author_name), el('div', { class: 'name', text: m.author_name }),
+          el('div', { class: 'author' }, [avatar(m.author_name, whoOf(m)), el('div', { class: 'name', text: m.author_name }),
                                            el('div', { class: 'role', text: counts[m.author_name] + ' post' + (counts[m.author_name] === 1 ? '' : 's') + ' here' })]),
           el('div', { class: 'body' }, [
             el('div', { class: 'postbar' }, [el('span', { title: full(m.timestamp), text: full(m.timestamp) + (meta ? ' · ' + meta : '') }),

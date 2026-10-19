@@ -499,6 +499,37 @@
         (is (eq :null (obj-get row "one_of"))))
       (is (= 302 (raw-get "/secrets")) "and sends anyone else to sign in"))))
 
+(defun image-status (path &key token if-none-match)
+  "The status of a GET of a picture, which raw-get cannot read as text."
+  (handler-case
+      (nth-value 1 (dex:get (url path) :max-redirects 0 :force-binary t
+                                       :headers (append (and token (list (cons "Authorization" (format nil "Bearer ~a" token))))
+                                                        (and if-none-match (list (cons "If-None-Match" if-none-match))))))
+    (dex:http-request-failed (e) (dex:response-status e))))
+
+(deftest the-operator-chooses-avatars-and-the-pages-show-them
+  (with-pwa (k agent)
+    (let ((token (let ((a (make-software-authenticator))) (pwa-register a) (pwa-login a)))
+          (px "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="))
+      (is (= 401 (image-status "/api/avatar?who=self")) "signed in only")
+      (is (= 404 (image-status "/api/avatar?who=self" :token token)) "none chosen: the page keeps the letter")
+      (is (= 404 (image-status "/api/avatar?who=operator" :token token)))
+      (is (= 404 (image-status "/api/avatar?who=no-such-agent" :token token)) "a stranger has none")
+      (is (= 401 (pwa-post "/api/avatar" (obj "who" "operator" "data_url" px))))
+      (is (= 200 (pwa-post "/api/avatar" (obj "who" "operator" "data_url" px) :token token)))
+      (is (= 200 (image-status "/api/avatar?who=operator" :token token)) "the picture is served")
+      (is (= 400 (pwa-post "/api/avatar" (obj "who" "somebody" "data_url" px) :token token)) "only me or the operator")
+      (is (= 400 (pwa-post "/api/avatar" (obj "who" "self" "data_url" "data:text/html;base64,PGI+") :token token)) "only an image")
+      (let ((id (pai-v3.mind:avatar-image-id k :operator)))
+        (is (stringp id))
+        (is (equal id (obj-get (json-parse (nth-value 1 (raw-get "/api/avatars" :token token))) "operator"))
+            "the pages learn which picture, to refresh when it changes")
+        (is (= 304 (image-status "/api/avatar?who=operator" :token token :if-none-match (format nil "\"~a\"" id)))
+            "unchanged: nothing is sent again"))
+      (is (= 200 (pwa-post "/api/avatar" (obj "who" "operator" "data_url" "") :token token)) "clearing")
+      (is (= 404 (image-status "/api/avatar?who=operator" :token token)))
+      (is (= 200 (raw-get "/avatars" :token token)) "the page is served"))))
+
 (deftest the-files-view-stays-in-the-workspace
   (with-pwa (k agent)
     (let ((root (format nil "/tmp/pai-files-~d/" (random 1000000))))

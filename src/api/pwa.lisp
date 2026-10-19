@@ -158,7 +158,7 @@ assets. Returns the compiler's output."
   '(("/" . "terminal.html") ("/terminal" . "terminal.html") ("/dashboard" . "observability.html")
     ("/graph" . "graph-explorer.html") ("/g" . "graph-explorer.html") ("/affect" . "affect.html")
     ("/notifications" . "notifications.html") ("/settings" . "settings.html")
-    ("/board-view" . "board.html") ("/carried" . "carried.html") ("/secrets" . "secrets.html"))
+    ("/board-view" . "board.html") ("/carried" . "carried.html") ("/secrets" . "secrets.html") ("/avatars" . "avatars.html"))
   "Pages that need a signed-in operator. /login is open.")
 
 (defun %named (name body)
@@ -454,6 +454,13 @@ localhost), the URL to send it to; passkeys only work at the agent's origin."
                  (cond ((null origin) (reply 401 (obj "error" "sign in first")))
                        ((and (eq method :post) (not (same-origin-p agent))) (reply 403 (obj "error" (%refusal agent))))
                        (t (google-route agent method path origin))))
+               t))
+
+      ((uiop:string-prefix-p "/api/avatar" path)
+       (values (let ((origin (%signed-in agent)))
+                 (cond ((null origin) (reply 401 (obj "error" "not signed in")))
+                       ((and (eq method :post) (not (same-origin-p agent))) (reply 403 (obj "error" (%refusal agent))))
+                       (t (avatar-route agent method path origin))))
                t))
 
       ((uiop:string-prefix-p "/api/carried" path)
