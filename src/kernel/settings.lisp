@@ -118,6 +118,8 @@ when the value is invalid or ORIGIN may not make this change."
                            "default" (funcall (setting-def-default def))
                            "changed" (if (%stored kernel (setting-def-name def)) t :false)
                            "description" (or (setting-def-description def) "")
+                           "min" (or (setting-def-min def) :null) "max" (or (setting-def-max def) :null)
+                           "one_of" (or (setting-def-one-of def) :null)
                            "changed_by" (if (consp (setting-def-changed-by def)) "agent-within-bounds" "operator")))
         #'string< :key (lambda (o) (format nil "~a/~a" (obj-get o "group") (obj-get o "name")))))
 

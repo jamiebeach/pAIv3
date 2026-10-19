@@ -490,6 +490,13 @@
           (is (= 1 (length (obj-get (json-parse (nth-value 1 (raw-get "/api/carried" :token token))) "closed"))))))
       (is (= 200 (raw-get "/carried" :token token)))
       (is (= 200 (raw-get "/secrets" :token token)) "the secrets page is served to a signed-in operator")
+      (is (= 200 (raw-get "/settings" :token token)) "and the settings page")
+      (let* ((list (json-parse (nth-value 1 (raw-get "/v1/settings" :token token))))
+             (row (find "carried.max_open" (obj-get list "settings") :key (lambda (r) (obj-get r "name")) :test #'string=)))
+        (is row "the page's list has the setting")
+        (is (eql 1 (obj-get row "min")) "with its limits, so the page can enforce them")
+        (is (eql 200 (obj-get row "max")))
+        (is (eq :null (obj-get row "one_of"))))
       (is (= 302 (raw-get "/secrets")) "and sends anyone else to sign in"))))
 
 (deftest the-files-view-stays-in-the-workspace
