@@ -79,7 +79,30 @@ function mineCard(who, label, name, version) {
     });
     row.appendChild(clear);
   }
-  card.append(info, row);
+  // Or one of the pictures already held (a generated one, a shared one).
+  const pick = document.createElement('button'); pick.textContent = 'Pick from pictures I hold';
+  const shelf = document.createElement('div'); shelf.className = 'shelf'; shelf.hidden = true;
+  pick.addEventListener('click', async () => {
+    shelf.hidden = !shelf.hidden;
+    if (shelf.hidden || shelf.childElementCount) return;
+    try {
+      const choices = (await call('GET', '/api/avatar/choices')).images;
+      if (!choices.length) { shelf.textContent = 'No pictures held yet.'; return; }
+      for (const c of choices) {
+        const img = document.createElement('img');
+        img.src = '/api/avatar?image=' + encodeURIComponent(c.id);
+        img.alt = ''; img.loading = 'lazy'; img.title = c.how + (c.source ? ' · ' + c.source : '') + ' · ' + new Date(c.at).toLocaleString();
+        img.addEventListener('click', async () => {
+          say('Saving…');
+          try { await call('POST', '/api/avatar', { who, image_id: c.id }); say('Saved.'); load(); }
+          catch (error) { say(error.message); }
+        });
+        shelf.appendChild(img);
+      }
+    } catch (error) { say(error.message); }
+  });
+  row.appendChild(pick);
+  card.append(info, row, shelf);
   return card;
 }
 

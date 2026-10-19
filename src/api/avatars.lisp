@@ -54,14 +54,25 @@ chooses soon after a page was loaded shows at the next one.")
        "self_id" (fleet-agent-id kernel) "name" (fleet-own-name kernel) "operator_name" (setting kernel "operator.name")
        "peers" (mapcar (lambda (p) (obj "id" (first p) "name" (second p))) (fleet-peers kernel))))
 
-(defun choose-avatar (kernel who data-url origin)
-  "Store the picture in DATA-URL and make it WHO's avatar (\"self\" or \"operator\"); an empty DATA-URL clears it."
+(defun avatar-choices (kernel &optional (limit 30))
+  "The pictures this agent holds that the operator has met, newest first, as objects: what to choose an avatar from."
+  (mapcar (lambda (r) (obj "id" (first r) "how" (second r) "source" (or (third r) :null) "at" (fourth r)))
+          (sql-rows (kernel-db kernel)
+                    "SELECT image_id,how,source,at FROM seen_images WHERE audience=?1 AND at>=?2 ORDER BY at DESC LIMIT ?3"
+                    "operator" "2000-01-01T00:00:00Z" limit)))
+
+(defun choose-avatar (kernel who data-url origin &key image-id)
+  "Make a picture WHO's avatar (\"self\" or \"operator\"): the one in DATA-URL, stored now, or the stored image
+IMAGE-ID. Neither clears it."
   (let ((name (cond ((equal who "self") "avatar.image") ((equal who "operator") "operator.avatar")
                     (t (error "who is self or operator")))))
-    (if (or (null data-url) (equal data-url ""))
-        (change-setting kernel name "" :origin origin :reason "avatar cleared on the Avatars page")
-        (change-setting kernel name (pai-v3.mind::store-image kernel data-url) :origin origin
-                                    :reason "avatar chosen on the Avatars page"))))
+    (cond ((and (stringp image-id) (plusp (length image-id)))
+           (unless (pai-v3.mind::image-row kernel image-id) (error "no such picture is held"))
+           (change-setting kernel name image-id :origin origin :reason "avatar picked on the Avatars page"))
+          ((or (null data-url) (equal data-url ""))
+           (change-setting kernel name "" :origin origin :reason "avatar cleared on the Avatars page"))
+          (t (change-setting kernel name (pai-v3.mind::store-image kernel data-url) :origin origin
+                                          :reason "avatar chosen on the Avatars page")))))
 
 (defun avatar-route (agent method path origin)
   "GET /api/avatars (summary), GET /api/avatar?who= (a picture), POST /api/avatar {who, data_url} (choose)."
@@ -69,6 +80,15 @@ chooses soon after a page was loaded shows at the next one.")
     (handler-case
         (cond
           ((and (eq method :get) (string= path "/api/avatars")) (reply 200 (avatar-summary k)))
+          ((and (eq method :get) (string= path "/api/avatar/choices")) (reply 200 (obj "images" (avatar-choices k))))
+          ((and (eq method :get) (string= path "/api/avatar") (hunchentoot:get-parameter "image"))
+           ;; A stored picture, for choosing among them: named by its content, so kept a day.
+           (let ((row (pai-v3.mind::image-row k (hunchentoot:get-parameter "image"))))
+             (if row
+                 (progn (setf (hunchentoot:content-type*) (first row)
+                              (hunchentoot:header-out "Cache-Control") "private, max-age=86400")
+                        (second row))
+                 (reply 404 (obj "error" "no such picture")))))
           ((and (eq method :get) (string= path "/api/avatar"))
            (multiple-value-bind (mime octets etag) (avatar-for k (hunchentoot:get-parameter "who"))
              (cond ((null mime) (reply 404 (obj "error" "no avatar")))
@@ -80,7 +100,7 @@ chooses soon after a page was loaded shows at the next one.")
                       octets))))
           ((and (eq method :post) (string= path "/api/avatar"))
            (let ((b (body-json)))
-             (choose-avatar k (obj-get b "who") (%given (obj-get b "data_url")) origin)
+             (choose-avatar k (obj-get b "who") (%given (obj-get b "data_url")) origin :image-id (%given (obj-get b "image_id")))
              (reply 200 (avatar-summary k))))
           (t (reply 404 (obj "error" "no such route"))))
       (setting-refused (e) (reply 400 (obj "error" (princ-to-string e))))
