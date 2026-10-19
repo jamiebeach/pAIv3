@@ -84,6 +84,7 @@
     :components ((:file "server")
                  (:file "fleet")
                  (:file "boards")
+                 (:file "drafts")
                  (:file "notify")
                  (:file "google")
                  (:file "attention")

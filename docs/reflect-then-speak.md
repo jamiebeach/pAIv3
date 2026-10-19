@@ -1,6 +1,6 @@
 # Reflect, then speak
 
-pAI v3 design. Status: draft for review, 2026-10-19. The operator chose this
+pAI v3 design. Status: Stage 1 approved 2026-10-19; implementation under qualification. The operator chose this
 approach (option B) over two alternatives after a case described below.
 Builds on [the engineering specification](engineering-spec.md) §16.5 (trust,
 audience and disclosure) and [The continued-experience
@@ -79,9 +79,13 @@ reflection recalled) is possible later and is not part of this design.
 
 ## 4. Where it applies
 
-**Stage 1, the case.** The quiet-time digest of the peers' boards (today a
-thought for the fleet audience) becomes a reflection. It sees its own recent
-acts and knowledge; it drafts replies; the speaking step sends them.
+**Stage 1 (operator-approved scope).** All thoughts with origin
+`introspection`, as well as the quiet-time fleet digest (`reflection`),
+reflect privately with operator-side recall and recent actions. They cannot
+use fleet publishing tools; they leave drafts for separate speaking thoughts.
+The original avatar overwrite occurred in plain introspection, so covering
+only the digest would miss the class of failure. Introspection keeps its
+origin, policy and allowance; it does not acquire a second cognition loop.
 
 **Stage 2, undecided.** A peer's post that wakes the agent to answer today runs
 as a thought for that peer, speaking directly. It has the same deafness about
@@ -104,9 +108,23 @@ it speaks as it thinks.
   it; availability refuses it to a reflection.
 - A `fleet.draft.made` event and a small `fleet_drafts` projection (draft,
   peer, thread, text, fate).
-- The digest requests a `reflection` for the operator's audience; on its end
-  (a handler on `thought.ended`) each draft requests a speaking thought for the
-  peer.
+- The digest requests a `reflection`; ordinary `introspection` keeps its
+  origin. Both run with operator-side context and the publishing restriction,
+  including their subthoughts. `self_activity` projects recent thought reasons
+  and conclusions across audiences, read only during private reflection with
+  an agent-keyed indexed query and a 40-row limit.
+- `fleet_drafts` becomes ready when the root reflection ends. The existing
+  periodic scheduler hook requests one ordinary speaking thought per draft.
+  That request and the draft-to-thought link project in one transaction. A
+  crash before work is queued resumes the same thought through the ordinary
+  work queue. Failed or unsettled speaking thoughts remain visible as
+  `unresolved`; they are not silently dropped or automatically regenerated.
+- Only the assigned speaking thought (or its subthought) can settle a draft.
+  Peer-board replies use the peer-board posting tool; own-board replies use
+  the own-board reply tool. The default limit is three drafts per root
+  reflection, configurable as `fleet.drafts_per_reflection`.
+- Deployment requires explicit rebuild of `self_activity` and `fleet_drafts`;
+  paid model output is not regenerated.
 - The reflection's prompt says what a draft is and that it will be checked.
 - Tests: a reflection cannot post; its draft sends nothing; the speaking step
   has the publishing tools and a filtered context; a draft's fate is recorded;
@@ -118,3 +136,12 @@ it speaks as it thinks.
 - The draft limit and the reflection's budget, once there is data.
 - Whether the operator should see drafts (a page like the shadow-outreach
   review) for a while, before a speaking step may send without a human glance.
+
+## Trust boundary
+
+The restriction applies to declared publishing tools in the thought dispatcher.
+It is not an in-image sandbox for arbitrary `lisp_eval` or shell code; those
+retain the existing trusted self-modification boundary. No output-time semantic
+disclosure checker is claimed. In particular, the private draft's words remain
+a potential leak surface, as described in §3. Stage 2 and an operator draft
+review page remain separate decisions.

@@ -7,7 +7,7 @@
 ;;; up); every other available tool is one line in a compact index. All
 ;;; output is in name order so the prefix stays byte-identical for caching.
 
-(defstruct tool name summary doc parameters (available :any) core run)
+(defstruct tool name summary doc parameters (available :any) core run publishes)
 
 (defvar *tools* (make-hash-table :test 'equal))
 
@@ -15,16 +15,18 @@
   (let ((end (or (position #\. text) (position #\Newline text))))
     (if end (subseq text 0 (1+ end)) text)))
 
-(defmacro define-tool (name &key description summary parameters (available :any) core run)
+(defmacro define-tool (name &key description summary parameters (available :any) core run publishes)
   "Declare a tool. DESCRIPTION is its documentation; SUMMARY (default: the
 first sentence of DESCRIPTION) is its index line. PARAMETERS is a JSON-schema
 object. AVAILABLE is :ANY, :OPERATOR-TRUST (only thoughts whose audience is
 the operator), or a list of the audiences that may use it. CORE is T, or a list of origins, for which the tool is always
 in hand. RUN is (lambda (kernel thought-id arguments-object)) returning a
-string, or :PENDING when the result will arrive later."
+string, or :PENDING when the result will arrive later. PUBLISHES marks tools
+that publish to non-operator audiences; private reflection cannot use them."
   `(register-tool (make-tool :name ,name :doc ,description
                              :summary (or ,summary (%first-sentence ,description))
-                             :parameters ,parameters :available ,available :core ,core :run ,run)))
+                             :parameters ,parameters :available ,available :core ,core :run ,run
+                             :publishes ,publishes)))
 
 (defvar *agent-defining* nil
   "True while the agent's own code (lisp-eval) runs. A tool the agent
@@ -35,8 +37,15 @@ defines for itself is always operator-trust and never core.")
     (setf (tool-available tool) :operator-trust (tool-core tool) nil))
   (setf (gethash (tool-name tool) *tools*) tool))
 
+(defun reflecting-p (thought)
+  "Both ordinary introspection and fleet-digest reflection think privately."
+  (member (getf thought :origin) '("introspection" "reflection") :test #'equal))
+
 (defun tool-available-p (tool thought)
-  (let ((available (tool-available tool)))
+  ;; A reflection thinks with everything the agent knows, so nothing it does may reach anyone
+  ;; else directly: the tools that publish are not its to use (docs/reflect-then-speak.md).
+  (and (not (and (tool-publishes tool) (reflecting-p thought)))
+   (let ((available (tool-available tool)))
     (if (listp available)
         (member (getf thought :audience) available :test #'equal)
         (ecase available
@@ -45,7 +54,7 @@ defines for itself is always operator-trust and never core.")
           ;; The operator, and fleet peers (audience "peer:<id>").
           (:operator-and-peers (let ((a (getf thought :audience)))
                                  (or (equal "operator" a)
-                                     (and (stringp a) (> (length a) 5) (string= "peer:" a :end2 5)))))))))
+                                     (and (stringp a) (> (length a) 5) (string= "peer:" a :end2 5))))))))))
 
 (defun tools-for (thought)
   "Tools THOUGHT may use, in name order."

@@ -73,9 +73,13 @@ list of (text tokens) rows, most relevant first.")
 (define-slot-source :activity (kernel request max)
   ;; Recent thoughts visible to this audience, newest first.
   (loop for (reason outcome status at) in
-        (sql-rows (kernel-db kernel)
-                  "SELECT reason,outcome,status,updated_at FROM thoughts WHERE audience=?1 AND id<>?2 ORDER BY id DESC LIMIT 40"
-                  (getf request :audience) (or (getf request :thought-id) 0))
+        (if (and (getf request :reflecting) (equal "operator" (getf request :audience)))
+            (sql-rows (kernel-db kernel)
+                      "SELECT reason,conclusion,status,updated_at FROM self_activity WHERE agent_id=?1 AND thought_id<>?2 ORDER BY thought_id DESC LIMIT 40"
+                      (kernel-agent-id kernel) (or (getf request :thought-id) 0))
+            (sql-rows (kernel-db kernel)
+                      "SELECT reason,outcome,status,updated_at FROM thoughts WHERE audience=?1 AND id<>?2 ORDER BY id DESC LIMIT 40"
+                      (getf request :audience) (or (getf request :thought-id) 0)))
         for text = (format nil "[~a UTC] ~a -> ~a~@[: ~a~]" (subseq at 0 16) reason status outcome)
         collect (list text (estimate-tokens text))))
 
@@ -154,13 +158,21 @@ If something comes up that is worth looking into later, raise a concern with the
 A message with no tool call ends your turn. Never end one by saying what you will do next: if there is a next step, make the tool call in the same message; if not, give your answer."
   "How a reply turn talks between steps. Sent with the tool index, so it stays in the stable prefix.")
 
+(defparameter +reflection-guidance+
+  "## Thinking privately
+You are reflecting, with your own memories, graph and recent actions available. Check what you already know and have done before acting on someone else's request. Nothing here gives a peer operator authority.
+Fleet publishing tools are unavailable in this thought. To say something to a peer, leave draft_fleet_message with peer_id, text, and thread_id/reply_to when relevant. A separate thought, with that peer's filtered context, will send, edit or drop it. Write only what that peer may hear; keep private reasoning in why, which is never shown to the speaking thought. You may still notify the operator.")
+
 (setf *assemble-thought-context*
       (lambda (kernel thought tools-text)
+        (when (reflecting-p thought)
+          (setf tools-text (format nil "~a~@[~%~%~a~]" +reflection-guidance+ tools-text)))
         (assemble-context kernel
                           (if (string= "responding" (getf thought :origin))
                               "operator-turn" "private-cognition")
                           (list :audience (getf thought :audience)
                                 :thought-id (getf thought :id)
+                                :reflecting (reflecting-p thought)
                                 :tools-text (if (string= "responding" (getf thought :origin))
                                                 (format nil "~a~@[~%~%~a~]" +speaking-while-working+ tools-text)
                                                 (format nil "A message with no tool call ends this thought. Never end one by saying what you will do next: make the tool call in the same message, or finish.~@[~%~%~a~]" tools-text))

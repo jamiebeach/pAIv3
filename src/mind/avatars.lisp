@@ -75,7 +75,7 @@ operator's own thoughts, those the operator sent. Pictures others posted are not
   ;; The operator's thoughts and fleet peers' (replying on a board): her own picture is hers to
   ;; choose, from an image she already holds. Not the mail digest, which runs on outside content.
   :available :operator-and-peers
-  :core '("responding" "introspection" "work")
+  :core '("responding" "introspection" "work" "reflection")
   :parameters (obj "type" "object"
                    "properties" (obj "image_id" (obj "type" "string" "description" "an image id, or empty to clear")
                                      "replace" (obj "type" "boolean" "description" "true to replace an avatar you already have"))

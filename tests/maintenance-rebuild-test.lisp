@@ -75,4 +75,20 @@
       (is (eq :done (rebuild-projection k "concerns" :page-size 2)))
       (is (null (nth 10 (pai-v3.mind:concern-row k c)))))))
 
+(deftest reflection-projections-rebuild-with-conclusions-and-handoff-intact
+  (with-temp-kernel (k)
+    (let* ((reflection (pai-v3.mind:request-thought k "introspection" "PRIVATE reflection"))
+           (made (append! k "fleet.draft.made"
+                          (obj "draft_id" "d-synthetic" "thought_id" reflection "peer_id" "beta"
+                               "intent" "fyi" "text" "The public map is ready." "why" "PRIVATE reason"))))
+      (append! k "thought.ended" (obj "thought_id" reflection "outcome" "concluded" "summary" "A map is already ready"))
+      (let ((speaking (pai-v3.mind:request-thought k "work" "Check the public draft"
+                                                 :audience "peer:beta" :source-event-id (event-id made))))
+        (is (eq :done (rebuild-projection k "fleet_drafts" :page-size 2)))
+        (is (equal (list "speaking" speaking)
+                   (sql-row (kernel-db k) "SELECT state,speaking_thought_id FROM fleet_drafts WHERE draft_id=?1 LIMIT 1" "d-synthetic")))
+        (is (eq :done (rebuild-projection k "self_activity" :page-size 2)))
+        (is (equal "A map is already ready"
+                   (sql-value (kernel-db k) "SELECT conclusion FROM self_activity WHERE thought_id=?1 LIMIT 1" reflection)))))))
+
 (run-suite "maintenance-rebuild")

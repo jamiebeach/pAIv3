@@ -275,10 +275,194 @@
     (let ((thought (pai-v3.api::fleet-digest b)))
       (is thought "a digest thought")
       (is (search "I finished reading Dune today." (getf (thought-row b thought) :reason)))
-      (is (equal "peer:fleet" (getf (thought-row b thought) :audience)) "peer content, not operator trust"))
+      (is (equal "reflection" (getf (thought-row b thought) :origin)) "thinking to itself, not speaking")
+      (is (equal "operator" (getf (thought-row b thought) :audience))
+          "so it may know what the agent knows, her own recent acts included")
+      (is (search "draft_fleet_message" (getf (thought-row b thought) :reason)) "and is told to leave a draft, not post"))
     (is (null (pai-v3.api::fleet-digest b)) "not due again yet")
     (change-setting b "fleet.digest_minutes" 0 :origin *operator*)
     (is (null (pai-v3.api::fleet-digest b)) "off at 0")))
+
+;;; Reflect, then speak (docs/reflect-then-speak.md)
+
+(deftest a-reflection-cannot-publish
+  (let ((post (gethash "post_fleet_message" pai-v3.mind::*tools*))
+        (reply (gethash "reply_fleet_board_message" pai-v3.mind::*tools*))
+        (board (gethash "post_fleet_board" pai-v3.mind::*tools*))
+        (draft (gethash "draft_fleet_message" pai-v3.mind::*tools*))
+        (notify (gethash "notify_operator" pai-v3.mind::*tools*)))
+    (dolist (tool (list post reply board))
+      (is (not (pai-v3.mind::tool-available-p tool '(:origin "reflection" :audience "operator"))) "no publishing while reflecting")
+      (is (pai-v3.mind::tool-available-p tool '(:origin "responding" :audience "operator")) "but in conversation, yes")
+      (is (pai-v3.mind::tool-available-p tool '(:origin "work" :audience "peer:x")) "and answering a peer, yes"))
+    (is (pai-v3.mind::tool-available-p draft '(:origin "reflection" :audience "operator")))
+    (is (pai-v3.mind::tool-available-p notify '(:origin "reflection" :audience "operator")) "the operator may hear anything")))
+
+(deftest a-draft-sends-nothing-and-is-said-for-its-peer-afterwards
+  (with-two-agents (a b)
+    (join a b)
+    (let* ((a-id (pai-v3.api::fleet-agent-id a))
+           (reflection (request-thought b "reflection" "thinking about the board" :audience "operator"))
+           (draft (lambda (thought &rest args)
+                    (funcall (pai-v3.mind::tool-run (gethash "draft_fleet_message" pai-v3.mind::*tools*)) b thought (apply #'obj args))))
+           (posts-before (length (pai-v3.api::board-threads a))))
+      (is (search "left for" (funcall draft reflection "peer_id" a-id "text" "Happy to share the map notes." "intent" "answer"
+                                      "why" "PRIVATE-REASON the operator told me X")))
+      (is (= posts-before (length (pai-v3.api::board-threads a))) "nothing reached the peer's board")
+      (is (null (sql-value (kernel-db b) "SELECT 1 FROM pai_events WHERE agent_id=?1 AND event_type=?2 LIMIT 1"
+                           (kernel-agent-id b) "fleet.op")) "and nothing was sent or queued")
+      (is (search "not one of my peers" (funcall draft reflection "peer_id" "nobody" "text" "x")))
+      (funcall draft reflection "peer_id" a-id "text" "second") (funcall draft reflection "peer_id" a-id "text" "third")
+      (is (search "at most 3" (funcall draft reflection "peer_id" a-id "text" "fourth")) "a few drafts to a reflection")
+      (is (search "Drafts are for reflecting"
+                  (funcall (pai-v3.mind::tool-run (gethash "draft_fleet_message" pai-v3.mind::*tools*)) b
+                           (request-thought b "responding" "not a reflection" :audience "operator")
+                           (obj "peer_id" a-id "text" "x"))))
+      ;; Still reflecting: nothing is said yet.
+      (is (= 0 (pai-v3.api::speak-drafts b)))
+      (append! b "thought.ended" (obj "thought_id" reflection "outcome" "concluded" "summary" "Done"))
+      (is (= 3 (pai-v3.api::speak-drafts b)) "once it is over, each draft goes to a thought for its peer")
+      (is (= 0 (pai-v3.api::speak-drafts b)) "once")
+      (let* ((thoughts (sql-rows (kernel-db b) "SELECT id,origin,audience,reason FROM thoughts WHERE audience=?1 ORDER BY id LIMIT 10"
+                                 (format nil "peer:~a" a-id)))
+             (speaking (first thoughts)))
+        (is (= 3 (length thoughts)))
+        (is (equal "work" (second speaking)) "as the peer's own post would")
+        (is (search "Happy to share the map notes." (fourth speaking)) "it is shown the words")
+        (is (null (search "PRIVATE-REASON" (fourth speaking))) "never the reflection's reasons")
+        (is (null (search "PRIVATE-REASON" (fourth (second thoughts)))))
+        (let ((draft-id (sql-value (kernel-db b) "SELECT draft_id FROM fleet_drafts WHERE text=?1 LIMIT 1" "Happy to share the map notes."))
+              (settle (lambda (thought &rest args)
+                        (funcall (pai-v3.mind::tool-run (gethash "settle_draft" pai-v3.mind::*tools*)) b thought (apply #'obj args)))))
+          (is (search "not for the peer" (funcall settle reflection "draft_id" draft-id "fate" "sent")) "only that peer's thought settles it")
+          (is (search "Recorded" (funcall settle (first speaking) "draft_id" draft-id "fate" "edited" "note" "shortened")))
+          (is (equal "edited" (sql-value (kernel-db b) "SELECT fate FROM fleet_drafts WHERE draft_id=?1 LIMIT 1" draft-id)))
+          (is (search "not waiting" (funcall settle (first speaking) "draft_id" draft-id "fate" "sent")) "once"))))))
+
+(deftest a-reflection-sees-what-was-done-for-the-operator
+  (with-temp-kernel (k)
+    (request-thought k "responding" "chose my avatar" :audience "operator")
+    (let ((rows (funcall (gethash :activity pai-v3.mind::*slot-sources*) k (list :audience "operator" :thought-id 0) 2000)))
+      (is (search "chose my avatar" (format nil "~{~a~}" (mapcar #'first rows)))
+          "a reflection runs for the operator, so the list of recent thoughts includes it"))
+    (let ((rows (funcall (gethash :activity pai-v3.mind::*slot-sources*) k (list :audience "peer:fleet" :thought-id 0) 2000)))
+      (is (null (search "chose my avatar" (format nil "~{~a~}" (mapcar #'first rows)))) "which a thought for the fleet never did"))))
+
+(deftest introspection-is-private-at-every-entry-and-subcall
+  (with-temp-kernel (k)
+    (let* ((id (request-thought k "introspection" "Review my own recent actions" :audience "peer:fleet"))
+           (row (thought-row k id))
+           (child (request-thought k "work" "A subquestion" :parent-id id)))
+      (is (equal "introspection" (getf row :origin)))
+      (is (equal "operator" (getf row :audience)))
+      (is (equal "introspection" (getf (thought-row k child) :origin)))
+      (is (equal "operator" (getf (thought-row k child) :audience)))
+      (dolist (name '("post_fleet_message" "reply_fleet_board_message" "post_fleet_board"))
+        (is (not (pai-v3.mind::tool-available-p (gethash name *tools*) row))))
+      (is (pai-v3.mind::tool-available-p (gethash "draft_fleet_message" *tools*) row))
+      (let ((frame (funcall pai-v3.mind::*assemble-thought-context* k row nil)))
+        (is (search "Thinking privately" (json-encode frame)))))))
+
+(deftest draft-handoff-resumes-the-same-speaking-thought
+  (with-two-agents (a b)
+    (join a b)
+    (let* ((peer (pai-v3.api::fleet-agent-id a))
+           (reflection (request-thought b "introspection" "Review the report"))
+           (tool (pai-v3.mind::tool-run (gethash "draft_fleet_message" *tools*))))
+      (is (search "left for" (funcall tool b reflection (obj "peer_id" peer "text" "Public report is ready."))))
+      (append! b "thought.ended" (obj "thought_id" reflection "outcome" "concluded" "summary" "Finished"))
+      (let* ((draft (first (pai-v3.api::draft-rows b :state "ready")))
+             (draft-id (obj-get draft "draft_id"))
+             (source (sql-value (kernel-db b) "SELECT source_event_id FROM fleet_drafts WHERE draft_id=?1 LIMIT 1" draft-id))
+             ;; Simulate a crash after thought.requested but before work.requested.
+             (event (append! b "thought.requested"
+                             (obj "origin" "work" "reason" "Check this public draft" "audience" (format nil "peer:~a" peer)
+                                  "source_event_id" source "depth" 0)))
+             (speaking (event-id event)))
+        (is (not (work-pending-p b "thought" speaking)))
+        (is (= 0 (pai-v3.api::speak-drafts b)) "does not make a second thought")
+        (is (work-pending-p b "thought" speaking) "resumes the same thought through the scheduler")
+        (is (= 1 (sql-value (kernel-db b) "SELECT count(*) FROM fleet_drafts WHERE speaking_thought_id=?1 LIMIT 1" speaking)))
+        (let ((unrelated (request-thought b "work" "Unrelated peer reply" :audience (format nil "peer:~a" peer))))
+          (is (search "not for the peer"
+                      (funcall (pai-v3.mind::tool-run (gethash "settle_draft" *tools*)) b unrelated
+                               (obj "draft_id" draft-id "fate" "dropped")))))
+        (append! b "thought.failed" (obj "thought_id" speaking "class" "source" "reason" "Synthetic failure"))
+        (is (equal "unresolved" (sql-value (kernel-db b) "SELECT state FROM fleet_drafts WHERE draft_id=?1 LIMIT 1" draft-id)))
+        (is (= 0 (pai-v3.api::speak-drafts b)) "no automatic repetition of paid cognition")))))
+
+(deftest reflection-activity-spans-audiences-without-widening-speaking-context
+  (with-temp-kernel (k)
+    (let ((private (request-thought k "work" "PRIVATE operator task" :audience "operator"))
+          (peer (request-thought k "work" "Peer map exchange" :audience "peer:beta")))
+      (append! k "thought.ended" (obj "thought_id" private "outcome" "concluded" "summary" "PRIVATE decision already made"))
+      (append! k "thought.ended" (obj "thought_id" peer "outcome" "concluded" "summary" "Map was sent to Beta"))
+      (flet ((activity (audience reflecting)
+               (json-encode (funcall (gethash :activity pai-v3.mind::*slot-sources*) k
+                                     (list :audience audience :reflecting reflecting :thought-id 0) 8000))))
+        (let ((own (activity "operator" t)) (speaking (activity "peer:beta" nil)))
+          (is (search "PRIVATE decision already made" own))
+          (is (search "Map was sent to Beta" own))
+          (is (not (search "PRIVATE" speaking)))
+          (is (not (search "PRIVATE" (activity "peer:beta" t)))
+              "the request flag cannot widen a peer's context"))))))
+
+(deftest introspection-cannot-call-a-publishing-tool-by-name
+  (with-temp-kernel (k)
+    (let* ((id (request-thought k "introspection" "Review recent activity"))
+           (mind (pai-v3.mind::make-mind :kernel k :thought (thought-row k id)))
+           (function (obj "name" "post_fleet_message" "arguments" "{}"))
+           (call (obj "id" "blocked-post" "function" function))
+           (reply (obj "tool_calls" (list call)))
+           (result (pai-v3.mind::act mind reply)))
+      (is (search "No tool named" (obj-get (first result) "content")))
+      (is (null (latest-event-ids k "fleet.op" 1)) "no external action was queued"))))
+
+(deftest a-peer-board-draft-uses-the-peer-board-route
+  (with-two-agents (a b)
+    (join a b)
+    (let* ((peer (pai-v3.api::fleet-agent-id a))
+           (reflection (request-thought b "introspection" "Review the public exchange")))
+      (multiple-value-bind (message thread)
+          (pai-v3.api::board-post a :new-thread-title "Public map"
+                                 :author-id peer :author-name "Beta" :text "Any public map notes?" :scope "pairwise"
+                                 :operation-id "public-map-question" :request-key "public-map-question")
+        (let ((text "Public map notes are ready."))
+          (funcall (pai-v3.mind::tool-run (gethash "draft_fleet_message" *tools*)) b reflection
+                   (obj "peer_id" peer "thread_id" thread "reply_to" message "intent" "answer" "text" text))
+          (append! b "thought.ended" (obj "thought_id" reflection "outcome" "concluded" "summary" "Drafted a public answer"))
+          (pai-v3.api::speak-drafts b)
+          (let* ((draft-id (obj-get (first (pai-v3.api::draft-rows b :state "speaking")) "draft_id"))
+                 (speaking (sql-value (kernel-db b) "SELECT speaking_thought_id FROM fleet_drafts WHERE draft_id=?1 LIMIT 1" draft-id))
+                 (row (thought-row b speaking)))
+            (is (search "post_fleet_message" (getf row :reason)))
+            (is (not (search "reply_fleet_board_message" (getf row :reason))))
+            (is (search "Posted to"
+                        (funcall (pai-v3.mind::tool-run (gethash "post_fleet_message" *tools*)) b speaking
+                                 (obj "peer_id" peer "thread_id" thread "reply_to" message "text" text "intent" "answer"))))
+            (is (search "Recorded"
+                        (funcall (pai-v3.mind::tool-run (gethash "settle_draft" *tools*)) b speaking
+                                 (obj "draft_id" draft-id "fate" "sent"))))
+            (is (= 2 (length (pai-v3.api::board-messages a thread))) "one checked reply actually reaches the peer")))))))
+
+(deftest saved-policies-give-only-the-new-origin-its-default
+  (with-temp-kernel (k)
+    (change-setting k "thought.policy"
+                    (remove "reflection" (setting k "thought.policy") :key (lambda (r) (obj-get r "origin")) :test #'equal)
+                    :origin *operator*)
+    (is (request-thought k "reflection" "A new private reflection"))
+    (change-setting k "thought.policy"
+                    (remove "work" (setting k "thought.policy") :key (lambda (r) (obj-get r "origin")) :test #'equal)
+                    :origin *operator*)
+    (signals error (pai-v3.mind::%policy k "work"))))
+
+(deftest self-activity-uses-an-indexed-bounded-read
+  (with-temp-kernel (k)
+    (let ((plan (sql-rows (kernel-db k)
+                          "EXPLAIN QUERY PLAN SELECT reason,conclusion,status,updated_at FROM self_activity WHERE agent_id=?1 AND thought_id<>?2 ORDER BY thought_id DESC LIMIT 40"
+                          (kernel-agent-id k) 0)))
+      (is (some (lambda (r) (search "self_activity_agent_idx" (fourth r))) plan))
+      (is (not (some (lambda (r) (search "SCAN self_activity" (fourth r))) plan))))))
 
 (deftest unsigned-forged-and-stale-requests-are-refused
   (with-two-agents (a b)

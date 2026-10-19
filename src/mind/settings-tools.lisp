@@ -9,7 +9,7 @@
   :description "Look at my settings: models and routes, budgets, thresholds, backups. Give part of a name or group to narrow the list."
   :parameters (obj "type" "object" "properties" (obj "about" (obj "type" "string")))
   :available :operator-trust
-  :core '("introspection")
+  :core '("introspection" "reflection")
   :run (lambda (kernel id args)
          (declare (ignore id))
          (let* ((about (string-downcase (obj-get args "about" "")))

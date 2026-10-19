@@ -17,7 +17,7 @@
 ;;; as states: the status column is a view of the fold, not a machine.
 
 (defparameter +origins+
-  '("responding" "noticing" "private" "concern" "introspection" "work" "unbidden" "docket"))
+  '("responding" "noticing" "private" "concern" "introspection" "work" "unbidden" "docket" "reflection"))
 
 (defparameter *thought-policy*
   ;; origin        priority     model calls  microusd  depth
@@ -30,6 +30,8 @@
     ;; One run of a work item; v2 capped a run at 12 steps.
     ("docket"        :private    12           150000    1)
     ("introspection" :private    8            80000     2)
+    ;; Thinking to oneself with all one knows; it cannot publish (docs/reflect-then-speak.md).
+    ("reflection"    :private    8            80000     1)
     ("private"       :private    4            40000     1)
     ("unbidden"      :private    2            20000     0))
   "The one allowance table for all thinking: per root thought, shared by its
@@ -54,7 +56,11 @@ sub-calls. Change budgets here, not per kind.")
   :description "Allowance per kind of thought: priority, model calls and spend per root thought, and how deep sub-questions may go.")
 
 (defun %policy (kernel origin)
-  (let ((row (find origin (setting kernel "thought.policy") :key (lambda (r) (obj-get r "origin")) :test #'equal)))
+  (let ((row (or (find origin (setting kernel "thought.policy") :key (lambda (r) (obj-get r "origin")) :test #'equal)
+                 ;; Only the newly introduced reflection origin receives a default for older saved policies.
+                 (let ((d (and (equal origin "reflection") (assoc origin *thought-policy* :test #'equal))))
+                   (and d (obj "origin" origin "priority" (string-downcase (symbol-name (second d)))
+                               "model_calls" (third d) "microusd" (fourth d) "depth" (or (fifth d) 1)))))))
     (unless row (error "No thought policy for origin ~s" origin))
     (list :origin origin
           :priority (intern (string-upcase (obj-get row "priority")) :keyword)
@@ -134,6 +140,25 @@ sub-calls. Change budgets here, not per kind.")
   :entity (lambda (e) (or (obj-get (event-payload e) "thought_id") (event-id e)))
   :reduce #'%reduce-thoughts)
 
+;;; Private reflection needs its own recent activity across conversation
+;;; audiences. This is an indexed projection, never an in-memory history fold.
+(define-projection "self_activity"
+  :kind :inline
+  :consumes ("thought.requested" "thought.ended" "thought.failed" "thought.parked")
+  :tables ("CREATE TABLE IF NOT EXISTS self_activity (thought_id INTEGER PRIMARY KEY, agent_id TEXT NOT NULL, reason TEXT NOT NULL, status TEXT NOT NULL, conclusion TEXT, updated_at TEXT NOT NULL)"
+           "CREATE INDEX IF NOT EXISTS self_activity_agent_idx ON self_activity(agent_id,thought_id)")
+  :entity (lambda (e) (or (obj-get (event-payload e) "thought_id") (event-id e)))
+  :reduce
+  (lambda (db e)
+    (let ((p (event-payload e)) (type (event-type e)))
+      (if (equal type "thought.requested")
+          (sql-exec db "INSERT INTO self_activity(thought_id,agent_id,reason,status,updated_at) VALUES(?1,?2,?3,'queued',?4)"
+                    (event-id e) (event-agent-id e) (obj-get p "reason") (event-at e))
+          (sql-exec db "UPDATE self_activity SET status=?2,conclusion=?3,updated_at=?4 WHERE thought_id=?1"
+                    (obj-get p "thought_id")
+                    (cond ((equal type "thought.ended") "ended") ((equal type "thought.failed") "failed") (t "parked"))
+                    (or (obj-get p "summary") (obj-get p "reason") (obj-get p "outcome")) (event-at e))))))
+
 ;;; The frame: who I am and what is going on, assembled fresh on every
 ;;; bounce (the context assembler installs itself here). TOOLS-TEXT is the
 ;;; index of tools not in hand, or NIL.
@@ -187,9 +212,14 @@ short preview of tool input. Never recorded; live only.")
 the parent's origin, audience and root allowance. Returns its id."
   (assert (member origin +origins+ :test #'string=))
   (let* ((parent (and parent-id (thought-row kernel parent-id)))
+         (origin (if parent (getf parent :origin) origin))
+         ;; Every introspection thinks for itself, including ones started by
+         ;; quiet-time callers that formerly supplied a fleet audience.
+         (audience (if (reflecting-p (list :origin origin)) "operator"
+                       (if parent (getf parent :audience) audience)))
          (thought (append! kernel "thought.requested"
                            (obj "origin" origin "reason" reason
-                                "audience" (if parent (getf parent :audience) audience)
+                                "audience" audience
                                 "channel" (and (not parent) channel)
                                 "source_event_id" source-event-id
                                 "concern_id" (and (not parent) concern-id)
@@ -501,7 +531,7 @@ TOOLS NIL asks for an answer with no tools offered."
                          :lane (cond ((eq :operator (getf (%policy kernel (getf thought :origin)) :priority))
                                       "operator")
                                      ;; Quiet thinking has its own paced daily budget.
-                                     ((member (getf thought :origin) '("concern" "introspection" "docket") :test #'string=)
+                                     ((member (getf thought :origin) '("concern" "introspection" "docket" "reflection") :test #'string=)
                                       "quiet")
                                      (t "background"))
                          ;; Every thought streams, so its progress can be watched;

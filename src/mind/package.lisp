@@ -12,7 +12,7 @@
    #:provider-failure-status #:provider-failure-partial
    ;; thoughts
    #:request-thought #:thought-row #:thought-steps #:define-tool #:*tools* #:think
-   #:tools-for #:tools-in-hand #:tool-index-text #:tool-name #:*agent-defining*
+   #:reflecting-p #:tools-for #:tools-in-hand #:tool-index-text #:tool-name #:*agent-defining*
    ;; web
    #:*http-get* #:*fetch-allow-private* #:html-text #:search-experience
    #:beads #:*beads-post* #:coding-agent-message #:coding-agent-for-token

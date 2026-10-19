@@ -256,7 +256,7 @@ or identifiers), newest first, as (kind at text ref event-id)."
   :parameters (obj "type" "object"
                    "properties" (obj "query" (obj "type" "string") "limit" (obj "type" "integer"))
                    "required" (list "query"))
-  :core '("responding" "introspection" "work" "concern")
+  :core '("responding" "introspection" "work" "concern" "reflection")
   :run (lambda (kernel id args)
          (let ((rows (search-experience kernel (obj-get args "query" "")
                                         (getf (thought-row kernel id) :audience)
