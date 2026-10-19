@@ -53,13 +53,15 @@
                      (t (let ((handle (first (handles-in kernel ref))))
                           (if handle
                               (list (format nil "h:~a" (first handle)) (second handle))
-                              (error "I know no one and nothing called ~a" ref))))))))))
+                              (error "I know no one and nothing called ~a. `about` is a person or thing I already know (a name or id from my graph), or an identifier; for something not tied to anyone, use the carry tool" ref))))))))))
 
 (defun form-intention (kernel about text &key until thought-id)
   "Attach TEXT (what to do) to ABOUT (a name, entity id or identifier).
 Returns the intention's id."
   (unless (and (stringp text) (< 2 (length (string-trim " " text)) 501))
     (error "say what to do in 3 to 500 characters"))
+  (unless (and (stringp about) (plusp (length (string-trim " " about))))
+    (error "an intention needs `about`: the person or thing it should come back with (a name or id from my graph, or an identifier). If it is not tied to anyone or anything, use the carry tool, which keeps something in mind for the operator until it is done"))
   (when (>= (length (open-intentions kernel)) *intentions-open-most*)
     (error "I already hold ~d open intentions; settle some first" *intentions-open-most*))
   (destructuring-bind (anchor label) (%resolve-anchor kernel about)
@@ -84,11 +86,12 @@ Returns the intention's id."
           collect (format nil "I meant to: ~a (~a~@[, by ~a~])" text id until)))
 
 (define-tool "remember_to"
-  :description "Prospective memory: keep something to do or say for the next time someone or something comes to
-mind, such as \"next time I talk to Nova, ask how the portrait came out\". action: add (about: a name, entity id or
-identifier; do: what to do; until: optional date it stops mattering), done (id, optional note) when it is done,
-drop (id, optional note) when it no longer matters, list. An intention comes back with whatever it is about,
-whenever that comes to mind, until it is done or dropped."
+  :description "Prospective memory: keep something to do or say for the next time a particular person or thing comes to
+mind, such as \"next time I talk to Nova, ask how the portrait came out\". It is tied to what it is about, so it needs
+that: action add needs about (a name or id of someone or something I know, or an identifier; required) and do (what to do),
+optionally until (a date it stops mattering). done (id, optional note) when it is done, drop (id, optional note) when it
+no longer matters, list. It comes back whenever its subject comes to mind, until done or dropped. For something not tied
+to anyone or anything, such as a wish, a plan or a deadline of the operator's, use the carry tool instead."
   :summary "Keep something to do for the next time someone or something comes to mind."
   :available :operator-and-peers
   :parameters (obj "type" "object"
