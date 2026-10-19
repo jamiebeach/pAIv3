@@ -117,6 +117,9 @@ becomes a stimulus (pai-v3.mind:coding-agent-message)."
                    (mapcar (lambda (id) (let ((e (event-by-id kernel id))) (obj "event_id" id "at" (event-at e) "pass" (event-payload e))))
                            (latest-event-ids kernel "attention.pass" limit)))
                   ((equal what "shadow") (shadow-outreach kernel limit))
+                  ;; Which secrets exist and the hosts each may be sent to: names only, never values.
+                  ((equal what "secrets")
+                   (mapcar (lambda (r) (obj "name" (first r) "hosts" (second r) "updated_at" (third r))) (secret-names)))
                   ((equal what "carried") (carried-items kernel :limit limit))
                   ((equal what "formation")
                    (mapcar (lambda (id) (let ((e (event-by-id kernel id))) (obj "event_id" id "at" (event-at e) "run" (event-payload e))))
