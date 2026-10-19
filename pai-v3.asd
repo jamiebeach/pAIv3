@@ -85,6 +85,7 @@
                  (:file "notify")
                  (:file "google")
                  (:file "attention")
+                 (:file "watchdog")
                  (:file "carried")
                  (:file "files")
                  (:file "pwa")))

@@ -369,6 +369,7 @@ listens on localhost by default (AUTH-10)."
                             (ignore-errors (funcall on-idle)))
                           (sleep idle-sleep)))))
            :name "pai-v3 scheduler"))
+    (when (fboundp 'start-watchdog) (funcall 'start-watchdog agent port))
     (setf *agent* agent)))
 
 (defun stop-agent (agent)
