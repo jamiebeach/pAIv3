@@ -86,7 +86,7 @@ for when the agent stops answering. Sent with SIGUSR1; nothing stops."
     (flet ((dump ()
              (bt:with-lock-held (*dump-lock*)
                (format *error-output* "~&--- ~a~%" (sb-thread:thread-name thread))
-               (sb-debug:print-backtrace :count 25 :stream *error-output*)
+               (pai-v3.kernel::print-safe-backtrace *error-output* :count 25)
                (finish-output *error-output*))))
       (if (eq thread sb-thread:*current-thread*)
           (dump)

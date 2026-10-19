@@ -99,6 +99,21 @@ SQL functions. Modules push onto this at load time.")
 (defstruct (db (:constructor %make-db (handle path)))
   handle path (depth 0) key)
 
+;;; Diagnostics must never recursively print connection keys or frame arguments.
+(defmethod print-object ((connection db) stream)
+  (print-unreadable-object (connection stream :type t :identity t)
+    (write-string "connection" stream)))
+
+(defun print-safe-backtrace (stream &key (count 30))
+  "Print function names only, never arguments, locals or source expressions."
+  (handler-case
+      (loop for frame = (sb-di:top-frame) then (sb-di:frame-down frame)
+            for index below count while frame
+            do (let ((*print-level* 4) (*print-length* 12) (*print-circle* t))
+                 (format stream "~d: ~s~%" index
+                         (sb-di:debug-fun-name (sb-di:frame-debug-fun frame)))))
+    (error () (write-line "[remaining frames unavailable]" stream))))
+
 (defun %check (db code &optional sql)
   (unless (= code +ok+)
     (error 'sqlite-error :code (%errcode (db-handle db))

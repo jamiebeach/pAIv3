@@ -106,7 +106,7 @@ SECONDS. A stuck thread is left where it is."
         (flet ((dump ()
                  (bt:with-lock-held (lock)
                    (format out "~&--- ~a~%" (sb-thread:thread-name thread))
-                   (ignore-errors (sb-debug:print-backtrace :count 30 :stream out))
+                   (ignore-errors (pai-v3.kernel::print-safe-backtrace out :count 30))
                    (finish-output out))))
           (if (eq thread sb-thread:*current-thread*)
               (dump)
