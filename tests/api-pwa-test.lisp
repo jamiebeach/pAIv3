@@ -619,4 +619,20 @@
                           (cdr (assoc "Authorization" (second (first calls)) :test #'equal))))))
         (setf *host-files-post* saved)))))
 
+(deftest budget-wait-snapshot-is-operator-only-and-survives-reconnect
+  (with-temp-kernel (k)
+    (let* ((op (pai-v3.mind:request-thought k "responding" "synthetic question" :audience "operator"))
+           (peer (pai-v3.mind:request-thought k "responding" "synthetic peer" :audience "peer")))
+      (dolist (id (list op peer))
+        (let ((wid (sql-value (kernel-db k) "SELECT id FROM v3_work WHERE handler=?1 AND entity=?2 LIMIT 1"
+                              "thought" (princ-to-string id))))
+          (append! k "work.deferred" (obj "work_id" wid "reason" "daily budget exhausted"
+                                         "next_at" "2026-10-21T00:00:00Z"))))
+      (let ((waits (pai-v3.api::operator-budget-waits k)))
+        (is (= 1 (length waits)))
+        (is (= op (obj-get (first waits) "thought_id")))
+        (is (equal "daily budget exhausted" (obj-get (first waits) "reason")))
+        (is (equal (json-encode waits) (json-encode (pai-v3.api::operator-budget-waits k)))
+            "a new connection can recover the same snapshot")))))
+
 (run-suite "api-pwa")

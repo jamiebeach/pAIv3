@@ -345,6 +345,15 @@ transcript, all other cognition as toasts that name the kind of thought."
                   out)
   (finish-output out))
 
+(defun operator-budget-waits (kernel)
+  "Bounded operator-only snapshot; also sent on each stream connection."
+  (mapcar (lambda (row)
+            (destructuring-bind (id reason next) row
+              (obj "thought_id" id "reason" reason "next_at" next)))
+          (sql-rows (kernel-db kernel)
+            "SELECT t.id,w.deferred_reason,w.next_at FROM v3_work w JOIN thoughts t ON t.id=CAST(w.entity AS INTEGER) WHERE w.status='queued' AND w.deferred_reason IS NOT NULL AND w.handler=?1 AND w.priority=?2 AND t.audience=?3 AND t.status IN ('queued','running') ORDER BY w.priority,w.next_at LIMIT 20"
+            "thought" 0 "operator")))
+
 (defun terminal-stream (agent since)
   (setf (hunchentoot:content-type*) "text/event-stream"
         (hunchentoot:header-out "Cache-Control") "no-cache")
@@ -352,6 +361,7 @@ transcript, all other cognition as toasts that name the kind of thought."
          (box (make-mailbox))
          (out (hunchentoot:send-headers))
          (last since)
+         (last-waits :unseen)
          (last-failed (or (sql-value (kernel-db k) "SELECT max(id) FROM thoughts WHERE audience=?1 LIMIT 1" "operator") 0)))
     (bt:with-lock-held ((agent-lock agent)) (push box (agent-subscribers agent)))
     (write-sequence (babel:string-to-octets (format nil ": connected~%~%")) out)
@@ -398,6 +408,11 @@ transcript, all other cognition as toasts that name the kind of thought."
                                                                                       "That turn stopped without a reply: ~a"
                                                                                       "That thought failed: ~a")
                                                                               (or (second row) "no reason recorded"))))))
+                      (let* ((waits (operator-budget-waits k))
+                             (signature (json-encode waits)))
+                        (unless (equal signature last-waits)
+                          (%sse out (obj "id" 0 "type" "budget-waits" "data" waits))
+                          (setf last-waits signature)))
                       (when (> (incf quiet) 30)
                         (setf quiet 0)
                         (write-sequence (babel:string-to-octets (format nil ": keepalive~%~%")) out)

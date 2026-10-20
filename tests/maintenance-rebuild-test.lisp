@@ -91,4 +91,18 @@
         (is (equal "A map is already ready"
                    (sql-value (kernel-db k) "SELECT conclusion FROM self_activity WHERE thought_id=?1 LIMIT 1" reflection)))))))
 
+(deftest work-admission-frontier-survives-explicit-rebuild
+  (with-temp-kernel (k)
+    (let* ((id (request-work k "synthetic.paid" "resume-me" nil :priority :operator))
+           (deferred (append! k "work.deferred"
+                             (obj "work_id" id "reason" "daily budget exhausted"
+                                  "next_at" "2099-01-01T00:00:00Z"))))
+      (change-setting k "budget.daily_microusd" 3000000
+                      :origin (obj "principal_type" "operator"))
+      (is (eq :done (rebuild-projection k "kernel.work" :page-size 2)))
+      (is (= (event-id deferred)
+             (sql-value (kernel-db k) "SELECT admission_event FROM v3_work WHERE id=?1 LIMIT 1" id)))
+      (is (= id (first (pai-v3.kernel::%next-due k))))
+      (is (equal "queued" (getf (work-status k id) :status))))))
+
 (run-suite "maintenance-rebuild")

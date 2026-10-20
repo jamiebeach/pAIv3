@@ -108,4 +108,33 @@
         (is (equal "ready" (projection-status k "kernel.work")))
         (is (null (quarantined-events k :projection "kernel.work")))))))
 
+(deftest budget-setting-reconsiders-original-work-without-bypassing-admission
+  (with-clock
+    (with-temp-kernel (k)
+      (let ((origin (obj "principal_type" "operator")))
+        (change-setting k "budget.daily_microusd" 0 :origin origin)
+        (let ((id (request-work k "test.paid" "budget-wait" nil :priority :operator)))
+          (is (eq :deferred (first (run-scheduler-step k))))
+          (is (eq :idle (run-scheduler-step k)))
+          ;; Deliberately do not advance the clock: event ordering must suffice.
+          (change-setting k "budget.daily_microusd" 1 :origin origin)
+          (is (eq :deferred (first (run-scheduler-step k))) "still over budget")
+          (is (= 0 (spent-today k)))
+          (is (eq :idle (run-scheduler-step k)) "refusal is reconsidered only once")
+          (change-setting k "budget.daily_microusd" 200000 :origin origin)
+          (is (equal (list :ran id :completed) (run-scheduler-step k)))
+          (is (= 100000 (spent-today k)))
+          (is (equal "done" (getf (work-status k id) :status))))))))
+
+(deftest budget-changes-leave-provider-backoff-alone
+  (with-clock
+    (with-temp-kernel (k)
+      (let* ((*behaviour* (lambda (k w) (declare (ignore k w)) (error "synthetic timeout")))
+             (id (request-work k "test.step" "retry" nil)))
+        (run-scheduler-step k)
+        (change-setting k "budget.daily_microusd" 3000000
+                        :origin (obj "principal_type" "operator"))
+        (is (eq :idle (run-scheduler-step k)))
+        (is (= 1 (getf (work-status k id) :attempts)))))))
+
 (run-suite "kernel-scheduler")

@@ -488,6 +488,18 @@ async function noticeLocateFromHash() {
 window.addEventListener('hashchange', noticeLocateFromHash);
 
 function renderEvent(ev, prepend, durable = true) {
+  if (ev.type === 'budget-waits') {
+    transcriptEl.querySelectorAll('.budget-wait').forEach(row => row.remove());
+    (ev.data || []).forEach(wait => {
+      const row = document.createElement('div');
+      row.className = 'ev system budget-wait';
+      const next = new Date(wait.next_at);
+      row.textContent = 'Reply ' + wait.thought_id + ' waiting: ' + wait.reason +
+        '. Next budget check: ' + (Number.isNaN(next.getTime()) ? wait.next_at : next.toLocaleString()) + '.';
+      transcriptEl.appendChild(row);
+    });
+    return;
+  }
   if (ev.type === 'ambient') { renderAmbient(ev); return; }
   if (ev.type === 'operational') { renderOperational(ev); return; }
   if (ev.type === 'stream-progress') { renderStreamProgress(ev); return; }

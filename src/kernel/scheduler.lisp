@@ -102,8 +102,8 @@ dead-lettered so the owning module can record what that means for its entity."
          (sql-exec db "UPDATE v3_work SET status='done',deferred_reason=NULL,updated_at=?2 WHERE id=?1"
                    (field "work_id") at))
         ((string= (event-type event) "work.deferred")
-         (sql-exec db "UPDATE v3_work SET next_at=?2,deferred_reason=?3,updated_at=?4 WHERE id=?1"
-                   (field "work_id") (field "next_at") (field "reason") at))
+         (sql-exec db "UPDATE v3_work SET next_at=?2,deferred_reason=?3,updated_at=?4,admission_event=?5 WHERE id=?1"
+                   (field "work_id") (field "next_at") (field "reason") at (event-id event)))
         ((string= (event-type event) "work.failed")
          (destructuring-bind (handler-name attempts)
              (sql-row db "SELECT handler,attempts FROM v3_work WHERE id=?1 LIMIT 1" (field "work_id"))
@@ -115,11 +115,13 @@ dead-lettered so the owning module can record what that means for its entity."
                        (field "work_id") status next (field "class") (field "reason") at))))))))
 
 (define-projection "kernel.work"
+  :version 2
   :kind :inline
   :consumes ("work.requested" "work.completed" "work.failed" "work.deferred")
-  :tables ("CREATE TABLE IF NOT EXISTS v3_work (id INTEGER PRIMARY KEY, handler TEXT NOT NULL, entity TEXT NOT NULL, priority INTEGER NOT NULL, payload_json TEXT NOT NULL, status TEXT NOT NULL, attempts INTEGER NOT NULL, next_at TEXT, last_class TEXT, last_reason TEXT, deferred_reason TEXT, updated_at TEXT NOT NULL)"
+  :tables ("CREATE TABLE IF NOT EXISTS v3_work (id INTEGER PRIMARY KEY, handler TEXT NOT NULL, entity TEXT NOT NULL, priority INTEGER NOT NULL, payload_json TEXT NOT NULL, status TEXT NOT NULL, attempts INTEGER NOT NULL, next_at TEXT, last_class TEXT, last_reason TEXT, deferred_reason TEXT, admission_event INTEGER NOT NULL DEFAULT 0, updated_at TEXT NOT NULL)"
            "CREATE INDEX IF NOT EXISTS v3_work_due_idx ON v3_work(status,priority,next_at)"
-           "CREATE INDEX IF NOT EXISTS v3_work_entity_idx ON v3_work(handler,entity)")
+           "CREATE INDEX IF NOT EXISTS v3_work_entity_idx ON v3_work(handler,entity)"
+           "CREATE INDEX IF NOT EXISTS v3_work_admission_idx ON v3_work(status,deferred_reason,admission_event)")
   :entity (lambda (e) (or (obj-get (event-payload e) "work_id") (event-id e)))
   :reduce #'%reduce-work)
 
@@ -197,10 +199,28 @@ dead-lettered so the owning module can record what that means for its entity."
 
 ;;; The scheduler
 
+(defparameter +budget-deferral-reasons+
+  '("daily budget exhausted" "background budget exhausted for today"
+    "background spend ahead of the day's pace"))
+
 (defun %next-due (kernel)
-  (sql-row (kernel-db kernel)
-           "SELECT id,handler,entity,priority,payload_json,attempts,deferred_reason FROM v3_work WHERE status='queued' AND next_at<=?1 ORDER BY priority,next_at LIMIT 1"
-           (now-iso8601)))
+  ;; A setting event invalidates an older budget refusal. Fetch at most one
+  ;; candidate per refusal reason using the admission index, then use normal
+  ;; admission again. Event ids distinguish changes within the same second.
+  (let* ((db (kernel-db kernel))
+         (version (or (sql-value db "SELECT max(event_id) FROM settings WHERE name IN (?1,?2) LIMIT 2"
+                                 "budget.daily_microusd" "budget.operator_reserve") 0))
+         (due (sql-row db
+                      "SELECT id,handler,entity,priority,payload_json,attempts,deferred_reason FROM v3_work WHERE status='queued' AND next_at<=?1 ORDER BY priority,next_at LIMIT 1"
+                      (now-iso8601)))
+         (candidates (and due (list due))))
+    (when (plusp version)
+      (dolist (reason +budget-deferral-reasons+)
+        (let ((row (sql-row db
+                    "SELECT id,handler,entity,priority,payload_json,attempts,deferred_reason FROM v3_work WHERE status='queued' AND deferred_reason=?1 AND admission_event<?2 ORDER BY priority,admission_event LIMIT 1"
+                    reason version)))
+          (when row (push row candidates)))))
+    (first (stable-sort candidates #'< :key #'fourth))))
 
 (defun run-scheduler-step (kernel)
   "Run at most one bounded handler step: the most urgent due work, operator
