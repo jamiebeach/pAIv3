@@ -175,6 +175,9 @@ object describing what was done."
                            :author-id "operator" :author-name name :created-by "operator"
                            :text text :reply-to reply-to :scope "fleet" :operation-id operation-id
                            :request-key (json-encode (list (or thread-id :null) text)))
+      ;; The owner is authenticated here, unlike an operator relayed by a peer.
+      (let ((source (sql-value (kernel-db kernel) "SELECT event_id FROM board_messages WHERE msg_id=?1 LIMIT 1" msg-id)))
+        (pai-v3.mind::request-affect-appraisal kernel source "operator" name text (format nil "board:~a" msg-id)))
       ;; The owner: the operator, signed in, on its board.
       (request-thought kernel "work"
                        (format nil "~a, the operator, posted on my board in thread ~a (message ~a)~@[, replying to ~a~]~:[~;, and asked for ~{~a~^, ~} to be told~]:~%~%~a~%~%~

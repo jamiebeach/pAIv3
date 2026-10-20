@@ -11,7 +11,8 @@
            ("speaker" :string)         ; display name of the verified principal
            ("text" :string)
            ("origin" :object)          ; verified origin attestation (spec §16.5)
-           ("images" :array :optional))) ; ids of images kept in the blob store
+           ("images" :array :optional)
+           ("semantic_affect" :boolean :optional))) ; ids of images kept in the blob store
 
 (define-event-type "reply.delivered"
   :schema (("channel" :string)
@@ -71,12 +72,19 @@
 
 ;;; Writing
 
+(defvar *received-turn-hook* nil
+  "Registered post-recording seam for inbound message perception; never paid HTTP here.")
+
 (defun receive-turn (kernel &key channel audience speaker text origin images)
   "Record a verified inbound turn. ORIGIN is the attestation from the
 channel adapter; it is stored, never inferred from TEXT."
-  (append! kernel "turn.received"
-           (obj "channel" channel "audience" audience "speaker" speaker
-                "text" text "origin" (or origin (obj)) "images" images)))
+  (let* ((semantic (and (eq t (setting kernel "affect.appraisal.enabled"))
+                        (equal audience "operator") (equal "operator" (obj-get origin "principal_type"))))
+         (event (append! kernel "turn.received"
+                         (obj "channel" channel "audience" audience "speaker" speaker "text" text
+                              "origin" (or origin (obj)) "images" images "semantic_affect" (and semantic t)))))
+    (when (and semantic *received-turn-hook*) (funcall *received-turn-hook* kernel event))
+    event))
 
 (defun deliver-reply (kernel &key channel audience text in-reply-to interrupted interim)
   (append! kernel "reply.delivered"

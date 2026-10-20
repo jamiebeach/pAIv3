@@ -129,3 +129,10 @@ semantic interpretation, slot budget and private target filtering. Maintenance
 tests explicitly rebuild through dial changes and compare state. These establish
 mechanics; subjective fit of labels and personal tuning needs operator/agent
 review over real use.
+
+## Semantic message appraisal
+
+The optional [JEV appraisal stage](affect-appraisal.md) replaces new messages'
+keyword and flat connection updates with bounded, personal semantic effects.
+It runs before response work; the numeric/semantic rendering and time dynamics
+documented here remain the same. Old event interpretation is preserved.

@@ -136,4 +136,43 @@
         (is (equal before (json-encode (multiple-value-list (pai-v3.mind:affect-now k)))))
         (is (equal "ready" (projection-status k "affect")))))))
 
+(deftest semantic-appraisal-state-and-source-deduplication-rebuild
+  (with-temp-kernel (k)
+    (let* ((source (event-id (append! k "notice.posted" (obj "channel" "fixture" "audience" "operator" "text" "source" "importance" "normal"))))
+           (payload (obj "source_key" "synthetic-appraisal" "source_id" source "status" "applied"
+                         "reason" "Synthetic decision" "changes" (obj "valence" 0.05)
+                         "triggers" (obj "curiosity" 0.2) "satisfactions" (obj "appreciation" 0.5))))
+      (append! k "affect.appraisal.requested" (obj "source_key" "synthetic-appraisal" "source_id" source
+                                                "audience" "operator" "speaker" "Operator" "text" "Synthetic"
+                                                "truncated" :false "context" ""))
+      (append! k "affect.appraisal.finished" payload)
+      (append! k "affect.appraisal.finished" payload)
+      (let ((affect (projection-digest k "affect")) (appraisals (projection-digest k "affect_appraisals")))
+        (is (eq :done (rebuild-projection k "affect" :page-size 2)))
+        (is (eq :done (rebuild-projection k "affect_appraisals" :page-size 2)))
+        (is (equal affect (projection-digest k "affect")))
+        (is (equal appraisals (projection-digest k "affect_appraisals")))))))
+
+(deftest old-agent-startup-adds-empty-appraisal-tables-without-history-replay
+  (let ((path (temp-path))
+        (app (gethash "affect_appraisals" pai-v3.kernel::*projections*))
+        (decisions (gethash "provider_decisions" pai-v3.kernel::*projections*))
+        (head nil))
+    (unwind-protect
+         (progn
+           (remhash "affect_appraisals" pai-v3.kernel::*projections*)
+           (remhash "provider_decisions" pai-v3.kernel::*projections*)
+           (with-temp-kernel (k :path path)
+             (append! k "turn.received" (obj "channel" "fixture" "audience" "operator" "speaker" "Operator"
+                                           "text" "Thank you" "origin" (obj "principal_type" "operator")))
+             (setf head (ledger-head k))
+             (sql-exec (kernel-db k) "DROP TABLE affect_appraisal_seen")))
+      (setf (gethash "affect_appraisals" pai-v3.kernel::*projections*) app
+            (gethash "provider_decisions" pai-v3.kernel::*projections*) decisions))
+    (with-temp-kernel (k :path path)
+      (is (= head (ledger-head k)))
+      (is (equal "ready" (projection-status k "affect_appraisals")))
+      (is (equal "ready" (projection-status k "provider_decisions")))
+      (is (null (projections-not-ready k))))))
+
 (run-suite "maintenance-rebuild")

@@ -553,4 +553,38 @@
             (is (search text reason))
             (is (not (search "PRIVATE_REASON" reason)))))))))
 
+(deftest authenticated-peer-appraisal-does-not-require-a-reply-wake
+  (with-two-agents (a b)
+    (join a b)
+    (change-setting a "affect.appraisal.enabled" t :origin *operator*)
+    (change-setting a "fleet.peer_wakes_per_hour" 0 :origin *operator*)
+    (let* ((peer-id (pai-v3.api::fleet-agent-id b))
+           (peer (pai-v3.api::fleet-peer a peer-id)))
+      (multiple-value-bind (root thread)
+          (pai-v3.api::board-post a :new-thread-title "Synthetic context" :author-id "operator" :author-name "Operator"
+                                 :text "SYNTHETIC_PRIVATE_OPERATOR_BOARD_TEXT" :operation-id "root-fixture" :request-key "root")
+        (declare (ignore root))
+        (pai-v3.api::board-post a :thread-id thread :author-id peer-id :author-name "Alpha"
+                               :text "SYNTHETIC_PUBLIC_PEER_CONTEXT" :operation-id "prior-fixture" :request-key "prior")
+        (let* ((payload (obj "thread_id" thread "text" "Thanks for the thoughtful help." "intent" "fyi" "operation_id" "appraisal-fixture"))
+               (reply (pai-v3.api::accept-board-post a peer payload))
+               (key (format nil "peer:~a/message:~a" peer-id (obj-get reply "msg_id")))
+               (row (pai-v3.mind::appraisal-row a key)))
+          (is row)
+          (is (null (peer-thoughts a b)) "no conversation thought was woken")
+          (let ((state (json-encode (pai-v3.mind::appraisal-state a row))))
+            (is (search "SYNTHETIC_PUBLIC_PEER_CONTEXT" state))
+            (is (not (search "SYNTHETIC_PRIVATE_OPERATOR_BOARD_TEXT" state))))
+          (pai-v3.api::accept-board-post a peer payload)
+          (is (= 1 (sql-value (kernel-db a) "SELECT count(*) FROM affect_appraisals WHERE source_key=?1 LIMIT 1" key)))
+          (is (= 1 (sql-value (kernel-db a) "SELECT count(*) FROM v3_work WHERE handler=?1 AND entity=?2 LIMIT 1" "affect-appraise" key))))))))
+
+(deftest authenticated-operator-board-posts-queue-appraisal-before-work
+  (with-temp-kernel (k)
+    (change-setting k "affect.appraisal.enabled" t :origin *operator*)
+    (let* ((reply (pai-v3.api::operator-post k "Synthetic board message" :title "Synthetic topic"))
+           (key (format nil "board:~a" (obj-get reply "msg_id"))))
+      (is (pai-v3.mind::appraisal-row k key))
+      (is (equal "affect-appraise" (sql-value (kernel-db k) "SELECT handler FROM v3_work WHERE status=?1 ORDER BY priority,id LIMIT 1" "queued"))))))
+
 (run-suite "api-fleet")

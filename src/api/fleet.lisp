@@ -351,10 +351,31 @@ has done its job should end, and resolve_fleet_thread closes a settled thread on
              (setting kernel "fleet.peer_wakes_per_hour"))
          "this peer's wakes for the hour are spent")))
 
+(defun %peer-appraisal (kernel peer-id name source)
+  ;; This seam is reached only after the fleet transport authenticates the peer.
+  (let* ((event (event-by-id kernel source)) (p (and event (event-payload event)))
+         (body (if (and event (equal "fleet.op" (event-type event))) (obj-get p "body") p))
+         (message (and body (or (obj-get body "msg_id") (obj-get body "message_id"))))
+         (thread (and body (obj-get body "thread_id")))
+         (text (and body (obj-get body "text"))))
+    (when (and message text)
+      (let* ((own (fleet-agent-id kernel))
+             ;; Existing thread/time index; examine at most eight rows. A private
+             ;; operator post or another peer's words never enter this context.
+             (rows (and thread (sql-rows (kernel-db kernel)
+                                        "SELECT event_id,author_id,text FROM board_messages WHERE thread_id=?1 AND timestamp<=?2 ORDER BY timestamp DESC,msg_id DESC LIMIT 8"
+                                        thread (obj-get body "timestamp" (- (parse-iso8601 (event-at event)) 2208988800)))))
+             (prior (remove-if-not (lambda (row) (and (< (first row) source)
+                                                      (member (second row) (list peer-id own) :test #'equal))) rows)))
+        (pai-v3.mind::request-affect-appraisal kernel source (format nil "peer:~a" peer-id) name text
+                                             (format nil "peer:~a/message:~a" peer-id message)
+                                             :context (format nil "~{~a~^~%~}" (mapcar #'third (reverse prior))))))))
+
 (defun %wake-for-peer (kernel peer-id name reason source &key intent depth thread-id)
   "Tell the operator, and start a thought for the peer unless the message
 asks for nothing, is too deep in its chain, or the peer has woken me enough.
 Returns the thought id, or NIL."
+  (%peer-appraisal kernel peer-id name source)
   (let ((why-not (%why-not-wake kernel peer-id :intent intent :depth depth :thread-id thread-id)))
     (post-notice kernel :channel "web" :audience "operator"
                         :text (format nil "~a (fleet peer) wrote~@[ (not woken: ~a)~]: ~a" name why-not

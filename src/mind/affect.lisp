@@ -257,9 +257,30 @@ is the point.")
          (when (equal "operator" (obj-get p "audience"))
            (sql-exec db "INSERT INTO affect_now(kind,name,value,as_of) VALUES('anchor','operator_spoke',0,?1) ON CONFLICT(kind,name) DO UPDATE SET as_of=excluded.as_of"
                      at-iso)
-           (%satisfy-drive db "connection" at at-iso)
-           (when (appreciation-p (obj-get p "text" ""))
-             (%satisfy-drive db "appreciation" at at-iso))))
+           ;; Old events keep their historical interpretation during rebuild.
+           (unless (eq t (obj-get p "semantic_affect"))
+             (%satisfy-drive db "connection" at at-iso)
+             (when (appreciation-p (obj-get p "text" ""))
+               (%satisfy-drive db "appreciation" at at-iso)))))
+        ((string= type "affect.appraisal.finished")
+         (unless (sql-value db "SELECT 1 FROM affect_appraisal_seen WHERE source_key=?1 LIMIT 1" (obj-get p "source_key"))
+           (when (equal "applied" (obj-get p "status"))
+           ;; The event contains bounded effects, not mutable future policy or text.
+           (maphash (lambda (name delta) (when (realp delta) (%move-modulator db name (%clamp delta -0.3 0.3) at at-iso)))
+                    (obj-get p "changes"))
+           (maphash (lambda (name amount)
+                      (when (and (drive name) (realp amount))
+                        (%affect-write db "drive" name
+                                       (%clamp (+ (%affect-current db "drive" name at) (%clamp amount 0 1)) 0 1)
+                                       at-iso :target (format nil "message ~d" (obj-get p "source_id")))))
+                    (obj-get p "triggers"))
+           (maphash (lambda (name fraction)
+                      (when (and (drive name) (realp fraction))
+                        (%affect-write db "drive" name
+                                       (* (%affect-current db "drive" name at) (- 1 (%clamp fraction 0 1)))
+                                       at-iso :target nil :satisfied t)))
+                    (obj-get p "satisfactions")))
+           (sql-exec db "INSERT INTO affect_appraisal_seen(source_key,event_id) VALUES(?1,?2)" (obj-get p "source_key") (event-id e))))
         ((string= type "thought.step")
          (when (and (equal "tool_result" (obj-get p "kind")) (eql 0 (obj-get p "part")))
            (if (eq t (obj-get p "failed"))
@@ -271,9 +292,10 @@ is the point.")
 (define-projection "affect"
   :kind :inline
   :consumes ("affect.moved" "affect.set" "drive.triggered" "drive.satisfied"
-             "turn.received" "thought.step" "setting.changed")
+             "turn.received" "thought.step" "setting.changed" "affect.appraisal.finished")
   :tables ("CREATE TABLE IF NOT EXISTS affect_now (kind TEXT NOT NULL, name TEXT NOT NULL, value REAL NOT NULL, as_of TEXT NOT NULL, target TEXT, last_satisfied TEXT, PRIMARY KEY(kind,name))"
-           "CREATE TABLE IF NOT EXISTS affect_dials (name TEXT PRIMARY KEY, value_json TEXT NOT NULL)")
+           "CREATE TABLE IF NOT EXISTS affect_dials (name TEXT PRIMARY KEY, value_json TEXT NOT NULL)"
+           "CREATE TABLE IF NOT EXISTS affect_appraisal_seen (source_key TEXT PRIMARY KEY, event_id INTEGER NOT NULL)")
   :entity (lambda (e) (declare (ignore e)) "affect")
   :reduce #'%reduce-affect)
 
@@ -361,7 +383,7 @@ third of drive name -> target for drives that have one."
 ;;; Thoughts move their own state
 
 (define-tool "feel"
-  :description "Record a change in how I feel or what I want, when something has moved me. changes: modulator nudges such as {\"arousal\": 0.1, \"valence\": -0.05}; trigger: a drive that has been stirred (curiosity or closure), with what it is about; satisfied: a drive that has been met."
+  :description "Record a change in how I feel or what I want, when something has moved me. Incoming messages may already have been semantically appraised; do not repeat the same adjustment merely by rereading them. changes: modulator nudges such as {\"arousal\": 0.1, \"valence\": -0.05}; trigger: a drive that has been stirred (curiosity or closure), with what it is about; satisfied: a drive that has been met."
   :parameters (obj "type" "object"
                    "properties" (obj "changes" (obj "type" "object")
                                      "trigger" (obj "type" "string")
