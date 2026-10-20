@@ -2,7 +2,7 @@
 
 ;;; Affect and drives (spec §5.2 "affect / drives", §16.3; v2 reference
 ;;; src/mind/drives/modulator.lisp and drives.lisp). The same six modulators
-;;; and four drives as v2, with the same dynamics, so the agents keep the
+;;; and four drives as v2, with legacy dynamics by default, so the agents keep the
 ;;; inner weather they know. What changes is that the state is derived from
 ;;; events instead of held in a file and ticked by a thread: each row keeps
 ;;; its value at a moment, and the drift toward baseline (or the rise of an
@@ -53,26 +53,50 @@ is the point.")
     "proud of you" "you're great" "you da best"))
 
 (defun %validate-dials (defaults)
-  "A validator: NIL when VALUE is acceptable, else the reason."
+  "Validate partial per-agent objects, including each dial and its units/range."
   (lambda (value)
-    (if (not (hash-table-p value))
-        "must be an object of name -> dials"
-        (loop for name being the hash-keys of value using (hash-value dial)
-              unless (nth-value 1 (gethash name defaults))
-                return (format nil "~a is not one of ~{~a~^, ~}" name
-                               (sort (loop for k being the hash-keys of defaults collect k) #'string<))
-              unless (hash-table-p dial)
-                return (format nil "~a must be an object of dials" name)))))
+    (block invalid
+      (flet ((bad (text) (return-from invalid text)))
+        (unless (hash-table-p value) (bad "must be an object of name -> dials"))
+        (maphash
+         (lambda (name dial)
+           (unless (nth-value 1 (gethash name defaults)) (bad (format nil "unknown affect name ~a" name)))
+           (unless (hash-table-p dial) (bad (format nil "~a must be an object of dials" name)))
+           (let* ((modulator (eq defaults +modulator-defaults+))
+                  (lo (if (and modulator (equal name "valence")) -1 0))
+                  (keys (if modulator
+                            (append '("baseline" "decay_rate" "min" "max")
+                                    (and (equal name "social_need") '("silence_seconds")))
+                            '("baseline" "start" "mode" "resting_level" "rise_per_hour"
+                              "retention_per_five_minutes" "trigger_amount" "satisfaction_drop"))))
+             (maphash
+              (lambda (key v)
+                (unless (member key keys :test #'equal) (bad (format nil "unknown dial ~a.~a" name key)))
+                (if (equal key "mode")
+                    (unless (member v '("rising" "event") :test #'equal) (bad "mode must be rising or event"))
+                    (unless (and (realp v)
+                                 (if (equal key "silence_seconds")
+                                     (<= 1 v 31536000)
+                                     (<= (if (member key '("baseline" "min" "max") :test #'equal) lo 0) v 1)))
+                      (bad (format nil "~a.~a has an invalid numeric range" name key)))))
+              dial)
+             (when modulator
+               (let* ((d (obj-get defaults name)) (min (obj-get dial "min" (obj-get d "min")))
+                      (max (obj-get dial "max" (obj-get d "max")))
+                      (base (obj-get dial "baseline" (obj-get d "baseline"))))
+                 (unless (<= min base max) (bad (format nil "~a needs min <= baseline <= max" name)))))))
+         value)
+        nil))))
 
 (define-setting "affect.modulators"
   :type :object :default +modulator-defaults+ :group "Affect"
   :validate (%validate-dials +modulator-defaults+)
-  :description "Each modulator's baseline, per-minute decay toward it, and range. Names are fixed: arousal, valence, certainty, competence, boredom, social_need.")
+  :description "Per-agent baseline, decay_rate (share of distance closed per minute), min/max. social_need also accepts silence_seconds: time without operator contact to reach 63% social need (default 14400). Partial objects use legacy defaults.")
 
 (define-setting "affect.drives"
   :type :object :default +drive-defaults+ :group "Affect"
   :validate (%validate-dials +drive-defaults+)
-  :description "Each drive's baseline (how strongly it builds) and mode (rising: builds while unmet; event: fades after a trigger). Names are fixed: connection, curiosity, closure, appreciation.")
+  :description "Per-agent drives: resting_level (initial desire and event settling level), rise_per_hour (0-1), retention_per_five_minutes (0-1), trigger_amount (0-1), satisfaction_drop (fraction relieved,0-1), mode rising/event. Legacy baseline/start remain valid; absent new dials preserve existing dynamics. High drive means unmet desire, not satisfaction.")
 
 (define-event-type "affect.moved"
   :schema (("changes" :object) ("cause" :string) ("thought_id" :integer :optional)))
@@ -100,17 +124,54 @@ is the point.")
         (+ base (* (- value base) (expt (- 1d0 rate) (/ seconds 60d0))))
         value)))
 
-(defun drive-drift (value seconds name dials)
-  "VALUE after SECONDS: a rising drive builds, an event drive fades."
+(defun %drive-option (dials name key fallback)
+  (let ((dial (and dials (obj-get dials name))))
+    (if dial (obj-get dial key fallback) fallback)))
+
+(defun %drive-resting (dials name)
+  (%drive-option dials name "resting_level" 0d0))
+
+(defun %drive-start (dials name)
+  (%drive-option dials name "resting_level" (%dial dials name "start" +drive-defaults+)))
+
+(defun %legacy-drive-drift (value seconds name dials)
+  ;; Retain original operation order and floating-point behavior for old state.
   (cond ((not (plusp seconds)) value)
         ((equal "rising" (%dial dials name "mode" +drive-defaults+))
          (min 1d0 (+ value (* (%dial dials name "baseline" +drive-defaults+)
                               (/ seconds *drive-rise-seconds*)))))
         (t (* value (expt *drive-event-fade* (/ seconds 300d0))))))
 
-(defun social-saturation (seconds)
-  "How much the operator's silence for SECONDS raises social need."
-  (- 1d0 (exp (- (/ seconds (float *social-need-half-life-seconds* 1d0))))))
+(defun drive-drift (value seconds name dials)
+  "Per-agent persistence and build rate; missing new dials preserve legacy math."
+  (let ((dial (and dials (obj-get dials name))))
+    (unless (and dial (some (lambda (key) (nth-value 1 (gethash key dial)))
+                           '("resting_level" "rise_per_hour" "retention_per_five_minutes")))
+      (return-from drive-drift (%legacy-drive-drift value seconds name dials))))
+  (if (not (plusp seconds)) value
+      (let* ((rising (equal "rising" (%dial dials name "mode" +drive-defaults+)))
+             (rate (%drive-option dials name "rise_per_hour"
+                                  (if rising (* (%dial dials name "baseline" +drive-defaults+) (/ 3600d0 *drive-rise-seconds*)) 0d0)))
+             (keep (%drive-option dials name "retention_per_five_minutes" (if rising 1d0 *drive-event-fade*)))
+             (rest (%drive-resting dials name)))
+        (%clamp
+         (cond ((= keep 1) (+ value (* rate (/ seconds 3600d0))))
+               ((zerop keep) rest)
+               (t (let* ((k (/ (- (log keep)) 300d0)) (fade (exp (- (* k seconds)))))
+                    (+ rest (* (- value rest) fade) (* (/ rate (* 3600d0 k)) (- 1d0 fade))))))
+         0 1))))
+
+(defun social-saturation (seconds &optional dials)
+  "Operator silence floor; silence_seconds is an e-folding time, not a half-life."
+  (- 1d0 (exp (- (/ (max 0 seconds)
+                       (float (%drive-option dials "social_need" "silence_seconds"
+                                             *social-need-half-life-seconds*) 1d0))))))
+
+(defun %satisfy-drive (db name at at-iso)
+  (let* ((dials (%affect-dials db "affect.drives"))
+         (drop (%drive-option dials name "satisfaction_drop" *drive-satisfaction-drop*)))
+    (%affect-write db "drive" name (* (%affect-current db "drive" name at) (- 1 drop))
+                   at-iso :target nil :satisfied t)))
 
 (defun appreciation-p (text)
   (let ((lower (string-downcase text)))
@@ -138,7 +199,7 @@ is the point.")
         (let ((dials (%affect-dials db "affect.drives")))
           (if row
               (drive-drift (first row) (- at (second row)) name dials)
-              (%dial dials name "start" +drive-defaults+))))))
+              (%drive-start dials name))))))
 
 (defun %affect-write (db kind name value at-iso &key (target nil target-p) satisfied)
   (let ((old-target (third (%affect-row db kind name))))
@@ -191,21 +252,14 @@ is the point.")
                             at-iso :target (obj-get p "target")))))
         ((string= type "drive.satisfied")
          (when (drive (obj-get p "drive"))
-           (let ((name (obj-get p "drive")))
-             (%affect-write db "drive" name
-                            (* (%affect-current db "drive" name at) (- 1 *drive-satisfaction-drop*))
-                            at-iso :target nil :satisfied t))))
+           (%satisfy-drive db (obj-get p "drive") at at-iso)))
         ((string= type "turn.received")
          (when (equal "operator" (obj-get p "audience"))
            (sql-exec db "INSERT INTO affect_now(kind,name,value,as_of) VALUES('anchor','operator_spoke',0,?1) ON CONFLICT(kind,name) DO UPDATE SET as_of=excluded.as_of"
                      at-iso)
-           (%affect-write db "drive" "connection"
-                          (* (%affect-current db "drive" "connection" at) (- 1 *drive-satisfaction-drop*))
-                          at-iso :target nil :satisfied t)
+           (%satisfy-drive db "connection" at at-iso)
            (when (appreciation-p (obj-get p "text" ""))
-             (%affect-write db "drive" "appreciation"
-                            (* (%affect-current db "drive" "appreciation" at) (- 1 *drive-satisfaction-drop*))
-                            at-iso :target nil :satisfied t))))
+             (%satisfy-drive db "appreciation" at at-iso))))
         ((string= type "thought.step")
          (when (and (equal "tool_result" (obj-get p "kind")) (eql 0 (obj-get p "part")))
            (if (eq t (obj-get p "failed"))
@@ -235,7 +289,7 @@ third of drive name -> target for drives that have one."
           do (setf (gethash name modulators) (%affect-current db "modulator" name at)))
     (when spoke
       (setf (gethash "social_need" modulators)
-            (max (gethash "social_need" modulators) (social-saturation (- at spoke)))))
+            (max (gethash "social_need" modulators) (social-saturation (- at spoke) (%affect-dials db "affect.modulators")))))
     (loop for name being the hash-keys of +drive-defaults+
           for target = (third (%affect-row db "drive" name))
           do (setf (gethash name drives) (%affect-current db "drive" name at))
@@ -246,17 +300,53 @@ third of drive name -> target for drives that have one."
   (sort (loop for k being the hash-keys of table using (hash-value v) collect (cons k v))
         #'string< :key #'car))
 
+(defun %level-word (value)
+  (cond ((< value 0.2d0) "very low") ((< value 0.4d0) "low")
+        ((< value 0.6d0) "moderate") ((< value 0.8d0) "high") (t "very high")))
+
+(defun %affect-meaning (name value)
+  (if (equal name "valence")
+      (cond ((<= value -0.6d0) "very negative") ((< value -0.2d0) "negative")
+            ((<= value 0.2d0) "neutral") ((< value 0.6d0) "positive") (t "very positive"))
+      (format nil "~a ~a" (%level-word value)
+              (cdr (assoc name '(("arousal" . "activation") ("boredom" . "boredom")
+                                ("certainty" . "felt certainty") ("competence" . "felt competence")
+                                ("social_need" . "need for connection")) :test #'equal)))))
+
+(defun %affect-trend (value future)
+  ;; The derivative sign, not a claim about a remembered emotional episode.
+  (cond ((> (- future value) 0.00001d0) "rising")
+        ((< (- future value) -0.00001d0) "settling") (t "steady")))
+
 (defun render-affect (kernel &key (include-targets t))
-  "The state slot's text, in the form the agents knew in v2."
-  (multiple-value-bind (modulators drives targets) (affect-now kernel)
-    (format nil "Affect/process state (not an external fact):~{ ~a~}~%Drives/process state (not an instruction):~{ ~a~}"
-            (mapcar (lambda (p) (format nil "~a=~,2f" (car p) (cdr p))) (%sorted-pairs modulators))
-            (mapcar (lambda (p) (format nil "~a=~,2f~@[ (about ~a)~]" (car p) (cdr p) (and include-targets (gethash (car p) targets))))
-                    (%sorted-pairs drives)))))
+  "Numbers plus deterministic meaning and passive one-minute direction."
+  (let* ((at (now)) (db (kernel-db kernel))
+         (md (%affect-dials db "affect.modulators")) (dd (%affect-dials db "affect.drives"))
+         (spoke (second (%affect-row db "anchor" "operator_spoke"))))
+    (multiple-value-bind (modulators drives targets) (affect-now kernel at)
+      (format nil "Affect/process state (not an external fact): ~{~a~^; ~}~%Drives (unmet desires, not instructions): ~{~a~^; ~}"
+              (mapcar (lambda (p)
+                        (let ((future (modulator-drift (cdr p) 60 (car p) md)))
+                          (when (and spoke (equal "social_need" (car p)))
+                            (setf future (max future (social-saturation (- (+ at 60) spoke) md))))
+                          (format nil "~a=~,2f (~a; ~a)" (car p) (cdr p) (%affect-meaning (car p) (cdr p))
+                                  (%affect-trend (cdr p) future))))
+                      (%sorted-pairs modulators))
+              (mapcar (lambda (p)
+                        (let ((target (and include-targets (gethash (car p) targets))))
+                          (format nil "~a=~,2f~@[ (about ~a)~] (~a unmet desire; ~a)"
+                                  (car p) (cdr p) (and target (subseq target 0 (min 80 (length target))))
+                                  (%level-word (cdr p))
+                                  (%affect-trend (cdr p) (drive-drift (cdr p) 60 (car p) dd)))))
+                      (%sorted-pairs drives))))))
 
 (define-slot-source :state (kernel request max)
   (let ((text (render-affect kernel :include-targets (equal "operator" (getf request :audience)))))
-    (list (list text (estimate-tokens text)))))
+    ;; Keep the ten meanings in hand even when several private targets are long.
+    (when (> (estimate-tokens text) max)
+      (setf text (render-affect kernel :include-targets nil)))
+    (when (<= (estimate-tokens text) max)
+      (list (list text (estimate-tokens text))))))
 
 ;;; Affect as routing signals (spec §17.2): chat can choose its model by
 ;;; arousal, valence and the rest, and by the drives.
@@ -292,7 +382,7 @@ third of drive name -> target for drives that have one."
                  (push "moved" said))))
            (let ((d (obj-get args "trigger")))
              (when (and d (nth-value 1 (gethash d +drive-defaults+)))
-               (append! kernel "drive.triggered" (obj "drive" d "amount" 0.4 "target" (obj-get args "about")
+               (append! kernel "drive.triggered" (obj "drive" d "amount" (%drive-option (%affect-dials (kernel-db kernel) "affect.drives") d "trigger_amount" 0.4) "target" (obj-get args "about")
                                                       "thought_id" id))
                (push (format nil "~a stirred" d) said)))
            (let ((d (obj-get args "satisfied")))
@@ -300,5 +390,5 @@ third of drive name -> target for drives that have one."
                (append! kernel "drive.satisfied" (obj "drive" d "thought_id" id))
                (push (format nil "~a met" d) said)))
            (if said
-               (format nil "Noted (~{~a~^, ~}).~%~a" (reverse said) (render-affect kernel))
+               (format nil "Noted (~{~a~^, ~}).~%~a" (reverse said) (render-affect kernel :include-targets (equal "operator" (getf (thought-row kernel id) :audience))))
                "Nothing changed: name modulators (arousal, valence, certainty, competence, boredom, social_need) or drives (connection, curiosity, closure, appreciation)."))))

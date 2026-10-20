@@ -118,4 +118,22 @@
         (is (= thought (fifth row)))
         (is (search "Useful notes" (second (pai-v3.mind::artifact-content k row))))))))
 
+(deftest affect-personal-dynamics-rebuild-identically-across-setting-boundaries
+  (with-temp-kernel (k)
+    (let* ((start (now)) (*clock* (lambda () start)) (operator (obj "principal_type" "operator")))
+      (append! k "affect.set" (obj "drives" (obj "connection" 0.3 "curiosity" 0.4) "cause" "Fixture"))
+      (incf start 3600)
+      (change-setting k "affect.drives"
+                      (obj "connection" (obj "rise_per_hour" 0.2 "satisfaction_drop" 0.4)
+                           "curiosity" (obj "resting_level" 0.1 "retention_per_five_minutes" 0.98)) :origin operator)
+      (incf start 1800)
+      (append! k "drive.satisfied" (obj "drive" "connection"))
+      (append! k "drive.triggered" (obj "drive" "curiosity" "amount" 0.3 "target" "Synthetic question"))
+      (change-setting k "affect.modulators" (obj "social_need" (obj "silence_seconds" 7200)) :origin operator)
+      (incf start 600)
+      (let ((before (json-encode (multiple-value-list (pai-v3.mind:affect-now k)))))
+        (is (eq :done (rebuild-projection k "affect" :page-size 2)))
+        (is (equal before (json-encode (multiple-value-list (pai-v3.mind:affect-now k)))))
+        (is (equal "ready" (projection-status k "affect")))))))
+
 (run-suite "maintenance-rebuild")
