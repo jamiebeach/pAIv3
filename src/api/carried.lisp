@@ -11,14 +11,8 @@
 ;;; hold due items back; they are looked at once the hours end.
 
 (defun %consideration-prompt (kernel item)
-  (flet ((str (k) (let ((v (obj-get item k))) (and (stringp v) v))))
-    (format nil "Something I am carrying for the operator has come up: [~a] ~a~%Why it matters: ~a~@[~%Source: ~a~]~@[~%Due: ~a~]~@[~%Waiting for: ~a~]~@[~%Noted: ~a~]~@[~%Work for it: ~a~]~%~
-I have looked at this ~d time~:p before.~%~%~
-Decide what is useful now and do it: tell the operator with notify_operator (topic reminder or update) in words fitted to today, not a stored line; ~
-open or continue docket work if something should be made or found out (and note the work id on the item with carry revise); carry it on with carry revise (consider_at: when to look again); ~
-or close it with carry close (done or dropped) when it is finished or no longer matters. Do not tell the operator what they already know. Say in a line what you decided."
-            (str "id") (str "what") (str "why") (str "source") (str "due_local") (str "condition") (str "note") (str "work_id")
-            (obj-get item "times_considered"))))
+  (declare (ignore kernel))
+  (pai-v3.mind::carried-consideration-prompt item))
 
 (defun consider-carried (kernel)
   "Look at items whose time has come. Returns how many were taken up."

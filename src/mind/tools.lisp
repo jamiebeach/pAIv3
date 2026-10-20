@@ -41,10 +41,17 @@ defines for itself is always operator-trust and never core.")
   "Both ordinary introspection and fleet-digest reflection think privately."
   (member (getf thought :origin) '("introspection" "reflection") :test #'equal))
 
+(defun private-initiative-p (thought)
+  "Operator-context initiative must draft before speaking to a peer."
+  (and (equal "operator" (getf thought :audience))
+       (member (getf thought :origin)
+               '("introspection" "reflection" "concern" "docket" "noticing" "unbidden" "private")
+               :test #'equal)))
+
 (defun tool-available-p (tool thought)
-  ;; A reflection thinks with everything the agent knows, so nothing it does may reach anyone
+  ;; Private initiative thinks with operator context, so nothing it does may reach anyone
   ;; else directly: the tools that publish are not its to use (docs/reflect-then-speak.md).
-  (and (not (and (tool-publishes tool) (reflecting-p thought)))
+  (and (not (and (tool-publishes tool) (private-initiative-p thought)))
    (let ((available (tool-available tool)))
     (if (listp available)
         (member (getf thought :audience) available :test #'equal)

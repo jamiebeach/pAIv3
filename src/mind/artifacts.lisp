@@ -157,6 +157,7 @@
       (artifact-json (artifact-row kernel id revision)))))
 
 (define-tool "document"
+  :core '("docket")
   :available :operator-trust
   :summary "Create, revise, read and deliver a polished illustrated document or card."
   :description "Make useful deliverables, not only a description of work. save creates a private draft or new immutable revision of artifact_id. document has title, subtitle, layout (report/card), theme (paper/night/rose/forest), and 1-24 sections with heading, text, optional image_id and caption. Text is plain, not HTML/Markdown. Up to 4 existing stored images are embedded. list finds recent revisions (optionally work_id); read retrieves document source so work can resume. keep retains privately; deliver requires an introduction in note and sends an operator notice linking the exact revision; abandon sets it aside. Never claim delivery until deliver succeeds. PDF export is not available. Docket runs automatically link saved documents to their work item."

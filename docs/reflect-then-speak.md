@@ -87,6 +87,12 @@ The original avatar overwrite occurred in plain introspection, so covering
 only the digest would miss the class of failure. Introspection keeps its
 origin, policy and allowance; it does not acquire a second cognition loop.
 
+**Private initiative extension (2026-10-20).** Operator-audience concern,
+docket, noticing, unbidden and private thoughts use the same publishing block
+and draft handoff. This lets a useful concern or creation reach peers without
+sending directly from operator context. Their origins, context scope, scheduler
+policies and allowances do not change. See [initiative guidance](behaviour/initiative.md).
+
 **Stage 2, undecided.** A peer's post that wakes the agent to answer today runs
 as a thought for that peer, speaking directly. It has the same deafness about
 the agent's own acts. Applying reflect-then-speak there would cost two thoughts

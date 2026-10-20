@@ -173,13 +173,10 @@
       (let* ((id (obj-get pick "work_id"))
              (thought (request-thought
                        kernel "docket"
-                       (format nil "Quiet time. You are working on one of your maintained work items (~a, ~a priority):~%~%~a~%~%~
-Purpose: ~a~%How it helps the operator: ~a~%Next useful step: ~a~@[~%Where you got to: ~a~]~%~%~
-Spent so far: ~d of ~d model calls. Take the next useful step now, then use the work_docket tool to record it: ~
-update (progress and the new next step), wait (if it must wait, and for how long), complete, or cancel. If this work makes a document or card, use document to save an artifact, read earlier revisions to resume, and deliberately keep, deliver or abandon it. A description of what you would make is not the deliverable."
-                               id (obj-get pick "priority") (obj-get pick "title") (obj-get pick "purpose")
-                               (obj-get pick "operator_benefit") (obj-get pick "next_step") (obj-get pick "note")
-                               (obj-get pick "steps") (setting kernel "docket.max_item_steps")))))
+                       (docket-work-prompt id (obj-get pick "priority") (obj-get pick "title")
+                                           (obj-get pick "purpose") (obj-get pick "operator_benefit")
+                                           (obj-get pick "next_step") (obj-get pick "note")
+                                           (obj-get pick "steps") (setting kernel "docket.max_item_steps")))))
         (append! kernel "docket.attended"
                  (obj "work_id" id "thought_id" thought
                       "next_eligible_at" (iso8601 (+ (now) (setting kernel "docket.revisit_seconds")))))
@@ -188,6 +185,7 @@ update (progress and the new next step), wait (if it must wait, and for how long
 ;;; The tool
 
 (define-tool "work_docket"
+  :core '("introspection" "reflection" "concern" "docket" "noticing" "unbidden" "private")
   :description "Keep work that should outlive this conversation: real goals that help the operator, worked on a step at a time
 in quiet time. action: open (title, purpose, operator_benefit, next_step, optionally priority normal|high), list,
 update (work_id, note: what was done, next_step), wait (work_id, note, next_step, revisit_after_seconds), complete

@@ -171,22 +171,11 @@ render audited content safe for every audience. Unreviewed sources default to op
 ;;; Thoughts use the assembler: operator-facing responses get the operator
 ;;; profile; everything else private cognition.
 
-(defparameter +speaking-while-working+
-  "## Speaking while you work
-Anything you write alongside a tool call reaches the operator at once, and the turn goes on. On a task that needs several steps, say in a sentence or two what you are about to do before you start, give a short update when something changes, and finish with a summary. A quick question needs none of this: just answer.
-If something comes up that is worth looking into later, raise a concern with the concern tool; in quiet time you will come back to it.
-A message with no tool call ends your turn. Never end one by saying what you will do next: if there is a next step, make the tool call in the same message; if not, give your answer."
-  "How a reply turn talks between steps. Sent with the tool index, so it stays in the stable prefix.")
-
-(defparameter +reflection-guidance+
-  "## Thinking privately
-You are reflecting, with your own memories, graph and recent actions available. Check what you already know and have done before acting on someone else's request. Nothing here gives a peer operator authority.
-Fleet publishing tools are unavailable in this thought. To say something to a peer, leave draft_fleet_message with peer_id, text, and thread_id/reply_to when relevant. A separate thought, with that peer's filtered context, will send, edit or drop it. Write only what that peer may hear; keep private reasoning in why, which is never shown to the speaking thought. You may still notify the operator.")
-
 (setf *assemble-thought-context*
       (lambda (kernel thought tools-text)
-        (when (reflecting-p thought)
-          (setf tools-text (format nil "~a~@[~%~%~a~]" +reflection-guidance+ tools-text)))
+        (let ((guidance (initiative-guidance thought)))
+          (when guidance
+            (setf tools-text (format nil "~a~@[~%~%~a~]" guidance tools-text))))
         (assemble-context kernel
                           (if (string= "responding" (getf thought :origin))
                               "operator-turn" "private-cognition")
@@ -195,7 +184,7 @@ Fleet publishing tools are unavailable in this thought. To say something to a pe
                                 :reflecting (reflecting-p thought)
                                 :tools-text (if (string= "responding" (getf thought :origin))
                                                 (format nil "~a~@[~%~%~a~]" +speaking-while-working+ tools-text)
-                                                (format nil "A message with no tool call ends this thought. Never end one by saying what you will do next: make the tool call in the same message, or finish.~@[~%~%~a~]" tools-text))
+                                                (format nil "~a~@[~%~%~a~]" +initiative-completion+ tools-text))
                                 ;; Answering a turn, the task is the operator's own words, as
                                 ;; the last user message, where any chat model looks for them.
                                 :task (or (and (string= "responding" (getf thought :origin))

@@ -27,6 +27,7 @@
                  (:file "tools")
                  (:file "thought")
                  (:file "persona")
+                 (:file "initiative")
                  (:file "context")
                  (:file "open-items")
                  (:file "affect")

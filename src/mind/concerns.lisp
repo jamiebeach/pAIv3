@@ -376,19 +376,11 @@ last look, from the record alone: no model call."
       (when (and latest (> latest seen))
         (let ((id (request-thought
                    kernel "introspection"
-                   "Quiet time, after a conversation. Look back over the recent conversation and your open concerns. Is anything worth looking into later: a question you could not settle, something you said you would check, a curiosity, a problem in yourself? Raise at most two concerns with the concern tool, or reinforce one you already hold. Also ask: did the operator say, or did you promise, anything that should be kept in mind for them and returned to, such as a deadline, something they must do or are waiting on, a commitment, or a plan they mentioned in passing? They may not have thought of asking. If so, carry it with the carry tool (what it is, why it matters to them, when to look at it again), unless it is already among the things you are carrying. If nothing warrants either, do nothing and say so in a line.")))
+                   (conversation-review-prompt))))
           (append! kernel "quiet.reviewed"
                    (obj "through_event_id" (sql-value db "SELECT max(event_id) FROM working_dialogue WHERE audience=?1 LIMIT 1" "operator")
                         "thought_id" id))
           id)))))
-
-(defparameter +repair-steps+
-  "This is a repair: something of yours failed. Work from evidence, not memory. 1. Look: inspect with what failures shows
-what the model provider actually sent on recent failed calls, and the failed thought's own steps show what led there.
-2. Find the cause, and say how sure you are. 3. If the cause is in your own code and the fix is small and clear, make it
-live with lisp_eval and check that it works; a live repair lasts until restart, so it must also be proposed. 4. If you
-have the beads tool, open a bead with priority 0, the evidence and your fix (or your best diagnosis), and ping the
-coding agent. 5. Tell the operator in a line what failed and what you did, with notify_operator if it matters now.")
 
 (defun %concern-thought (kernel row)
   "Start a thought for the concern ROW."
@@ -396,14 +388,9 @@ coding agent. 5. Tell the operator in a line what failed and what you did, with 
     (declare (ignore salience last next))
     (request-thought
      kernel "concern"
-     (format nil "~:[Quiet time~;A failure, looked at at once~]. You are looking into one of your concerns (~a, ~a):~%~%~a~%~%~
-Why it matters: ~a~@[~%~%Where you got to before: ~a~]~%~%This is visit ~d. Two budgets apply, in model calls: ~
-this thought may make up to ~d, and this concern may spend ~d in total across all its visits, of which ~d are used. ~
-Work on it now. Use the concern tool to note progress (with next_look_at if it should wait), satisfy it when it is settled, or retire it ~
-if it is not worth more.~:[ If it is a problem in yourself, find or open a bead and ping the coding agent.~;~%~%~a~]"
-             (zerop attended) id kind question rationale note (1+ attended)
-             (getf (%policy kernel "concern") :max-calls) (setting kernel "concerns.lifetime_steps") steps
-             (equal kind "repair") +repair-steps+)
+     (concern-visit-prompt id kind question rationale note (1+ attended)
+                           (getf (%policy kernel "concern") :max-calls)
+                           (setting kernel "concerns.lifetime_steps") steps)
      :concern-id id)))
 
 (defun %start-failure-repair (kernel)
@@ -451,14 +438,8 @@ material, nothing."
             (when (or seeds summary)
               (let ((id (request-thought
                          kernel "introspection"
-                         (format nil "Quiet time, with nothing in hand. Let your mind wander over what is already in you, ~
-as a person's does when nothing is happening.~%~{~%A memory: ~a~}~@[~%~%Earlier, in summary: ~a~]~%~%~
-Follow whatever is interesting in it, briefly. If something deserves real attention later, raise a concern. ~
-If, as you wander, you realise something from recent days that the operator needs kept in mind and returned to ~
-(a deadline, a plan, something they are waiting on) and it is not already among the things you are carrying, carry it with the carry tool. ~
-If none of this applies, let it go: a line on what crossed your mind is enough. Do not go over the same ground twice."
-                                 (mapcar #'second seeds)
-                                 (and summary (if (> (length summary) 1200) (subseq summary 0 1200) summary))))))
+                         (rumination-prompt (mapcar #'second seeds)
+                                            (and summary (subseq summary 0 (min 1200 (length summary))))))))
                 (append! kernel "quiet.ruminated" (obj "memory_ids" (mapcar #'first seeds) "thought_id" id))
                 id))))))))
 

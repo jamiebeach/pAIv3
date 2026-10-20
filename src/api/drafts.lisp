@@ -60,13 +60,13 @@
                     "SELECT draft_id,thought_id,peer_id,thread_id,reply_to,intent,text,why,state,fate,note,created_at FROM fleet_drafts WHERE state=?1 ORDER BY created_at LIMIT ?2"
                     state limit)))
 
-;;; Leaving a draft (a reflection only)
+;;; Leaving a draft (private initiative only)
 
 (define-tool "draft_fleet_message"
-  :description "While reflecting, leave a draft of something to say to a peer. Nothing is sent now: when this thought is over, a separate step for that peer reads the draft with only what that peer may hear in front of it, and sends it, edits it or drops it. So write only what you would tell that peer. peer_id and text are required; thread_id and reply_to when answering a post on a board; intent is question, answer, fyi, request or proposal; why is a line for the operator's record (the peer's step never sees it). At most three drafts in one reflection."
+  :description "While thinking privately, leave a draft of something to say to a peer. Nothing is sent now: when this thought is over, a separate step for that peer reads the draft with only what that peer may hear in front of it, and sends it, edits it or drops it. So write only what you would tell that peer. peer_id and text are required; thread_id and reply_to when answering a post on a board; intent is question, answer, fyi, request or proposal; why is a line for the operator's record (the peer's step never sees it). At most the configured per-root draft allowance (default three) in one private initiative."
   :summary "Leave a draft of something to say to a peer, to be checked and sent."
   :available '("operator")
-  :core '("reflection" "introspection")
+  :core '("reflection" "introspection" "concern" "docket" "noticing" "unbidden" "private")
   :parameters (obj "type" "object"
                    "properties" (obj "peer_id" (obj "type" "string") "text" (obj "type" "string")
                                      "thread_id" (obj "type" "string") "reply_to" (obj "type" "string")
@@ -77,8 +77,8 @@
                 (root-id (getf row :root-id))
                (peer-id (obj-get args "peer_id")) (text (obj-get args "text"))
                (intent (or (%given (obj-get args "intent")) "fyi")))
-           (cond ((not (reflecting-p row))
-                  "Drafts are for reflecting. In this thought, send it directly with post_fleet_message or reply_fleet_board_message.")
+           (cond ((not (pai-v3.mind::private-initiative-p row))
+                  "Not done: drafts are for private operator-context initiative thoughts.")
                  ((not (and (stringp peer-id) (fleet-peer kernel peer-id)))
                   "Not done: that is not one of my peers; list_fleet_peers names them.")
                  ((not (and (stringp text) (< 0 (length (string-trim " " text)) 3001)))

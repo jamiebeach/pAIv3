@@ -314,7 +314,7 @@
       (is (search "not one of my peers" (funcall draft reflection "peer_id" "nobody" "text" "x")))
       (funcall draft reflection "peer_id" a-id "text" "second") (funcall draft reflection "peer_id" a-id "text" "third")
       (is (search "at most 3" (funcall draft reflection "peer_id" a-id "text" "fourth")) "a few drafts to a reflection")
-      (is (search "Drafts are for reflecting"
+      (is (search "drafts are for private operator-context initiative"
                   (funcall (pai-v3.mind::tool-run (gethash "draft_fleet_message" pai-v3.mind::*tools*)) b
                            (request-thought b "responding" "not a reflection" :audience "operator")
                            (obj "peer_id" a-id "text" "x"))))
@@ -535,5 +535,22 @@
              (is (search "1 peer, 0 board messages" (pai-v3.api::import-v2-fleet k fleet board)) "a second run adds nothing")))
       (pai-v3.trust:close-secrets)
       (db-close secrets))))
+
+(deftest private-initiative-drafts-use-the-existing-checked-handoff
+  (with-two-agents (a b)
+    (join a b)
+    (let ((peer (pai-v3.api::fleet-agent-id a))
+          (tool (pai-v3.mind::tool-run (gethash "draft_fleet_message" *tools*))))
+      (dolist (origin '("concern" "docket" "noticing" "unbidden" "private"))
+        (let* ((id (request-thought b origin "Synthetic initiative" :audience "operator"))
+               (text (format nil "A public contribution from ~a." origin)))
+          (is (search "left for" (funcall tool b id (obj "peer_id" peer "text" text "why" "PRIVATE_REASON"))))
+          (is (= 0 (pai-v3.api::speak-drafts b)) "no sending while the private thought runs")
+          (append! b "thought.ended" (obj "thought_id" id "outcome" "concluded" "summary" "Done"))
+          (is (= 1 (pai-v3.api::speak-drafts b)))
+          (let ((reason (sql-value (kernel-db b) "SELECT reason FROM thoughts WHERE audience=?1 ORDER BY id DESC LIMIT 1"
+                                   (format nil "peer:~a" peer))))
+            (is (search text reason))
+            (is (not (search "PRIVATE_REASON" reason)))))))))
 
 (run-suite "api-fleet")
