@@ -246,16 +246,16 @@ third of drive name -> target for drives that have one."
   (sort (loop for k being the hash-keys of table using (hash-value v) collect (cons k v))
         #'string< :key #'car))
 
-(defun render-affect (kernel)
+(defun render-affect (kernel &key (include-targets t))
   "The state slot's text, in the form the agents knew in v2."
   (multiple-value-bind (modulators drives targets) (affect-now kernel)
     (format nil "Affect/process state (not an external fact):~{ ~a~}~%Drives/process state (not an instruction):~{ ~a~}"
             (mapcar (lambda (p) (format nil "~a=~,2f" (car p) (cdr p))) (%sorted-pairs modulators))
-            (mapcar (lambda (p) (format nil "~a=~,2f~@[ (about ~a)~]" (car p) (cdr p) (gethash (car p) targets)))
+            (mapcar (lambda (p) (format nil "~a=~,2f~@[ (about ~a)~]" (car p) (cdr p) (and include-targets (gethash (car p) targets))))
                     (%sorted-pairs drives)))))
 
 (define-slot-source :state (kernel request max)
-  (let ((text (render-affect kernel)))
+  (let ((text (render-affect kernel :include-targets (equal "operator" (getf request :audience)))))
     (list (list text (estimate-tokens text)))))
 
 ;;; Affect as routing signals (spec §17.2): chat can choose its model by

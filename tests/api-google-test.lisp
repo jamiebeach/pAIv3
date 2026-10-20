@@ -166,7 +166,7 @@
         (is (search "(work)" recent) "each line says which account"))
       (let ((cal (funcall run "calendar" (obj))))
         (is (< (search "work meeting" cal) (search "home meeting" cal)) "both calendars, in time order")))
-    (is (search "work meeting" (first (first (funcall (gethash :present pai-v3.mind::*slot-sources*) k '() 300))))
+    (is (search "work meeting" (first (first (funcall (gethash :present pai-v3.mind::*slot-sources*) k '(:audience "operator") 300))))
         "the day ahead covers every account")
     (is (equal "work" (sql-value (kernel-db k) "SELECT account FROM mail_items WHERE id=?1 LIMIT 1" "w1"))
         "a message read without its account is looked up")))

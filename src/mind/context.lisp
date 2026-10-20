@@ -12,13 +12,32 @@
   "Slot source keyword -> (lambda (kernel request max-tokens)) returning a
 list of (text tokens) rows, most relevant first.")
 
+(defparameter *slot-audience-policy*
+  '((:clock . :any) (:state . :any) (:myself . :any)
+    (:summary . :any) (:activity . :any) (:dialogue . :any)
+    (:recollection . :any) (:seen . :any) (:scheduled . :any) (:restricted . :any)
+    (:conclusions "operator") (:concerns "operator") (:docket "operator")
+    (:present "operator" "external") (:stream "operator" "external")
+    (:carried "operator" "external"))
+  "Slot boundary policy. :ANY sources must filter their rows by audience or
+render audited content safe for every audience. Unreviewed sources default to operator-only.")
+
+(defun slot-audience-allowed-p (source audience)
+  (let ((rule (assoc source *slot-audience-policy*)))
+    (if rule
+        (or (eq :any (cdr rule)) (member audience (cdr rule) :test #'equal))
+        (equal audience "operator"))))
+
 (defmacro define-context-profile (name &key slots)
   "SLOTS: list of (slot-name :max tokens :source keyword :title string)."
   `(setf (gethash ,name *context-profiles*) ',slots))
 
 (defmacro define-slot-source (keyword (kernel request max) &body body)
   `(setf (gethash ,keyword *slot-sources*)
-         (lambda (,kernel ,request ,max) (declare (ignorable ,kernel ,request ,max)) ,@body)))
+         (lambda (,kernel ,request ,max)
+           (declare (ignorable ,kernel ,request ,max))
+           (when (slot-audience-allowed-p ,keyword (getf ,request :audience))
+             ,@body))))
 
 (define-event-type "context.assembled"
   :schema (("profile" :string) ("thought_id" :integer :optional)
@@ -88,9 +107,10 @@ list of (text tokens) rows, most relevant first.")
 (defun %fill (kernel source request max)
   "Rows that fit MAX tokens, and a status string."
   (let ((fn (gethash source *slot-sources*)))
-    (if (null fn)
-        (values nil 0 "unavailable")
-        (handler-case
+    (cond ((null fn) (values nil 0 "unavailable"))
+          ((not (slot-audience-allowed-p source (getf request :audience)))
+           (values nil 0 "withheld"))
+          (t (handler-case
             (let ((kept '()) (used 0))
               ;; A row is (text tokens), or plain text whose tokens are
               ;; estimated here: a source returning bare lines once kept
@@ -102,7 +122,7 @@ list of (text tokens) rows, most relevant first.")
               (values (nreverse kept) used (if kept "ok" "empty")))
           (error (e)
             (values nil 0 (format nil "unavailable: ~a"
-                                  (let ((m (princ-to-string e))) (subseq m 0 (min 120 (length m)))))))))))
+                                  (let ((m (princ-to-string e))) (subseq m 0 (min 120 (length m))))))))))))
 
 (defun assemble-context (kernel profile-name request)
   "Build messages for REQUEST, a plist with :audience, :task, and optionally

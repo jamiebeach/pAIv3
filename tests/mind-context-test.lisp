@@ -104,4 +104,57 @@
       (is (< (search "first message" now) (search "first answer" now) (search "Do you see my kids" now))
           "the conversation reads oldest to newest"))))
 
+(deftest private-slots-are-blocked-before-their-producers-run
+  (with-temp-kernel (k)
+    (let ((saved (gethash :present pai-v3.mind::*slot-sources*)) (calls 0))
+      (unwind-protect
+           (progn
+             (define-slot-source :present (kernel request max)
+               (incf calls) (list "SYNTHETIC_OPERATOR_CALENDAR"))
+             (dolist (audience '("peer:beta" "coding-agent" "person:guest"))
+               (is (null (funcall (gethash :present pai-v3.mind::*slot-sources*) k (list :audience audience) 300)))
+               (multiple-value-bind (rows used status)
+                   (pai-v3.mind::%fill k :present (list :audience audience) 300)
+                 (is (null rows)) (is (= 0 used)) (is (equal "withheld" status))))
+             (is (= 0 calls))
+             (dolist (audience '("operator" "external"))
+               (is (funcall (gethash :present pai-v3.mind::*slot-sources*) k (list :audience audience) 300)))
+             (is (= 2 calls)))
+        (setf (gethash :present pai-v3.mind::*slot-sources*) saved)))))
+
+(deftest both-context-profiles-protect-private-state-and-preserve-operator-reflection
+  (with-temp-kernel (k)
+    (let ((closed (raise-concern k "SYNTHETIC_CLOSED_CONCERN")))
+      (close-concern k closed "satisfied" "SYNTHETIC_PRIVATE_CONCLUSION"))
+    (raise-concern k "SYNTHETIC_OPEN_CONCERN" :rationale "Synthetic fixture")
+    (append! k "drive.triggered" (obj "drive" "curiosity" "amount" 0.2 "target" "SYNTHETIC_PRIVATE_TARGET"))
+    (append! k "google.account.connected" (obj "account" "test" "scopes" "" "mail_since_ms" 0))
+    (sql-exec (kernel-db k) "INSERT INTO calendar_events VALUES('test','c1','SYNTHETIC_CALENDAR',?1,?2,NULL,?1,1)"
+              (iso8601 (+ (now) 3600)) (iso8601 (+ (now) 7200)))
+    (sql-exec (kernel-db k) "INSERT INTO attention_stream(event_id,account,at,noticed,reason,escalated,set_aside) VALUES(1,'test',?1,1,'new-items',?2,'[]')"
+              (now-iso8601) (json-encode (list (obj "text" "SYNTHETIC_MAIL"))))
+    (dolist (profile '("operator-turn" "private-cognition"))
+      (dolist (audience '("peer:beta" "coding-agent" "person:guest"))
+        (let ((text (json-encode (assemble-context k profile (list :audience audience :task "A public topic")))))
+          (dolist (marker '("SYNTHETIC_CLOSED_CONCERN" "SYNTHETIC_PRIVATE_CONCLUSION" "SYNTHETIC_OPEN_CONCERN"
+                            "SYNTHETIC_PRIVATE_TARGET" "SYNTHETIC_CALENDAR" "SYNTHETIC_MAIL"))
+            (is (not (search marker text)) marker))))
+      (let ((text (json-encode (assemble-context k profile (list :audience "operator" :reflecting t :task "Review")))))
+        (dolist (marker '("SYNTHETIC_PRIVATE_CONCLUSION" "SYNTHETIC_OPEN_CONCERN" "SYNTHETIC_PRIVATE_TARGET" "SYNTHETIC_CALENDAR" "SYNTHETIC_MAIL"))
+          (is (search marker text) marker))))
+    (let ((text (json-encode (assemble-context k "private-cognition" (list :audience "external" :task "Appraise")))))
+      (is (search "SYNTHETIC_CALENDAR" text))
+      (is (search "SYNTHETIC_MAIL" text))
+      (is (not (search "SYNTHETIC_OPEN_CONCERN" text)))
+      (is (not (search "SYNTHETIC_PRIVATE_TARGET" text))))))
+
+(deftest new-slot-sources-default-to-operator-only
+  (with-temp-kernel (k)
+    (unwind-protect
+         (progn
+           (define-slot-source :synthetic-unreviewed (kernel request max) (list "PRIVATE"))
+           (is (funcall (gethash :synthetic-unreviewed pai-v3.mind::*slot-sources*) k (list :audience "operator") 10))
+           (is (null (funcall (gethash :synthetic-unreviewed pai-v3.mind::*slot-sources*) k (list :audience "peer:beta") 10))))
+      (remhash :synthetic-unreviewed pai-v3.mind::*slot-sources*))))
+
 (run-suite "mind-context")
