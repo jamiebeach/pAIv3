@@ -1,0 +1,9 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Made things</title><script src="/app-shell.js" defer></script>
+<style>
+:root{color-scheme:dark light}*{box-sizing:border-box}body{margin:0;background:#111820;color:#edf0f5;font:16px/1.5 system-ui,sans-serif}main{max-width:1100px;margin:auto;padding:28px 20px}a{color:#b5ceff}h1{font-size:32px;margin-bottom:4px}.sub,.meta{color:#aeb9c7}.item{padding:18px;border:1px solid #344052;border-radius:12px;margin:14px 0;background:#1a2431}.item h2{margin:0 0 8px;font-size:20px}.actions{display:flex;gap:20px;flex-wrap:wrap;margin-top:12px}iframe{width:100%;height:75vh;border:1px solid #344052;border-radius:12px;background:white}#viewer[hidden]{display:none}#error{color:#ffb6ba}
+@media(prefers-color-scheme:light){body{background:#f3f4f6;color:#202a36}.item{background:white;border-color:#d3dae3}a{color:#2354a0}.sub,.meta{color:#586677}}
+</style></head><body><main><h1>Made things</h1><p class="sub">Documents, cards and drafts. Every revision keeps its own link.</p>
+<p id="error" role="status"></p><section id="viewer" hidden><h2 id="title"></h2><p id="detail" class="meta"></p><p class="actions"><a id="download">Download HTML</a><a href="/artifacts">Back to library</a></p><iframe id="preview" title="Document preview" sandbox="" referrerpolicy="no-referrer"></iframe></section>
+<section id="library" aria-label="Recent document revisions"></section></main><script src="/artifacts.js"></script></body></html>

@@ -176,7 +176,7 @@
                        (format nil "Quiet time. You are working on one of your maintained work items (~a, ~a priority):~%~%~a~%~%~
 Purpose: ~a~%How it helps the operator: ~a~%Next useful step: ~a~@[~%Where you got to: ~a~]~%~%~
 Spent so far: ~d of ~d model calls. Take the next useful step now, then use the work_docket tool to record it: ~
-update (progress and the new next step), wait (if it must wait, and for how long), complete, or cancel."
+update (progress and the new next step), wait (if it must wait, and for how long), complete, or cancel. If this work makes a document or card, use document to save an artifact, read earlier revisions to resume, and deliberately keep, deliver or abandon it. A description of what you would make is not the deliverable."
                                id (obj-get pick "priority") (obj-get pick "title") (obj-get pick "purpose")
                                (obj-get pick "operator_benefit") (obj-get pick "next_step") (obj-get pick "note")
                                (obj-get pick "steps") (setting kernel "docket.max_item_steps")))))

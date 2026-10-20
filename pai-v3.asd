@@ -45,6 +45,7 @@
                  (:file "observability")
                  (:file "concerns")
                  (:file "docket")
+                 (:file "artifacts")
                  (:file "carried")
                  (:file "graph")
                  (:file "graph-import")
@@ -92,6 +93,7 @@
                  (:file "watchdog")
                  (:file "carried")
                  (:file "files")
+                 (:file "artifacts")
                  (:file "pwa")))
    (:module "src/recall"
     :serial t

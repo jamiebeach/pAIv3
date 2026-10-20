@@ -105,4 +105,17 @@
       (is (= id (first (pai-v3.kernel::%next-due k))))
       (is (equal "queued" (getf (work-status k id) :status))))))
 
+(deftest artifact-revisions-and-disposition-survive-rebuild
+  (with-temp-kernel (k)
+    (let* ((thought (pai-v3.mind:request-thought k "responding" "Synthetic document"))
+           (doc (obj "title" "Synthetic guide" "sections" (list (obj "text" "Useful notes"))))
+           (saved (pai-v3.mind::save-document k thought doc))
+           (id (obj-get saved "artifact_id")) (revision (obj-get saved "revision")))
+      (pai-v3.mind::set-artifact-state k thought id revision "kept" "Draft for later")
+      (is (eq :done (rebuild-projection k "artifacts" :page-size 2)))
+      (let ((row (pai-v3.mind::artifact-row k id revision)))
+        (is (equal "kept" (seventh row)))
+        (is (= thought (fifth row)))
+        (is (search "Useful notes" (second (pai-v3.mind::artifact-content k row))))))))
+
 (run-suite "maintenance-rebuild")

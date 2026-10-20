@@ -46,6 +46,7 @@
     ;; Tables of the other stores, so their statements are explained too.
     (sql-exec (kernel-db k) pai-v3.trust::+secrets-ddl+)
     (sql-exec (kernel-db k) pai-v3.mind::+images-ddl+)
+    (sql-exec (kernel-db k) pai-v3.mind::+artifact-blobs-ddl+)
     (let ((selects (source-selects)))
       (is (> (length selects) 5) "statements were collected")
       (dolist (entry selects)
