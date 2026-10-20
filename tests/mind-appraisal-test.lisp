@@ -198,4 +198,44 @@
       (run-scheduler-step k)
       (is (< (drive k "appreciation") 0.05)))))
 
+(deftest appraisal-model-is-selected-by-profile-not-a-vendor-allowlist
+  (with-appraisal (k)
+    (change-setting k "llm.profiles"
+                    (list (obj "name" "mercury" "model" "inception/mercury-decide"
+                               "base_url" "https://openrouter.ai/api/v1" "secret" "synthetic"))
+                    :origin *operator*)
+    (change-setting k "affect.appraisal.profile" "mercury" :origin *operator*)
+    (let* ((pai-v3.mind::*decision-profile* nil)
+           (profile (pai-v3.mind::%appraisal-profile k))
+           (seen nil)
+           (response (typed-answer :appreciation 3)))
+      (is (equal "inception/mercury-decide" (pai-v3.mind::provider-profile-model profile)))
+      (setf (gethash "model" response) "inception/mercury-decide-20260930"
+            (pai-v3.mind::provider-profile-transport profile)
+            (lambda (url headers body &key timeout)
+              (declare (ignore url headers timeout))
+              (setf seen (json-parse body))
+              (values 200 nil (json-encode response))))
+      (let ((pai-v3.mind::*decision-profile* profile))
+        (turn k "Thank you for your specific contribution.")
+        (run-scheduler-step k))
+      (is (equal "inception/mercury-decide" (obj-get seen "model")))
+      (is (approx 0.03 (drive k "appreciation")))
+      (is (search "inception/mercury-decide-20260930"
+                  (sql-value (kernel-db k) "SELECT text FROM provider_decisions WHERE request_key=?1 AND part=?2 LIMIT 1"
+                             (sql-value (kernel-db k) "SELECT source_key FROM affect_appraisals WHERE status=?1 LIMIT 1" "applied") 0)))
+      ;; A later selection cannot invalidate a paid receipt from the old model.
+      (setf (gethash "model" response) "typesafe/jev-1.14-synthetic")
+      (is (hash-table-p (pai-v3.mind::%appraisal-judgment response)))
+      (setf (gethash "model" response) " ")
+      (signals error (pai-v3.mind::%appraisal-judgment response))
+      (setf (gethash "model" response) "inception/mercury-decide"
+            (gethash "answers" response) (obj "appreciation" (obj "type" "choice")))
+      (signals error (pai-v3.mind::%appraisal-judgment response)))
+    (change-setting k "llm.profiles"
+                    (list (obj "name" "mercury" "model" " " "base_url" "https://openrouter.ai/api/v1"))
+                    :origin *operator*)
+    (let ((pai-v3.mind::*decision-profile* nil))
+      (signals error (pai-v3.mind::%appraisal-profile k)))))
+
 (run-suite "mind-appraisal")

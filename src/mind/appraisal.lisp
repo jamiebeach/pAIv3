@@ -6,7 +6,7 @@
   :description "Appraise new operator/peer messages before responding with typed decisions. Replaces message keyword/flat connection rules for new opted-in turns; old history keeps its interpretation.")
 (define-setting "affect.appraisal.profile"
   :type :string :default "affect-jev" :group "Affect"
-  :description "Name of the Decisions profile in llm.profiles. No chat/default route fallback.")
+  :description "Name of a Decisions-compatible profile in llm.profiles; its model selects the appraiser. No chat/default route fallback.")
 (define-setting "affect.appraisal.timeout_seconds"
   :type :integer :min 1 :max 5 :default 2 :group "Affect"
   :description "Total deadline for one semantic appraisal HTTP call; failure leaves affect unchanged.")
@@ -152,15 +152,17 @@
       (let* ((name (setting kernel "affect.appraisal.profile"))
              (raw (find name (setting kernel "llm.profiles") :key (lambda (x) (obj-get x "name")) :test #'equal)))
         (unless raw (error "Appraisal profile is not configured"))
-        (unless (equal "typesafe/jev-1.13" (obj-get raw "model")) (error "Appraisal profile must pin typesafe/jev-1.13"))
+        (unless (and (stringp (obj-get raw "model")) (plusp (length (string-trim '(#\Space #\Tab #\Newline) (obj-get raw "model")))))
+          (error "Appraisal profile needs a nonempty Decisions model"))
         (%profile raw))))
 
 (defun %appraisal-judgment (response)
   "Validate every factor, its scale and probability distribution before mapping."
+  ;; The typed contract is shared across Decisions models. Preserve the actual
+  ;; returned model in the finished event, including dated builds and aliases.
   (unless (let ((model (obj-get response "model")))
-            (and (stringp model) (or (equal model "typesafe/jev-1.13")
-                                    (and (> (length model) 18) (eql 0 (search "typesafe/jev-1.13-" model))))))
-    (error "Unexpected decision model"))
+            (and (stringp model) (plusp (length (string-trim '(#\Space #\Tab #\Newline) model)))))
+    (error "Missing decision model"))
   (let ((answers (obj-get response "answers")) (clean (obj)))
     (unless (hash-table-p answers) (error "Missing typed answers"))
     (maphash

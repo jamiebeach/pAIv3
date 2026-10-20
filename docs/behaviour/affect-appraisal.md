@@ -1,4 +1,4 @@
-# Semantic message appraisal with JEV
+# Semantic message appraisal with Decisions models
 
 New operator and authenticated fleet messages can receive one typed semantic
 appraisal before response work runs. This is perception on the existing kernel
@@ -43,8 +43,12 @@ call accounting, spend events and observability captures use existing mechanisms
 The request includes provider preferences denying data collection and requiring
 ZDR; there is no automatic privacy relaxation or provider fallback.
 
-The profile pins `typesafe/jev-1.13`; the returned model must match that release
-or its dated snapshot. Questions and criteria live together in
+The operator selects a named `llm.profiles` entry through
+`affect.appraisal.profile`. Its `model` can be any model supporting the Decisions
+API's Score contract, such as `typesafe/jev-1.13` or `inception/mercury-decide`.
+There is no vendor allowlist. The returned model name is required and recorded
+with the outcome, including provider canonical builds. Stored judgments and
+receipts remain usable after a profile change. Questions and criteria live together in
 `+appraisal-questions+` in `mind/appraisal.lisp`. One call asks six independent
 Score questions: appreciation, connection, curiosity, closure, valence and arousal.
 Each scale has concrete descriptions, with neutral/insufficient-evidence levels.
@@ -114,7 +118,7 @@ budget can expire as stale after five minutes; it then applies no late change.
 ## Configuration and compatibility
 
 `affect.appraisal.enabled` defaults false for safe unconfigured first runs. Set
-`affect.appraisal.profile` to a named JEV entry in `llm.profiles`, then enable it.
+`affect.appraisal.profile` to a named Decisions-compatible entry in `llm.profiles`, then enable it.
 There is no fallback to the default chat route. The ordinary settings interface
 owns timeout and directional probability threshold too.
 
@@ -129,9 +133,23 @@ Synthetic contracts verify payload shape, accounting/raw retention, order,
 probability gates, per-agent mapping, failure/deadline behavior, deduplication,
 privacy and rebuild parity. Separate bounded live tests of the pinned model use
 synthetic messages to check actual semantic quality, usage and latency before
-activation. Scores and their concentration are judgments, not proof of subjective
+activation or switching models. Probability calibration differs between models;
+rerun the synthetic acceptance set with the same gate before switching. Existing
+installations retain their selected JEV profile until the operator changes it.
+Scores and their concentration are judgments, not proof of subjective
 experience; real conversational fit still needs observation.
 
 Sources: [OpenRouter Decisions API](https://openrouter.ai/docs/api/api-reference/alphadecisions/submit-a-decisions-request),
 [JEV tutorial](https://openrouter.ai/docs/guides/community/jev-tutorial),
 [TypeSafe Score](https://docs.typesafe.ai/primitives/score).
+
+For example, add a profile named `affect-mercury` with base URL
+`https://openrouter.ai/api/v1`, model `inception/mercury-decide`, an existing
+OpenRouter secret reference, and the appropriate per-token pricing. Select it
+with `affect.appraisal.profile="affect-mercury"` after qualification. Preserve
+other profiles and conversation routes. Unsupported models fail the typed
+contract without changing affect; they are never sent a chat request instead.
+Privacy preferences, accounting, deadlines and duplicate protection are the same
+for every model. Model selection does not relax ZDR requirements.
+
+See [OpenRouter's Decisions model selection guidance](https://github.com/OpenRouterTeam/skills/blob/main/skills/openrouter-decisions/references/models.md).
