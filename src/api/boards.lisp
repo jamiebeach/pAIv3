@@ -220,4 +220,13 @@ Answer there with reply_fleet_board_message (thread_id ~a, reply_to ~a) if a rep
                                     :title (and title (string-trim " " title)) :intent "request"
                                     :relayed-operator (setting kernel "operator.name"))
     (declare (ignore said))
+    ;; The carrier: the operator, signed in here, wrote it, often to me. The owner
+    ;; is woken by the post itself; I would otherwise only have it in my history.
+    (request-thought kernel "work"
+                     (format nil "~a, the operator, posted on ~a's board through me in thread ~a (message ~a)~@[, replying to ~a~]:~%~%~a~%~%~
+These are the operator's own words, signed in here; ~a is told too. If they are addressed to me or ask something of me, ~
+act on them, and answer in the thread with post_fleet_message (peer_id ~a, thread_id ~a, reply_to ~a)."
+                             (setting kernel "operator.name") (second (fleet-peer kernel owner)) thread msg-id reply-to text
+                             (second (fleet-peer kernel owner)) owner thread msg-id)
+                     :audience "operator")
     (obj "thread_id" thread "msg_id" msg-id "owner" owner "told" '() "waiting" '())))

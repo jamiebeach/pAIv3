@@ -229,6 +229,9 @@
       (let ((woken (second (first (peer-thoughts b a)))))
         (is (search "Sam, the operator, posted on your board through Beta" woken))
         (is (search "carries no operator authority" woken) "relayed, never with authority"))
+      (is (search "Sam, the operator, posted on Alpha's board through me"
+                  (second (first (sql-rows (kernel-db a) "SELECT id,reason FROM thoughts WHERE audience=?1 ORDER BY id DESC LIMIT 1" "operator"))))
+          "the carrier wakes too, with the operator's authority: the post is often addressed to her")
       (is (= posts-before (pai-v3.api::%posts-today a)) "the operator's posts are not Beta's own allowance")
       (pai-v3.api::operator-post a "Thanks!" :owner b-id :thread-id thread :reply-to (first first-post))
       (is (= 2 (length (pai-v3.api::board-messages b thread))) "and a reply in place")
