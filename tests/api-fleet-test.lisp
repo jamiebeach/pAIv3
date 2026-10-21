@@ -611,7 +611,26 @@
     (is (equal "edited" (sql-value (kernel-db a) "SELECT fate FROM fleet_drafts WHERE speaking_thought_id=?1 LIMIT 1" review)))
     (is (equal "settled" (obj-get (first (pai-v3.api::recent-drafts a)) "state")) "the observability page sees it")
     (is (search "SYNTHETIC-CHECKED" (json-encode (pai-v3.api::board-index-json b))))
-    (is (null (pai-v3.api::board-index-json b :peer "unrelated")))))))
+    (is (null (pai-v3.api::board-index-json b :peer "unrelated")))
+    (flet ((review (text)
+             (let ((w (request-thought a "work" "Synthetic peer stimulus" :audience (format nil "peer:~a" peer))))
+               (funcall (pai-v3.mind::tool-run (gethash "draft_fleet_message" *tools*)) a w (obj "peer_id" peer "text" text))
+               (append! a "thought.ended" (obj "thought_id" w "outcome" "concluded" "summary" "Synthetic work complete")))
+             (pai-v3.api::speak-drafts a)
+             (let ((r (sql-value (kernel-db a) "SELECT speaking_thought_id FROM fleet_drafts WHERE text=?1 LIMIT 1" text)))
+               (pai-v3.mind::answer (pai-v3.mind::make-mind :kernel a :thought (thought-row a r))
+                 (obj "content" (if (search "WRAPPED" text)
+                                    "Here is my check:
+```json
+{\"decision\":\"send\",\"text\":\"SYNTHETIC-WRAPPED-SENT\",\"images\":[]}
+```"
+                                    "Not JSON at all.")))
+               (sql-row (kernel-db a) "SELECT state,fate,note FROM fleet_drafts WHERE speaking_thought_id=?1 LIMIT 1" r))))
+      (is (equal '("settled" "edited") (subseq (review "SYNTHETIC-WRAPPED") 0 2)) "JSON inside prose or fences is read")
+      (is (search "SYNTHETIC-WRAPPED-SENT" (json-encode (pai-v3.api::board-index-json b))))
+      (let ((row (review "SYNTHETIC-UNREADABLE")))
+        (is (equal '("settled" "dropped") (subseq row 0 2)) "an unreadable answer drops the draft instead of stranding it")
+        (is (search "not readable" (third row)))))))))
 
 (deftest restricted-publication-is-enforced-on-the-receiving-board
  (with-two-agents (a b)

@@ -252,14 +252,24 @@
         (let ((draft (and (getf thought :communicating) (%review-draft kernel (getf thought :root-id)))))
           (and draft (%draft-envelope kernel (first draft))))))
 
+(defun %review-result (text)
+  "The review's JSON object, found inside any prose or fences around it, or NIL."
+  (let* ((text (or text "")) (lb (position #\{ text)) (rb (position #\} text :from-end t))
+         (parsed (and lb rb (< lb rb) (ignore-errors (json-parse (subseq text lb (1+ rb)))))))
+    (and (hash-table-p parsed) parsed)))
+
 (setf pai-v3.mind::*communication-answer*
       (lambda (kernel thought text)
        (block nil
         (unless (%review-draft kernel (getf thought :root-id)) (return nil))
         (let* ((draft (%review-draft kernel (getf thought :root-id)))
-               (result (json-parse text)) (decision (obj-get result "decision")))
-          (unless (and draft (member decision '("send" "drop") :test #'equal))
-            (error "Invalid communication filter result; nothing sent"))
+               (result (or (%review-result text)
+                           ;; A disclosure check that cannot be read sends nothing, and says so.
+                           (obj "decision" "drop" "note" "the review's answer was not readable JSON; nothing sent")))
+               (decision (obj-get result "decision")))
+          (unless (member decision '("send" "drop") :test #'equal)
+            (setf result (obj "decision" "drop" "note" "the review gave no send or drop decision; nothing sent")
+                  decision "drop"))
           (destructuring-bind (id peer thread reply intent) draft
             (let ((fate "dropped"))
               (when (equal decision "send")
