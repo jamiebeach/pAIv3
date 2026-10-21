@@ -13,10 +13,10 @@
         (is (search "If nothing warrants action" prefix))
         (is (search "TOOL_INDEX" prefix))
         (is (not (search "Choosing a useful contribution" (obj-get (third frame) "content"))))))
-    (dolist (audience '("peer:beta" "external" "coding-agent" "person:guest"))
+    (dolist (audience '("external" "coding-agent" "person:guest"))
       (let ((frame (funcall pai-v3.mind::*assemble-thought-context* k
                            (list :origin "work" :audience audience :id 0 :reason "Synthetic task") nil)))
-        (is (not (search "Choosing a useful contribution" (json-encode frame))))))
+        (is (search "Choosing a useful contribution" (json-encode frame)))))
     (is (null (pai-v3.mind::initiative-guidance (list :origin "responding" :audience "operator"))))))
 
 (deftest private-initiative-has-a-draft-boundary-and-making-tools-in-hand
@@ -33,8 +33,8 @@
          (hand (pai-v3.mind::tools-in-hand row (tools-for row) nil)))
     (is (find "document" hand :key #'pai-v3.mind::tool-name :test #'equal)))
   (let ((row (list :origin "work" :audience "peer:beta")))
-    (is (not (pai-v3.mind::private-initiative-p row)))
-    (is (pai-v3.mind::tool-available-p (gethash "post_fleet_message" *tools*) row))))
+    (is (pai-v3.mind::private-initiative-p row))
+    (is (not (pai-v3.mind::tool-available-p (gethash "post_fleet_message" *tools*) row)))))
 
 (deftest review-exploration-and-making-keep-their-specific-tasks
   (let ((review (pai-v3.mind::conversation-review-prompt))

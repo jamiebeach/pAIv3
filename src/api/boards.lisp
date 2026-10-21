@@ -5,39 +5,48 @@
 
 ;;; The operator's board page (/board-view): my own board, read as a forum.
 
-(defun board-index-json (kernel)
-  "Threads, latest activity first, each with its opening post, post count and last poster."
-  (mapcar (lambda (row)
-            (let* ((messages (board-messages kernel (first row)))
-                   (first-post (first messages))
-                   (last-post (car (last messages)))
-                   (o (%thread-json row)))
-              (setf (gethash "posts" o) (length messages)
-                    (gethash "starter" o) (if first-post (third first-post) :null)
-                    (gethash "preview" o) (if first-post (subseq (fourth first-post) 0 (min 240 (length (fourth first-post)))) "")
-                    (gethash "last_author" o) (if last-post (third last-post) :null)
-                    (gethash "last_at" o) (if last-post (eighth last-post) (sixth row)))
-              o))
-          (board-threads kernel :limit 200)))
+(defun board-message-visible-p (kernel message peer)
+  "PEER is the verified reader; NIL is the local private/operator view."
+  (let ((allowed (and peer (sql-value (kernel-db kernel) "SELECT peer_id FROM fleet_board_disclosures WHERE msg_id=?1 LIMIT 1" (first message)))))
+    (or (null allowed) (equal allowed peer))))
 
-(defun board-thread-json (kernel thread-id)
-  "One thread with all its posts, or NIL."
-  (let ((row (board-thread kernel thread-id)))
-    (and row
-         (let ((o (%thread-json row)))
-           (setf (gethash "messages" o)
-                 (mapcar (lambda (m) (%message-json m thread-id kernel)) (board-messages kernel thread-id)))
-           o))))
+(defun %visible-board-messages (kernel thread peer)
+  (remove-if-not (lambda (message) (board-message-visible-p kernel message peer)) (board-messages kernel thread)))
+
+(defun board-index-json (kernel &key peer)
+  "Only visible messages contribute previews/counts. Entirely private threads are hidden."
+  (loop for row in (board-threads kernel :limit 200)
+        for all = (board-messages kernel (first row))
+        for messages = (remove-if-not (lambda (m) (board-message-visible-p kernel m peer)) all)
+        when (or (null peer) messages)
+          collect (let* ((first-post (first messages)) (last-post (car (last messages))) (o (%thread-json row)))
+                    (when (and peer all (not (board-message-visible-p kernel (first all) peer)))
+                      (setf (gethash "title" o) "Restricted thread"))
+                    (setf (gethash "posts" o) (length messages)
+                          (gethash "starter" o) (if first-post (third first-post) :null)
+                          (gethash "preview" o) (if first-post (subseq (fourth first-post) 0 (min 240 (length (fourth first-post)))) "")
+                          (gethash "last_author" o) (if last-post (third last-post) :null)
+                          (gethash "last_at" o) (if last-post (eighth last-post) (sixth row))) o)))
+
+(defun board-thread-json (kernel thread-id &key peer)
+  (let* ((row (board-thread kernel thread-id))
+         (messages (and row (%visible-board-messages kernel thread-id peer))))
+    (when (and row (or (null peer) messages))
+      (let ((o (%thread-json row)) (all (board-messages kernel thread-id)))
+        (when (and peer all (not (board-message-visible-p kernel (first all) peer)))
+          (setf (gethash "title" o) "Restricted thread"))
+        (setf (gethash "messages" o) (mapcar (lambda (m) (%message-json m thread-id kernel)) messages)) o))))
 
 ;;; The fleet view (bead v3-b3s): every board in the group in one list, for
 ;;; the operator. Each peer's board is read over the signed routes peers
 ;;; already use to read each other's; nothing new is exposed.
 
-(defun board-image (kernel thread-id image-id)
+(defun board-image (kernel thread-id image-id &key peer)
   "IMAGE-ID as a data URL when it is attached to a message in THREAD-ID on
 my board; else NIL. Only what the board already shows is served."
   (and (stringp thread-id) (stringp image-id) (board-thread kernel thread-id)
-       (some (lambda (m) (member image-id (board-message-images kernel (tenth m)) :test #'equal))
+       (some (lambda (m) (and (board-message-visible-p kernel m peer)
+                              (member image-id (board-message-images kernel (tenth m)) :test #'equal)))
              (board-messages kernel thread-id))
        (pai-v3.mind::image-data-url kernel image-id)))
 
@@ -148,7 +157,7 @@ To join in, answer there with post_fleet_message. It is their board: read it as 
   :run (lambda (kernel id args)
          (%tool-text (lambda ()
                        (read-peer-board kernel (obj-get args "peer") (%given (obj-get args "thread_id"))
-                                        (getf (thought-row kernel id) :audience))))))
+                                        (pai-v3.mind::thought-reading-audience (thought-row kernel id)))))))
 
 ;;; The operator on the board (operator request 2026-10-17): posting on this
 ;;; agent's board, a new thread or a reply, and telling chosen peers, for

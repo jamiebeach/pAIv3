@@ -200,7 +200,7 @@ operator's knowledge, so nothing for another audience."
       (is (not (search "I wrote" shape)) "no quotes"))
     (let ((tool (gethash "knowledge_shape" *tools*)))
       (is (member tool (tools-for (list :audience "coding-agent"))))
-      (is (not (member (gethash "knowledge" *tools*) (tools-for (list :audience "coding-agent"))))
+      (is (not (member (gethash "knowledge" *tools*) (tools-for (list :audience "coding-agent" :communicating t))))
           "the content stays the operator's"))))
 
 (deftest fiction-stays-in-its-world

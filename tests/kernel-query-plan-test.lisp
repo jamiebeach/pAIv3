@@ -56,4 +56,12 @@
             (is (not (full-scan-p detail))
                 (format nil "~a: ~a -- ~a" (car entry) detail (cdr entry)))))))))
 
+(deftest peer-wake-window-uses-an-audience-time-range-index
+ (with-temp-kernel (k)
+  (let ((plan (format nil "~s" (sql-rows (kernel-db k)
+       "EXPLAIN QUERY PLAN SELECT count(*) FROM thoughts t WHERE t.audience=?1 AND t.created_at>=?2 AND t.parent_id IS NULL AND t.origin='work' AND NOT EXISTS (SELECT 1 FROM fleet_drafts d WHERE d.speaking_thought_id=t.id LIMIT 1) LIMIT 1"
+       "peer:synthetic" "2026-01-01T00:00:00Z"))))
+   (is (search "thoughts_audience_time_idx" plan))
+   (is (not (search "SCAN t" plan))))))
+
 (run-suite "kernel-query-plan")

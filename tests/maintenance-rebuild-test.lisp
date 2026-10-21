@@ -175,4 +175,55 @@
       (is (equal "ready" (projection-status k "provider_decisions")))
       (is (null (projections-not-ready k))))))
 
+(deftest draft-envelopes-rebuild-and-old-store-startup-needs-no-replay
+  (let ((path (temp-path))
+        (projection (gethash "fleet_draft_envelopes" pai-v3.kernel::*projections*)) (head nil))
+    (unwind-protect
+         (progn
+           (remhash "fleet_draft_envelopes" pai-v3.kernel::*projections*)
+           (with-temp-kernel (k :path path)
+             (pai-v3.mind:request-thought k "work" "Historical peer work" :audience "peer:synthetic")
+             (setf head (ledger-head k))))
+      (setf (gethash "fleet_draft_envelopes" pai-v3.kernel::*projections*) projection))
+    (with-temp-kernel (k :path path)
+      (is (= head (ledger-head k)))
+      (is (equal "ready" (projection-status k "fleet_draft_envelopes")))
+      (is (null (projections-not-ready k)))
+      (append! k "fleet.draft.envelope" (obj "draft_id" "synthetic" "images" '("synthetic-image") "sharing_topics" '("daily-brief")))
+      (let ((before (projection-digest k "fleet_draft_envelopes")))
+        (is (eq :done (rebuild-projection k "fleet_draft_envelopes" :page-size 1)))
+        (is (equal before (projection-digest k "fleet_draft_envelopes")))))))
+
+(deftest board-disclosure-projection-rebuilds-from-its-events
+ (with-temp-kernel (k)
+  (append! k "fleet.board.disclosure" (obj "msg_id" "synthetic-message" "peer_id" "synthetic-recipient"))
+  (let ((before (projection-digest k "fleet_board_disclosures")))
+   (is (eq :done (rebuild-projection k "fleet_board_disclosures" :page-size 1)))
+   (is (equal before (projection-digest k "fleet_board_disclosures"))))))
+
+(deftest private-peer-reasoning-stays-private-after-rebuild
+ (with-temp-kernel (k)
+  (let ((id (pai-v3.mind:request-thought k "work" "Synthetic peer stimulus" :audience "peer:synthetic")))
+   (pai-v3.mind::%record-text k id "model" "PRIVATE-REPLAY-CANARY")
+   (let ((before (projection-digest k "experience")))
+    (is (eq :done (rebuild-projection k "experience" :page-size 1)))
+    (is (equal before (projection-digest k "experience")))
+    (is (null (pai-v3.mind::search-experience k "PRIVATE-REPLAY-CANARY" "peer:synthetic")))
+    (is (pai-v3.mind::search-experience k "PRIVATE-REPLAY-CANARY" "operator"))))))
+
+(deftest old-store-adds-empty-board-disclosure-state-without-replay
+ (let ((path (temp-path)) (head nil)
+       (projection (gethash "fleet_board_disclosures" pai-v3.kernel::*projections*)))
+  (unwind-protect
+   (progn
+    (remhash "fleet_board_disclosures" pai-v3.kernel::*projections*)
+    (with-temp-kernel (k :path path)
+     (pai-v3.mind:request-thought k "work" "Historical synthetic work")
+     (setf head (ledger-head k))))
+   (setf (gethash "fleet_board_disclosures" pai-v3.kernel::*projections*) projection))
+  (with-temp-kernel (k :path path)
+   (is (= head (ledger-head k)))
+   (is (equal "ready" (projection-status k "fleet_board_disclosures")))
+   (is (null (projections-not-ready k))))))
+
 (run-suite "maintenance-rebuild")

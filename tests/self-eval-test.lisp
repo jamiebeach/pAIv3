@@ -63,7 +63,7 @@
 (deftest agent-made-tools-are-operator-trust
   (with-temp-kernel (k)
     (ev k "(define-tool \"weather\" :description \"Say the weather.\" :run (lambda (k id a) (declare (ignore k id a)) \"sunny\"))")
-    (let ((guest (list :origin "responding" :audience "person:sam"))
+    (let ((guest (list :origin "responding" :audience "person:sam" :communicating t))
           (own (list :origin "private" :audience "operator")))
       (is (find "weather" (tools-for own) :key #'tool-name :test #'equal))
       (is (null (find "weather" (tools-for guest) :key #'tool-name :test #'equal)))

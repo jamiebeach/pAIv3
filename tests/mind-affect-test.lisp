@@ -205,7 +205,7 @@
       (let* ((peer (request-thought k "work" "A public topic" :audience "peer:beta"))
              (run (pai-v3.mind::tool-run (gethash "feel" *tools*)))
              (reply (funcall run k peer (obj "changes" (obj "arousal" 0.01) "cause" "Fixture"))))
-        (is (not (search "SYNTHETIC_PRIVATE_INTEREST" reply))))
+        (is (search "SYNTHETIC_PRIVATE_INTEREST" reply)))
       (dolist (name '("connection" "curiosity" "closure" "appreciation"))
         (append! k "drive.triggered" (obj "drive" name "amount" 0 "target" (make-string 2000 :initial-element #\x))))
       (multiple-value-bind (rows used status)

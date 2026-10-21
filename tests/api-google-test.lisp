@@ -141,8 +141,8 @@
         "nothing new: no new digest")
     (let ((tool (gethash "mail" *tools*)))
       (is (pai-v3.mind::tool-available-p tool '(:audience "external")))
-      (is (not (pai-v3.mind::tool-available-p (gethash "shell" *tools*) '(:audience "external"))) "no shell for outside content")
-      (is (not (pai-v3.mind::tool-available-p (gethash "lisp_eval" *tools*) '(:audience "external")))))))
+      (is (not (pai-v3.mind::tool-available-p (gethash "shell" *tools*) '(:audience "external" :communicating t))) "no shell for outside content")
+      (is (not (pai-v3.mind::tool-available-p (gethash "lisp_eval" *tools*) '(:audience "external" :communicating t)))))))
 
 ;;; More than one account (operator request 2026-10-18)
 

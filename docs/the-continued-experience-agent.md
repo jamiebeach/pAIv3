@@ -241,15 +241,19 @@ The agent always knows the **audience**: the verified principals who will see
 what they say. Everything the agent knows carries **ownership and
 sensitivity**: whose information it is, and which audiences may receive it
 (for example, *operator finances: operator only*; *operator health: operator
-only*; *the agent's own reflections: operator and peers*; *public facts:
+only*; *the agent's private reflections: operator only until deliberately shared*; *public facts:
 anyone*). Sensitivity is assigned when information enters memory, from its
 source and topic, and the operator can adjust it.
 
-Disclosure is enforced **before** deliberate thought: memories, knowledge and
-percepts not shareable with the current audience are never placed in the
-model's context. The agent is told only that restricted information exists on
-a topic, so they can decline gracefully ("that's not something I can discuss
-here") rather than either leaking or pretending not to know.
+Every entity stimulus follows the same path: **private thinking with the
+pAI's full normal context and capabilities → proposed communication →
+recipient access check → send** (operator, 2026-10-21). The agent can know
+something privately without being allowed to disclose it. Source provenance
+still distinguishes an operator instruction from a peer request or outside
+data; it does not create different private selves. Recipient permissions
+apply when communicating, not when privately considering the stimulus.
+No avatar, calendar or other resource needs a special private-access rule.
+The communication check filters the candidate rather than redoing its task.
 
 Grants are explicit and visible: the operator can grant a person or peer
 access to a topic, and revoke it.
@@ -420,9 +424,9 @@ operator (Sam) and the agent (Alpha); a peer agent is Beta.
    percept.*
 6. **Restricted request.** In a chat with another person, Alpha is asked about
    Sam's finances and politely declines.
-   *Origin: known person, not operator; audience excludes operator-only
-   material; finance memories are never placed in context; Alpha knows a
-   restriction exists and declines.*
+   *Origin: known person, not operator. Alpha considers the request privately;
+   the recipient's access excludes operator-only finances, so the proposed
+   communication declines without disclosing those private facts.*
 7. **Anticipated email.** An email Sam has been waiting for arrives; Alpha
    sends a push notification with details.
    *Anticipation in the present (from earlier conversation) → language
@@ -458,7 +462,7 @@ operator (Sam) and the agent (Alpha); a peer agent is Beta.
 | Nothing lost | No failure blocks (§13.3) |
 | Initiative and acting | Scheduler rules and tool handlers (spec §16) |
 | Self-modification and proposals | Sandboxed eval, host bridge to Beadwork (spec §16) |
-| Trust, audiences, disclosure | Verified origin on envelope; sensitivity on memory rows; filtering before context (spec §16) |
+| Trust, audiences, disclosure | Verified origin on envelope; sensitivity on memory rows; private thinking, then recipient-checked communication (spec §16) |
 | Reply from the present | Context assembly (§5, §14) |
 | Remembering, strength | Memory and KG modules, exact recall (§5.4, §13.2) |
 | Formation | Persona projection with lineage (spec §16) |

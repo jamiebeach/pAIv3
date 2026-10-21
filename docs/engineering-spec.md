@@ -772,9 +772,16 @@ enrolled channel (`origin.stepup.requested`, operator confirms).
 **Authority.** Only operator origin may direct, configure, approve or grant.
 Peer and person origins may ask and inform. Unknown origin is data only.
 
-**Audience.** Each thought has an `audience`: the verified principals who
-will receive anything it produces. The kernel computes it from the channel
-and participants before context assembly and stores it on the thought.
+**Private thinking and communication (operator, 2026-10-21).** Every entity
+stimulus is considered privately with the pAI's full normal context and
+capabilities. The persisted `audience` retains the stimulus provenance and
+reply destination; it does not restrict the private self's reading scope.
+This never upgrades a peer, person or unknown source to operator authority.
+
+A proposed communication crosses a separate recipient access boundary before
+publication. The communication filter checks the candidate, rather than
+repeating its task with an artificially restricted mind. The sender owns the
+verified destination and route. See [the phase design](behaviour/private-thinking.md).
 
 **Sensitivity.** Every memory row, KG fact and entity, percept and summary
 carries `owner` and `sensitivity` from a small operator-editable taxonomy:
@@ -792,12 +799,16 @@ classifier; when uncertain, the more restrictive class), adjustable by the
 operator in the UI, and inherited by derived rows: summaries take the most
 restrictive of their sources, and consolidation preserves it.
 
-**Enforcement before context.** The context assembler and every recall and
-KG query take the thought's audience and filter in SQL. Withheld rows never
-reach the model. The assembler adds a `restricted` slot listing only topic
-labels of withheld material relevant to the query ("operator finances"), so
-the agent can decline gracefully. Tools enforce the same filter: a
-peer-audience thought cannot read operator-only memory through search.
+**Enforcement at communication.** Private context assembly and retrieval
+use the pAI's own scope, with normal bounded SQL reads. There are no
+resource-specific exceptions or per-source private capability allowlists.
+Recipient permissions apply to the proposed communication. A tool-free
+filter receives the candidate and current recipient grants; the checked
+sender validates its destination, attachments and grants before publishing.
+The reasoning used to decide what to share remains private. Existing
+sensitivity filters still govern recipient-facing retrieval and disclosure;
+they do not determine what the private pAI may know. Free-form disclosure
+judgment remains fallible and is not an arbitrary-code security sandbox.
 
 **Grants.** `trust.granted` / `trust.revoked {principal, topic, scope}`,
 from operator origin only; inline `grants` projection; visible and editable
@@ -809,7 +820,8 @@ Agents get read-only inspection tools over their own v3 state: projection
 rows by id or bounded query, projection status and cursors, quarantine and
 degraded entities, live changes and proposals, and the counts and digests
 used by migration verification. They run over `:view`s with `LIMIT`, are
-audience-filtered, and never read the ledger directly. These tools implement
+scoped to the private pAI during thinking and recipient-filtered when shared,
+and never read the ledger directly. These tools implement
 agent doc §14 term 7.
 
 ### 16.7 Memory strength and formation
@@ -920,8 +932,10 @@ Redefinitions of system functions are *repairs*. A repair stays live until
 restart, then is marked `lost-on-restart` and raised as a concern, so the
 agent proposes it through Beadwork and it gets incorporated. A package lock
 is a tripwire, not a sandbox: code in the image can reach anything. The real
-boundaries are that only operator-trust thoughts get `lisp-eval`, every form
-is audited, and the process holds no host credentials.
+boundaries are the trusted private pAI, auditing every form, and keeping host
+credentials outside the process. The historical `operator-trust` tool label
+means private capability scope; it does not attest that the stimulus came
+from the operator. Communication filters execute no tools.
 
 ## 17. Storage, keys and portability (operator, 2026-10-12)
 

@@ -9,6 +9,7 @@
 (defparameter *operator* (obj "principal_type" "operator" "auth_method" "passkey"))
 (defvar *port-a* (+ 45000 (random 2000)))
 (defvar *port-b* (+ 47000 (random 2000)))
+(defvar *next-fleet-test-port* 44000)
 
 (defun address (port) (format nil "http://127.0.0.1:~d" port))
 
@@ -20,8 +21,9 @@
 (defmacro with-two-agents ((a b) &body body)
   `(let ((secrets (db-open (format nil "/tmp/pai-v3-fleet-secrets-~d.db" (random 100000000)) :key *test-key*)))
      (pai-v3.trust:open-secrets secrets)
-     ;; Fresh ports each time: a pooled connection to a stopped agent answers 503.
-     (setf *port-a* (+ 45000 (random 2000)) *port-b* (+ 47000 (random 2000)))
+     ;; Never reuse a port in this process: random selection can collide with
+     ;; another fixture's closing listener or pooled connection.
+     (setf *port-a* (incf *next-fleet-test-port* 2) *port-b* (1+ *port-a*))
      (unwind-protect
           (with-temp-kernel (,a :agent-id "beta")
             (with-temp-kernel (,b :agent-id "alpha")
@@ -293,8 +295,8 @@
         (notify (gethash "notify_operator" pai-v3.mind::*tools*)))
     (dolist (tool (list post reply board))
       (is (not (pai-v3.mind::tool-available-p tool '(:origin "reflection" :audience "operator"))) "no publishing while reflecting")
-      (is (pai-v3.mind::tool-available-p tool '(:origin "responding" :audience "operator")) "but in conversation, yes")
-      (is (pai-v3.mind::tool-available-p tool '(:origin "work" :audience "peer:x")) "and answering a peer, yes"))
+      (is (not (pai-v3.mind::tool-available-p tool '(:origin "responding" :audience "operator"))) "operator cognition drafts too")
+      (is (not (pai-v3.mind::tool-available-p tool '(:origin "work" :audience "peer:x"))) "peer-triggered cognition drafts too"))
     (is (pai-v3.mind::tool-available-p draft '(:origin "reflection" :audience "operator")))
     (is (pai-v3.mind::tool-available-p notify '(:origin "reflection" :audience "operator")) "the operator may hear anything")))
 
@@ -314,7 +316,7 @@
       (is (search "not one of my peers" (funcall draft reflection "peer_id" "nobody" "text" "x")))
       (funcall draft reflection "peer_id" a-id "text" "second") (funcall draft reflection "peer_id" a-id "text" "third")
       (is (search "at most 3" (funcall draft reflection "peer_id" a-id "text" "fourth")) "a few drafts to a reflection")
-      (is (search "drafts are for private operator-context initiative"
+      (is (search "left for"
                   (funcall (pai-v3.mind::tool-run (gethash "draft_fleet_message" pai-v3.mind::*tools*)) b
                            (request-thought b "responding" "not a reflection" :audience "operator")
                            (obj "peer_id" a-id "text" "x"))))
@@ -435,7 +437,7 @@
           (let* ((draft-id (obj-get (first (pai-v3.api::draft-rows b :state "speaking")) "draft_id"))
                  (speaking (sql-value (kernel-db b) "SELECT speaking_thought_id FROM fleet_drafts WHERE draft_id=?1 LIMIT 1" draft-id))
                  (row (thought-row b speaking)))
-            (is (search "post_fleet_message" (getf row :reason)))
+            (is (search "Reply route:" (getf row :reason)))
             (is (not (search "reply_fleet_board_message" (getf row :reason))))
             (is (search "Posted to"
                         (funcall (pai-v3.mind::tool-run (gethash "post_fleet_message" *tools*)) b speaking
@@ -511,10 +513,10 @@
       (is (= 3 (length (pai-v3.api::board-messages b (first (first (pai-v3.api::board-threads b)))))))
       (is (= 2 (length (peer-thoughts b a))) "the third waits on the board"))))
 
-(deftest peer-thoughts-get-fleet-tools-but-no-operator-tools
-  (let ((peer '(:audience "peer:x")) (guest '(:audience "guest")))
-    (is (pai-v3.mind::tool-available-p (gethash "reply_fleet_board_message" *tools*) peer))
-    (is (pai-v3.mind::tool-available-p (gethash "post_fleet_message" *tools*) '(:audience "operator")))
+(deftest communication-uses-recipient-scope-while-private-thinking-keeps-its-capabilities
+  (let ((peer '(:audience "peer:x" :communicating t)) (guest '(:audience "guest")))
+    (is (not (pai-v3.mind::tool-available-p (gethash "reply_fleet_board_message" *tools*) peer)))
+    (is (not (pai-v3.mind::tool-available-p (gethash "post_fleet_message" *tools*) '(:audience "operator"))))
     (is (not (pai-v3.mind::tool-available-p (gethash "post_fleet_message" *tools*) guest)))
     (is (not (pai-v3.mind::tool-available-p (gethash "lisp_eval" *tools*) peer)))
     (is (not (pai-v3.mind::tool-available-p (gethash "shell" *tools*) peer)))))
@@ -586,5 +588,69 @@
            (key (format nil "board:~a" (obj-get reply "msg_id"))))
       (is (pai-v3.mind::appraisal-row k key))
       (is (equal "affect-appraise" (sql-value (kernel-db k) "SELECT handler FROM v3_work WHERE status=?1 ORDER BY priority,id LIMIT 1" "queued"))))))
+
+(deftest a-tool-free-filter-sends-only-to-the-recorded-recipient
+ (with-two-agents (a b)
+  (join a b)
+  (let* ((peer (pai-v3.api::fleet-agent-id b))
+         (id (request-thought a "work" "Synthetic peer stimulus" :audience (format nil "peer:~a" peer))))
+   (funcall (pai-v3.mind::tool-run (gethash "draft_fleet_message" *tools*)) a id
+            (obj "peer_id" peer "text" "SYNTHETIC-CANDIDATE"))
+   (append! a "thought.ended" (obj "thought_id" id "outcome" "concluded" "summary" "Synthetic work complete"))
+   (pai-v3.api::speak-drafts a)
+   (let* ((review (sql-value (kernel-db a) "SELECT speaking_thought_id FROM fleet_drafts WHERE state=?1 LIMIT 1" "speaking"))
+          (thought (thought-row a review)))
+    (is (null (tools-for thought)))
+    (pai-v3.mind::answer (pai-v3.mind::make-mind :kernel a :thought thought)
+      (obj "content" (json-encode (obj "decision" "send" "text" "SYNTHETIC-CHECKED"
+                                     "images" nil "peer_id" "FORGED-DESTINATION" "note" "Synthetic safe edit"))))
+    (is (equal "settled" (sql-value (kernel-db a) "SELECT state FROM fleet_drafts WHERE speaking_thought_id=?1 LIMIT 1" review)))
+    (is (search "SYNTHETIC-CHECKED" (json-encode (pai-v3.api::board-index-json b))))
+    (is (null (pai-v3.api::board-index-json b :peer "unrelated")))))))
+
+(deftest restricted-publication-is-enforced-on-the-receiving-board
+ (with-two-agents (a b)
+  (join a b)
+  (let* ((bid (pai-v3.api::fleet-agent-id b))
+         (image (pai-v3.mind::store-image a +tiny-png+)))
+   (multiple-value-bind (said thread message)
+       (pai-v3.api::fleet-post a bid "SYNTHETIC-PRIVATE-COMMUNICATION" :restricted t :images (list image))
+    (declare (ignore message))
+    (is (search "Posted" said))
+    (is (pai-v3.api::board-thread-json b thread))
+    (is (pai-v3.api::board-image b thread image))
+    (is (search "SYNTHETIC-PRIVATE" (json-encode
+          (pai-v3.api::%fleet-http a (address *port-b*) (format nil "/board/thread?id=~a" thread) nil :peer-id bid :method :get))))
+    (with-temp-kernel (c)
+     (fleet-setup c "Gamma" (+ *port-a* 2))
+     (let ((cid (pai-v3.api::fleet-agent-id c))
+           (key "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"))
+      (pai-v3.api::%keep-peer b cid "Gamma" (address (+ *port-a* 2)) key "synthetic")
+      (pai-v3.api::%keep-peer c bid "Alpha" (address *port-b*) key "synthetic")
+      (flet ((get-shared (path) (pai-v3.api::%fleet-http c (address *port-b*) path nil :peer-id bid :method :get)))
+       (is (null (obj-get (get-shared "/board/threads") "threads")))
+       (is (null (obj-get (get-shared "/board/since?ts=0") "messages")))
+       (signals error (get-shared (format nil "/board/thread?id=~a" thread)))
+       (signals error (get-shared (format nil "/board/image?thread=~a&id=~a" thread image)))
+       (is (null (pai-v3.api::board-image b thread image :peer cid))))))))))
+
+(deftest restricted-publication-fails-before-sending-to-an-old-peer
+ (with-temp-kernel (k)
+  (append! k "fleet.peer.joined" (obj "peer_id" "old" "name" "Old" "address" "http://127.0.0.1:1" "how" "synthetic"))
+  (let ((original (symbol-function 'pai-v3.api::%fleet-http)) (calls nil))
+   (unwind-protect
+    (progn
+     (setf (symbol-function 'pai-v3.api::%fleet-http)
+           (lambda (kernel address path payload &key peer-id method)
+            (declare (ignore kernel address peer-id))
+            (push (list path payload method) calls)
+            (obj "threads" nil)))
+     (is (search "nothing private was sent" (pai-v3.api::%tool-text
+           (lambda () (pai-v3.api::fleet-post k "old" "SYNTHETIC-PRIVATE" :restricted t)))))
+     (is (= 1 (length calls)))
+     (is (equal "/board/threads" (first (first calls))))
+     (is (null (second (first calls))))
+     (is (eq :get (third (first calls)))))
+    (setf (symbol-function 'pai-v3.api::%fleet-http) original)))))
 
 (run-suite "api-fleet")

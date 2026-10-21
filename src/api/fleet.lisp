@@ -236,8 +236,18 @@ return the parsed reply. A refusal or an unreachable peer signals."
   "Messages in THREAD-ID, oldest first, as (msg-id author-id author-name text tags intent scope timestamp reply-to event-id)."
   (sql-rows (kernel-db kernel) "SELECT msg_id,author_id,author_name,text,tags,intent,scope,timestamp,reply_to,event_id FROM board_messages WHERE thread_id=?1 ORDER BY timestamp,msg_id LIMIT ?2" thread-id limit))
 
+(define-event-type "fleet.board.disclosure"
+  :schema (("msg_id" :string) ("peer_id" :string)))
+(define-projection "fleet_board_disclosures"
+  :kind :inline :inspectable nil :consumes ("fleet.board.disclosure")
+  :tables ("CREATE TABLE IF NOT EXISTS fleet_board_disclosures (msg_id TEXT PRIMARY KEY, peer_id TEXT NOT NULL)")
+  :reduce (lambda (db e)
+            (let ((p (event-payload e)))
+              (sql-exec db "INSERT OR IGNORE INTO fleet_board_disclosures(msg_id,peer_id) VALUES(?1,?2)"
+                        (obj-get p "msg_id") (obj-get p "peer_id")))))
+
 (defun board-post (kernel &key thread-id new-thread-title author-id author-name text tags intent scope reply-to
-                               operation-id request-key (timestamp (unix-now)) msg-id created-by chain-depth images)
+                               operation-id request-key (timestamp (unix-now)) msg-id created-by chain-depth images visibility-peer)
   "Write one message to my own board. Exactly one of THREAD-ID (an open
 thread) or NEW-THREAD-TITLE. The same author and OPERATION-ID answer with the
 first message again. Returns (values msg-id thread-id duplicate-p)."
@@ -263,13 +273,14 @@ first message again. Returns (values msg-id thread-id duplicate-p)."
       (when reply-to
         (unless (equal thread (sql-value (kernel-db kernel) "SELECT thread_id FROM board_messages WHERE msg_id=?1 LIMIT 1" reply-to))
           (%board-refuse "reply_to does not name a message in this thread")))
-      (append! kernel "fleet.board.posted"
+      (append-batch! kernel (append (list (list "fleet.board.posted"
                (obj "msg_id" id "thread_id" thread "thread_title" new-thread-title
                     "thread_created_by" (and new-thread-title (or created-by author-id))
                     "author_id" author-id "author_name" author-name "text" text "tags" tags
                     "intent" intent "scope" scope "reply_to" reply-to
                     "operation_id" operation-id "request_key" request-key "timestamp" timestamp
-                    "chain_depth" chain-depth "images" images))
+                    "chain_depth" chain-depth "images" images)))
+                      (and visibility-peer (list (list "fleet.board.disclosure" (obj "msg_id" id "peer_id" visibility-peer))))))
       (values id thread nil))))
 
 (defun board-message-images (kernel event-id)
@@ -337,6 +348,12 @@ need an answer back, answer or fyi if you do not. Absorb: keep what matters (rem
 and say nothing. Defer: leave it for later. Do not reply only to acknowledge, agree or thank; a conversation that
 has done its job should end, and resolve_fleet_thread closes a settled thread on your own board.")
 
+(defvar *peer-wake-count*
+  (lambda (kernel peer-id)
+    (or (sql-value (kernel-db kernel) "SELECT count(*) FROM thoughts WHERE audience=?1 AND created_at>=?2 LIMIT 1"
+                   (format nil "peer:~a" peer-id) (iso8601 (- (now) 3600))) 0))
+  "Registered accounting seam: communication reviews are not new inbound wakes.")
+
 (defun %why-not-wake (kernel peer-id &key intent depth thread-id)
   "Why a peer's message should not start a thought, or NIL when it should."
   (cond ((and depth (> depth (setting kernel "fleet.max_chain_depth")))
@@ -345,9 +362,7 @@ has done its job should end, and resolve_fleet_thread closes a settled thread on
          (format nil "it is an ~a, which asks for nothing" intent))
         ((and thread-id (equal "resolved" (third (board-thread kernel thread-id))))
          "its thread is resolved")
-        ((>= (or (sql-value (kernel-db kernel) "SELECT count(*) FROM thoughts WHERE audience=?1 AND created_at>=?2 LIMIT 1"
-                            (format nil "peer:~a" peer-id) (iso8601 (- (now) 3600)))
-                 0)
+        ((>= (funcall *peer-wake-count* kernel peer-id)
              (setting kernel "fleet.peer_wakes_per_hour"))
          "this peer's wakes for the hour are spent")))
 
@@ -419,6 +434,7 @@ message that woke it, or 1 when nothing from a peer did."
            (reply-to (%text-field parsed "reply_to" 128))
            (intent (%text-field parsed "intent" 32))
            (scope (or (%text-field parsed "scope" 32) "pairwise"))
+           (restricted (eq t (obj-get parsed "restricted")))
            (operation-id (or (%text-field parsed "operation_id" 128) (fleet-uuid)))
            (depth (%depth-field parsed))
            (tags (let ((v (%given (obj-get parsed "tags"))))
@@ -428,14 +444,15 @@ message that woke it, or 1 when nothing from a peer did."
            (images (%received-images kernel parsed))
            ;; The operator's words carried by this peer: shown as theirs, by the peer's account.
            (relayed (%text-field parsed "relayed_operator" 120))
-           (request-key (json-encode (list (or thread-id :null) (or title :null) text tags
-                                           (or intent :null) scope (or reply-to :null) images))))
+           (request-key (concatenate 'string (if restricted "restricted:" "")
+                                     (json-encode (list (or thread-id :null) (or title :null) text tags
+                                                       (or intent :null) scope (or reply-to :null) images)))))
       (multiple-value-bind (msg-id thread duplicate)
           (board-post kernel :thread-id thread-id :new-thread-title title :author-id peer-id
                              :author-name (if relayed (format nil "~a (via ~a)" relayed name) name)
                              :text text :tags tags :intent intent :scope scope :reply-to reply-to
                              :operation-id operation-id :request-key request-key :chain-depth depth
-                             :images images)
+                             :images images :visibility-peer (and restricted peer-id))
         (unless duplicate
           (%wake-for-peer kernel peer-id name
                           (if relayed
@@ -453,7 +470,7 @@ reply_fleet_board_message (thread_id ~a, reply_to ~a)."
                                       text thread msg-id))
                           (sql-value (kernel-db kernel) "SELECT event_id FROM board_messages WHERE msg_id=?1 LIMIT 1" msg-id)
                           :intent intent :depth depth :thread-id thread))
-        (obj "status" "posted" "msg_id" msg-id "thread_id" thread "duplicate" (if duplicate t :false))))))
+        (obj "status" "posted" "msg_id" msg-id "thread_id" thread "duplicate" (if duplicate t :false) "restricted" (if restricted t :false))))))
 
 (defun %op (kernel kind operation-id)
   "The journal entry KIND for OPERATION-ID, as (event-id peer-id body), or NIL."
@@ -529,7 +546,7 @@ post_fleet_message (peer_id ~a, thread_id ~a, reply_to ~a)."
                    (setting kernel "fleet.posts_per_day"))))
 
 (defun fleet-post (kernel peer-id text &key new-thread thread-id reply-to operation-id intent (chain-depth 1) images
-                                            title relayed-operator)
+                                            title relayed-operator restricted)
   "Post TEXT on a peer's board. The first message to a peer starts a thread
 and later ones continue it, unless NEW-THREAD (titled TITLE when given);
 THREAD-ID with REPLY-TO answers a message there. RELAYED-OPERATOR, the
@@ -557,10 +574,15 @@ message id."
                                 (obj "new_thread_title" (or title (subseq text 0 (min 60 (length text))))
                                      "text" text "operation_id" send-id "intent" intent "chain_depth" chain-depth))))
                      (when images (setf (gethash "image_ids" r) images))
+                     (when restricted (setf (gethash "restricted" r) t))
                      (when relayed-operator (setf (gethash "relayed_operator" r) relayed-operator))
                      (%journal kernel "publication-intent" send-id peer-id (obj "request" r))
                      r))))
-           (response (%fleet-http kernel (third peer) "/board/post" (%with-images request kernel) :peer-id peer-id))
+           (response (progn
+                       (when (eq t (obj-get request "restricted"))
+                         (unless (eq t (obj-get (%fleet-http kernel (third peer) "/board/threads" nil :peer-id peer-id :method :get) "restricted_posts"))
+                           (%board-refuse "peer does not support recipient-restricted board posts; nothing private was sent")))
+                       (%fleet-http kernel (third peer) "/board/post" (%with-images request kernel) :peer-id peer-id)))
            (thread (%given (obj-get response "thread_id"))))
       (%journal kernel "publication-sent" send-id peer-id (obj "thread_id" (or thread "") "msg_id" (or (%given (obj-get response "msg_id")) "")))
       (when (and thread (not (equal thread (fourth peer))))
@@ -590,7 +612,7 @@ peer in the thread. A thread with several peers tells nobody."
       (%journal kernel "notification-delivered" operation-id (first peer) (obj))
       t)))
 
-(defun fleet-reply (kernel thread-id reply-to text &key (intent "answer") (chain-depth 1) images)
+(defun fleet-reply (kernel thread-id reply-to text &key (intent "answer") (chain-depth 1) images operation-id)
   "Reply as myself on my own board, and tell the peer I am answering. An
 answer does not wake the peer; a question or request does."
   (let* ((messages (board-messages kernel thread-id))
@@ -600,13 +622,14 @@ answer does not wake the peer; a question or request does."
       (%board-refuse "intent must be one of ~{~a~^, ~}" +board-intents+))
     (%check-own-images kernel images)
     (%check-post-allowance kernel)
-    (let ((operation-id (fleet-uuid)))
+    (let ((operation-id (or operation-id (fleet-uuid))))
       (%journal kernel "reply" operation-id "self" (obj))
       (multiple-value-bind (msg-id thread)
           (board-post kernel :thread-id thread-id :author-id (fleet-agent-id kernel) :author-name (fleet-own-name kernel)
                              :text text :scope "pairwise" :reply-to reply-to :operation-id operation-id
                              :intent intent :chain-depth chain-depth :images images
-                             :request-key (json-encode (list thread-id reply-to text)))
+                             :request-key (json-encode (list thread-id reply-to text))
+                             :visibility-peer pai-v3.mind::*publication-recipient*)
         (let* ((peer (%notification-peer kernel messages parent))
                (note-id (format nil "board-notification:~a" msg-id)))
           (when peer
@@ -846,15 +869,10 @@ some other way: it is the only thing that binds the two operators."
                     (reply 200 (accept-board-notification k peer (json-parse body))))
                    ((string= path "/board/threads")
                     ;; Forum rows: a v2 peer reads the fields it knows and ignores the rest.
-                    (reply 200 (obj "threads" (board-index-json k))))
+                    (reply 200 (obj "threads" (board-index-json k :peer (first peer)) "restricted_posts" t)))
                    ((string= path "/board/thread")
-                    (let ((thread (board-thread k (hunchentoot:get-parameter "id"))))
-                      (if thread
-                          (let ((o (%thread-json thread)))
-                            (setf (gethash "messages" o)
-                                  (mapcar (lambda (m) (%message-json m (first thread) k)) (board-messages k (first thread))))
-                            (reply 200 o))
-                          (reply 404 (obj "status" "not-found")))))
+                    (let ((thread (board-thread-json k (hunchentoot:get-parameter "id") :peer (first peer))))
+                      (if thread (reply 200 thread) (reply 404 (obj "status" "not-found")))))
                    ((string= path "/fleet/avatar")
                     ;; My picture, for a sister's board page to show beside my posts.
                     (let* ((id (pai-v3.mind:avatar-image-id k :self))
@@ -863,7 +881,7 @@ some other way: it is the only thing that binds the two operators."
                           (reply 200 (obj "data_url" url))
                           (reply 404 (obj "status" "not-found")))))
                    ((string= path "/board/image")
-                    (let ((data (board-image k (hunchentoot:get-parameter "thread") (hunchentoot:get-parameter "id"))))
+                    (let ((data (board-image k (hunchentoot:get-parameter "thread") (hunchentoot:get-parameter "id") :peer (first peer))))
                       (if data (reply 200 (obj "data_url" data)) (reply 404 (obj "status" "not-found")))))
                    ((string= path "/board/since")
                     (let* ((ts (hunchentoot:get-parameter "ts"))
@@ -873,7 +891,7 @@ some other way: it is the only thing that binds the two operators."
                             (setf (gethash "messages" o)
                                   (loop for th in (board-threads k)
                                         append (loop for m in (board-messages k (first th))
-                                                     when (> (eighth m) since) collect (%message-json m (first th)))))
+                                                     when (and (> (eighth m) since) (board-message-visible-p k m (first peer))) collect (%message-json m (first th)))))
                             (reply 200 o))
                           (reply 400 (obj "status" "rejected" "reason" "ts must be a non-negative integer")))))
                    (t (reply 404 (obj "status" "not-found"))))
@@ -966,6 +984,7 @@ without this I could not find them again."
   :run (lambda (kernel id args)
          (%tool-text (lambda ()
                        (fleet-post kernel (obj-get args "peer_id") (obj-get args "text")
+                                   :restricted (and pai-v3.mind::*publication-recipient* t)
                                    :new-thread (eq t (obj-get args "new_thread"))
                                    :thread-id (%given (obj-get args "thread_id"))
                                    :reply-to (%given (obj-get args "reply_to"))

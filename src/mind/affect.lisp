@@ -412,5 +412,5 @@ third of drive name -> target for drives that have one."
                (append! kernel "drive.satisfied" (obj "drive" d "thought_id" id))
                (push (format nil "~a met" d) said)))
            (if said
-               (format nil "Noted (~{~a~^, ~}).~%~a" (reverse said) (render-affect kernel :include-targets (equal "operator" (getf (thought-row kernel id) :audience))))
+               (format nil "Noted (~{~a~^, ~}).~%~a" (reverse said) (render-affect kernel :include-targets (equal "operator" (thought-reading-audience (thought-row kernel id)))))
                "Nothing changed: name modulators (arousal, valence, certainty, competence, boredom, social_need) or drives (connection, curiosity, closure, appreciation)."))))

@@ -80,7 +80,7 @@
   "Whether a thought may use IMAGE-ID as a reference: any, for the operator's thoughts; for a sister's, only a
 picture her audience has met or one the agent made, so a picture the operator showed in private cannot leak into one
 made for a sister."
-  (let ((audience (getf (thought-row kernel thought-id) :audience)))
+  (let ((audience (thought-reading-audience (thought-row kernel thought-id))))
     (or (null audience) (equal audience "operator")
         (sql-value (kernel-db kernel) "SELECT 1 FROM seen_images WHERE image_id=?1 AND audience=?2 LIMIT 1" image-id audience)
         (sql-value (kernel-db kernel) "SELECT 1 FROM seen_images WHERE image_id=?1 AND audience=?2 AND how=?3 LIMIT 1" image-id "operator" "made"))))

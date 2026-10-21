@@ -114,6 +114,7 @@
 answers, and those it asked to look at again."
   (remove-duplicates
    (append (turn-images kernel thought)
+           (funcall *communication-input-images* kernel thought)
            (mapcar #'first (sql-rows (kernel-db kernel) "SELECT image_id FROM looked_images WHERE thought_id=?1 LIMIT 8"
                                      (getf thought :id))))
    :test #'equal :from-end t))
@@ -142,7 +143,7 @@ answer more about a picture from earlier in the conversation."
                    "required" (list "images"))
   :run (lambda (kernel thought-id args)
          (let* ((ids (remove-if-not #'stringp (or (obj-get args "images") '())))
-                (audience (getf (thought-row kernel thought-id) :audience))
+                (audience (thought-reading-audience (thought-row kernel thought-id)))
                 (mine (remove-if-not (lambda (id) (and (image-row kernel id)
                                                        ;; Another audience sees only images it has met itself.
                                                        (or (equal audience "operator")

@@ -84,7 +84,7 @@ operator's own thoughts, those the operator sent. Pictures others posted are not
          (let ((image (string-trim " " (or (obj-get args "image_id") ""))))
            (handler-case
                (cond ((null (obj-get args "image_id"))
-                      (let ((found (avatar-candidates kernel (getf (thought-row kernel id) :audience))))
+                      (let ((found (avatar-candidates kernel (thought-reading-audience (thought-row kernel id)))))
                         (if found
                             (format nil "~aPictures you can choose from, newest first:~%~{~a~^~%~}~%Call set_avatar again with the image_id you want."
                                     (if (avatar-image-id kernel :self)

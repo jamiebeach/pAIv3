@@ -112,8 +112,8 @@
     content))
 
 (defun %artifact-operator-thought (kernel thought-id)
-  (unless (equal "operator" (getf (thought-row kernel thought-id) :audience))
-    (error "documents are private to operator-audience thoughts")))
+  (unless (equal "operator" (thought-reading-audience (thought-row kernel thought-id)))
+    (error "documents require private thinking scope")))
 
 (defun save-document (kernel thought-id document &optional artifact-id)
   (%artifact-operator-thought kernel thought-id)

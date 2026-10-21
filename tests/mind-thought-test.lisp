@@ -363,17 +363,17 @@
       (let ((thought (thought-row k id)))
         (is (find "clock" (tools-in-hand thought (tools-for thought) '("clock")) :key #'tool-name :test #'equal)
             "a described tool is in hand"))))
-  (let ((guest (list :origin "responding" :audience "person:sam")))
+  (let ((guest (list :origin "responding" :audience "person:sam" :communicating t)))
     (is (null (find "secret_lever" (tools-for guest) :key #'tool-name :test #'equal))
         "a guest's thought is never told about operator-trust tools")))
 
-(deftest a-guest-cannot-call-an-operator-tool-by-name
+(deftest a-guest-stimulus-does-not-remove-private-capabilities
   (with-thinking (k)
     (let* ((*script* (list (obj "content" "" "tool_calls" (list (call "x" "secret_lever")))
                            (obj "content" "ok")))
            (id (request-thought k "responding" "guest spoke" :audience "person:sam")))
       (run-until-idle k)
-      (is (find "No tool named secret_lever." (thought-steps k id) :key #'third :test #'equal)))))
+      (is (find "pulled" (thought-steps k id) :key #'third :test #'equal)))))
 
 (define-tool "long_read" :description "Return a long text."
   :run (lambda (k id args) (declare (ignore k id args)) (make-string 30000 :initial-element #\a)))

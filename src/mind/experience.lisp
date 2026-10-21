@@ -120,7 +120,8 @@ or NIL when it is not an interaction. HANDLES is a list of (handle label)."
                       ((string= type "thought.step")
                        (when (string= "model" (obj-get p "kind"))
                          (index (obj-get p "text") "thinking"
-                                (format nil "a:~a" (or (sql-value db "SELECT audience FROM thoughts WHERE id=?1 LIMIT 1"
+                                (format nil "a:~a" (or (and (eq t (obj-get p "private_context")) "operator")
+                                                       (sql-value db "SELECT audience FROM thoughts WHERE id=?1 LIMIT 1"
                                                                   (obj-get p "thought_id"))
                                                        "unknown"))
                                 (format nil "thought ~d" (obj-get p "thought_id")))))
@@ -259,7 +260,7 @@ or identifiers), newest first, as (kind at text ref event-id)."
   :core '("responding" "introspection" "work" "concern" "reflection")
   :run (lambda (kernel id args)
          (let ((rows (search-experience kernel (obj-get args "query" "")
-                                        (getf (thought-row kernel id) :audience)
+                                        (thought-reading-audience (thought-row kernel id))
                                         :limit (max 1 (min 25 (obj-get args "limit" 8))))))
            (if rows
                (format nil "~{~a~^~%~}"
@@ -277,7 +278,7 @@ or identifiers), newest first, as (kind at text ref event-id)."
                    "required" (list "about"))
   :run (lambda (kernel id args)
          (block recall-tool
-         (let* ((audience (getf (thought-row kernel id) :audience))
+         (let* ((audience (thought-reading-audience (thought-row kernel id)))
                 (query (handler-case (embed (obj-get args "about" "") kernel)
                          (error (e) (return-from recall-tool
                                       (format nil "Recall is unavailable just now: ~a" e)))))

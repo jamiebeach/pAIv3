@@ -256,7 +256,7 @@ day's allowance. Returns how many were taken."
                    "Gmail sent no data for that attachment."
                    (let* ((image (pai-v3.mind::store-image kernel (format nil "data:~a;base64,~a" (third file)
                                                                           (substitute #\+ #\- (substitute #\/ #\_ data)))))
-                          (audience (or (getf (thought-row kernel thought-id) :audience) "operator"))
+                          (audience (or (pai-v3.mind::thought-reading-audience (thought-row kernel thought-id)) "operator"))
                           (sender (%header-value msg "From")))
                      (dolist (a (remove-duplicates (list audience "operator") :test #'equal))
                        (append! kernel "image.seen" (obj "image_id" image "audience" a "how" "mail" "from" (%clip sender 200))))

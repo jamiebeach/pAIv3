@@ -50,13 +50,14 @@
       (is (= before (ledger-head k)))
       (is (null (pai-v3.mind::artifact-list k))))))
 
-(deftest peers-cannot-read-or-create-private-artifacts
+(deftest peer-stimulated-private-thinking-can-create-private-artifacts
   (with-temp-kernel (k)
     (let ((peer (request-thought k "work" "Synthetic peer request" :audience "peer:beta"))
           (tool (gethash "document" pai-v3.mind::*tools*)))
-      (is (not (pai-v3.mind::tool-available-p tool (list :audience "peer:beta"))))
-      (signals error (funcall (pai-v3.mind::tool-run tool) k peer (obj "action" "list")))
-      (signals error (pai-v3.mind::save-document k peer (sample-document))))))
+      (is (pai-v3.mind::tool-available-p tool (thought-row k peer)))
+      (is (not (pai-v3.mind::tool-available-p tool (list :audience "peer:beta" :communicating t))))
+      (is (stringp (funcall (pai-v3.mind::tool-run tool) k peer (obj "action" "list"))))
+      (is (obj-get (pai-v3.mind::save-document k peer (sample-document)) "artifact_id")))))
 
 (deftest docket-runs-link-documents-to-their-work-and-can-resume-source
   (with-temp-kernel (k)

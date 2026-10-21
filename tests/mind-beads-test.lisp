@@ -39,7 +39,7 @@
   ;; Private thinking runs with the operator as audience too, so it holds beads.
   (let ((tool (gethash "beads" *tools*)))
     (is (member tool (tools-for (list :audience "operator"))))
-    (is (not (member tool (tools-for (list :audience "guest:alex")))))))
+    (is (not (member tool (tools-for (list :audience "guest:alex" :communicating t)))))))
 
 (deftest a-coding-agent-thought-out-of-calls-answers-on-its-bead
   (with-temp-kernel (k)

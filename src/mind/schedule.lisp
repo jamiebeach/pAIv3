@@ -294,7 +294,7 @@ recorded) and its delivery appended in one transaction. Returns the count."
                  (t
                   (let ((rows (sql-rows (kernel-db kernel)
                                         "SELECT id,text,next_at,kind,mode FROM scheduled_items WHERE status='active' AND audience=?1 ORDER BY next_at LIMIT 50"
-                                        audience)))
+                                        (thought-reading-audience (thought-row kernel id)))))
                     (if rows
                         (format nil "~{~a~^~%~}"
                                 (mapcar (lambda (r) (format nil "~a ~a~:[~; (repeats)~] [~a]: ~a" (first r)

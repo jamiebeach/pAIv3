@@ -51,15 +51,15 @@
           "Sam never sees the operator's own conversation"))
     (is (= 1 (length (search-experience k "salary review" "person:alex"))) "only public things for a stranger")))
 
-(deftest thinking-is-searchable-in-its-own-audience
+(deftest private-thinking-is-not-indexed-as-shared-with-the-stimulating-entity
   (with-experience (k)
     (let ((private (request-thought k "private" "musing"))
           (guest (request-thought k "responding" "guest" :audience "person:sam")))
       (pai-v3.mind::%record-text k private "model" "I wonder whether the lighthouse story ends well")
       (pai-v3.mind::%record-text k guest "model" "Sam asked about the lighthouse")
       (is (= 2 (length (search-experience k "lighthouse" "operator"))))
-      (is (equal '("thinking") (mapcar #'first (search-experience k "lighthouse" "person:sam"))))
-      (is (search "Sam asked" (third (first (search-experience k "lighthouse" "person:sam"))))))))
+      (is (null (search-experience k "lighthouse" "person:sam")))
+      (is (search "Sam asked" (third (first (search-experience k "lighthouse" "operator"))))))))
 
 (deftest remember-and-recall-round-trip
   (with-experience (k)
@@ -70,8 +70,8 @@
       (loop repeat 20 until (eq :idle (run-scheduler-step k)))
       (is (search "green tea" (run-tool k id "recall" (obj "about" "what tea does Sam like"))))
       (let ((guest (request-thought k "responding" "guest" :audience "person:sam")))
-        (is (equal "Nothing comes to mind." (run-tool k guest "recall" (obj "about" "what tea does Sam like")))
-            "operator-only by default"))
+        (is (search "green tea" (run-tool k guest "recall" (obj "about" "what tea does Sam like")))
+            "private recall does not depend on the stimulus source"))
       (let ((*embedder* (lambda (texts) (declare (ignore texts)) (error "ollama is down")))
             (pai-v3.mind::*embedding-cache* '()))
         (is (search "unavailable" (run-tool k id "recall" (obj "about" "something new"))))))))

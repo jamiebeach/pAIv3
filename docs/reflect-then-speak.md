@@ -1,3 +1,9 @@
+> **2026-10-21 extension:** The operator approved private cognition for every entity
+> stimulus, with a narrower recipient-bound disclosure
+> review. [Current design and boundaries](behaviour/private-thinking.md) supersede
+> the Stage 2 deferral and the replying-as-recipient assumption below. The earlier
+> account is retained to explain the original design and its limitations.
+
 # Reflect, then speak
 
 pAI v3 design. Status: Stage 1 approved 2026-10-19; implementation under qualification. The operator chose this

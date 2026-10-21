@@ -15,7 +15,7 @@
                                 (values (json-encode (obj "text" "synthetic code")) 200))))
         (let ((tool (gethash "host_files" *tools*)))
           (is (member tool (tools-for (list :audience "operator"))))
-          (is (not (member tool (tools-for (list :audience "peers")))))
+          (is (not (member tool (tools-for (list :audience "peers" :communicating t)))))
           (is (search "synthetic code"
                       (funcall (pai-v3.mind::tool-run tool) k 1
                                (obj "action" "read" "folder" "demo" "path" ".git/HEAD" "admin" t))))

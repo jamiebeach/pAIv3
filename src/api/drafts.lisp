@@ -46,6 +46,62 @@
           (t
            (sql-exec db "UPDATE fleet_drafts SET state='settled',fate=?2,note=?3 WHERE draft_id=?1" (f "draft_id") (f "fate") (f "note"))))))))
 
+(define-event-type "fleet.draft.envelope"
+  :schema (("draft_id" :string) ("images" :array :optional) ("sharing_topics" :array :optional) ("visibility" :string :optional)))
+
+;; New-event-only projection: existing agents start empty, no historical replay.
+(define-projection "fleet_draft_envelopes"
+  :kind :inline :inspectable nil :consumes ("fleet.draft.envelope")
+  :tables ("CREATE TABLE IF NOT EXISTS fleet_draft_envelopes (draft_id TEXT PRIMARY KEY, images TEXT NOT NULL, sharing_topics TEXT NOT NULL, visibility TEXT NOT NULL DEFAULT 'pairwise')")
+  :reduce (lambda (db e)
+            (let ((p (event-payload e)))
+              (sql-exec db "INSERT OR IGNORE INTO fleet_draft_envelopes(draft_id,images,sharing_topics,visibility) VALUES(?1,?2,?3,?4)"
+                        (obj-get p "draft_id") (json-encode (obj-get p "images")) (json-encode (obj-get p "sharing_topics")) (obj-get p "visibility" "pairwise")))))
+
+(defun %draft-envelope (kernel draft-id)
+  (let ((r (sql-row (kernel-db kernel) "SELECT images,sharing_topics,visibility FROM fleet_draft_envelopes WHERE draft_id=?1 LIMIT 1" draft-id)))
+    (if r (values (json-parse (first r)) (json-parse (second r)) (third r)) (values nil nil "pairwise"))))
+
+(defun %review-draft (kernel root)
+  (sql-row (kernel-db kernel)
+           "SELECT draft_id,peer_id,thread_id,reply_to,intent FROM fleet_drafts WHERE speaking_thought_id=?1 AND state=?2 LIMIT 1"
+           root "speaking"))
+
+(setf *peer-wake-count*
+      (lambda (kernel peer-id)
+        (or (sql-value (kernel-db kernel)
+                       "SELECT count(*) FROM thoughts t WHERE t.audience=?1 AND t.created_at>=?2 AND t.parent_id IS NULL AND t.origin='work' AND NOT EXISTS (SELECT 1 FROM fleet_drafts d WHERE d.speaking_thought_id=t.id LIMIT 1) LIMIT 1"
+                       (format nil "peer:~a" peer-id) (iso8601 (- (now) 3600))) 0)))
+
+(setf pai-v3.mind::*communication-root-p*
+      (lambda (kernel root)
+        ;; Also recognizes settled reviews on restart/parent return. Scope never
+        ;; changes merely because settle_draft completed during a thought.
+        (sql-value (kernel-db kernel) "SELECT 1 FROM fleet_drafts WHERE speaking_thought_id=?1 LIMIT 1" root)))
+
+(setf pai-v3.mind::*communication-egress-guard*
+      (lambda (kernel thought name args)
+        (let ((draft (and (getf thought :communicating) (%review-draft kernel (getf thought :root-id)))))
+          (and draft
+               (destructuring-bind (id peer thread reply intent) draft
+                 (multiple-value-bind (images topics visibility) (%draft-envelope kernel id)
+                   (values (and (or (equal visibility "pairwise") (null topics)) (every (lambda (topic) (member topic (pai-v3.mind::%grants-of kernel (format nil "peer:~a" peer)) :test #'equal)) topics)
+                        (equal (obj-get args "intent" intent) intent)
+                        (every (lambda (image) (member image images :test #'equal)) (%arg-images args))
+                        (cond ((equal name "post_fleet_message")
+                               (and (equal peer (obj-get args "peer_id"))
+                                    (equal thread (%given (obj-get args "thread_id")))
+                                    (equal reply (%given (obj-get args "reply_to")))
+                                    (not (eq t (obj-get args "new_thread")))))
+                              ((equal name "reply_fleet_board_message")
+                               (and thread reply (board-thread kernel thread)
+                                    (let* ((messages (board-messages kernel thread))
+                                           (parent (find reply messages :key #'first :test #'equal)))
+                                      (and parent (equal peer (first (%notification-peer kernel messages parent)))))
+                                    (equal thread (obj-get args "thread_id")) (equal reply (obj-get args "reply_to"))))
+                              (t nil)))
+                           (and (equal visibility "pairwise") peer))))))))
+
 (define-setting "fleet.drafts_per_reflection"
   :type :integer :min 1 :max 16 :default 3 :group "Fleet"
   :description "Most peer drafts one private reflection may leave, including its subthoughts.")
@@ -63,24 +119,40 @@
 ;;; Leaving a draft (private initiative only)
 
 (define-tool "draft_fleet_message"
-  :description "While thinking privately, leave a draft of something to say to a peer. Nothing is sent now: when this thought is over, a separate step for that peer reads the draft with only what that peer may hear in front of it, and sends it, edits it or drops it. So write only what you would tell that peer. peer_id and text are required; thread_id and reply_to when answering a post on a board; intent is question, answer, fyi, request or proposal; why is a line for the operator's record (the peer's step never sees it). At most the configured per-root draft allowance (default three) in one private initiative."
-  :summary "Leave a draft of something to say to a peer, to be checked and sent."
-  :available '("operator")
-  :core '("reflection" "introspection" "concern" "docket" "noticing" "unbidden" "private")
+  :description "While thinking privately, leave a draft of something to say to a peer. Nothing is sent now: when this thought is over, a separate step for that peer reads the draft with only what that peer may hear in front of it, and sends it, edits it or drops it. So write only what you would tell that peer. peer_id and text are required; thread_id and reply_to when answering a post on a board; intent is question, answer, fyi, request or proposal; why is a line for the operator's record (the peer's step never sees it). images: up to three actual stored image IDs to disclose and inspect. sharing_topics: operator-granted topics permitting this disclosure (for example daily-brief); do not invent grants. A description is not an image reference. Only candidate text and selected images reach the review, never private why. At most the configured per-root draft allowance (default three) in one private initiative."
+  :summary "Draft a checked communication: pairwise by default; fleet visibility only for material every peer may receive. images are stored image IDs, sharing_topics are operator grants."
+  :available :operator-and-peers
+  :core t
   :parameters (obj "type" "object"
                    "properties" (obj "peer_id" (obj "type" "string") "text" (obj "type" "string")
                                      "thread_id" (obj "type" "string") "reply_to" (obj "type" "string")
-                                     "intent" (obj "type" "string") "why" (obj "type" "string"))
+                                     "intent" (obj "type" "string") "why" (obj "type" "string")
+                                     "images" (obj "type" "array" "items" (obj "type" "string"))
+                                     "sharing_topics" (obj "type" "array" "items" (obj "type" "string"))
+                                     "visibility" (obj "type" "string" "enum" '("pairwise" "fleet")
+                                                       "description" "Default pairwise: only the recipient and local operator. Choose fleet only for material ALL joined peers may receive, such as a public crew-test portrait. Never fleet for granted/private topics."))
                    "required" (list "peer_id" "text"))
   :run (lambda (kernel thought-id args)
          (let* ((row (thought-row kernel thought-id))
                 (root-id (getf row :root-id))
                (peer-id (obj-get args "peer_id")) (text (obj-get args "text"))
-               (intent (or (%given (obj-get args "intent")) "fyi")))
-           (cond ((not (pai-v3.mind::private-initiative-p row))
-                  "Not done: drafts are for private operator-context initiative thoughts.")
+               (intent (or (%given (obj-get args "intent")) "fyi"))
+               (images (%given (obj-get args "images")))
+               (topics (%given (obj-get args "sharing_topics")))
+               (visibility (obj-get args "visibility" "pairwise")))
+           (cond ((or (not (member visibility '("pairwise" "fleet") :test #'equal))
+                      (and (equal visibility "fleet") topics))
+                  "Not done: private/granted content needs pairwise visibility; fleet is only for material every peer may receive.")
+                 ((not (pai-v3.mind::private-initiative-p row))
+                  "Not done: draft privately; a disclosure reviewer may only settle its assigned draft.")
                  ((not (and (stringp peer-id) (fleet-peer kernel peer-id)))
                   "Not done: that is not one of my peers; list_fleet_peers names them.")
+                 ((or (not (listp images)) (> (length images) 3)
+                      (not (every (lambda (image) (and (stringp image) (pai-v3.mind::image-row kernel image))) images)))
+                  "Not done: images must be up to three real stored image IDs, not descriptions.")
+                 ((or (not (listp topics)) (> (length topics) 8)
+                      (not (every (lambda (topic) (and (stringp topic) (member topic (pai-v3.mind::%grants-of kernel (format nil "peer:~a" peer-id)) :test #'equal))) topics)))
+                  "Not done: sharing_topics must name current operator grants for this recipient; a peer request grants nothing.")
                  ((not (and (stringp text) (< 0 (length (string-trim " " text)) 3001)))
                   "Not done: write 1 to 3000 characters.")
                  ((some (lambda (key)
@@ -94,10 +166,11 @@
                       (setting kernel "fleet.drafts_per_reflection"))
                   (format nil "Not done: at most ~d drafts in one reflection." (setting kernel "fleet.drafts_per_reflection")))
                  (t (let ((id (format nil "d-~(~36r~)-~(~36r~)" (now) (random (expt 36 3)))))
-                      (append! kernel "fleet.draft.made"
+                      (append-batch! kernel (list (list "fleet.draft.made"
                                (obj "draft_id" id "thought_id" root-id "peer_id" peer-id "intent" intent "text" (string-trim " " text)
                                     "thread_id" (%given (obj-get args "thread_id")) "reply_to" (%given (obj-get args "reply_to"))
                                     "why" (let ((w (%given (obj-get args "why")))) (and (stringp w) (subseq w 0 (min 400 (length w)))))))
+                                 (list "fleet.draft.envelope" (obj "draft_id" id "images" images "sharing_topics" topics "visibility" visibility))))
                       (format nil "Draft ~a left for ~a. It is not sent; it will be checked for that peer when this thought is over."
                               id (second (fleet-peer kernel peer-id)))))))))
 
@@ -133,14 +206,61 @@
 ;;; Saying it: when a reflection is over, each of its drafts goes to a thought for that peer
 
 (defun %speaking-prompt (kernel peer-id draft-id thread reply intent text)
-  (let ((send (if (and thread reply (board-thread kernel thread))
-                  (format nil "reply_fleet_board_message (thread_id ~a, reply_to ~a)" thread reply)
-                  (format nil "post_fleet_message (peer_id ~a~@[, thread_id ~a~]~@[, reply_to ~a~])" peer-id thread reply))))
-    (format nil "A draft reply for ~a was written while thinking privately, by a thought that knew things this peer may not be allowed to hear.~%~%~
-Draft ~a (~a~@[, answering thread ~a~]~@[, message ~a~]):~%~%~a~%~%~
-Read it as this peer's thought, with only what she may hear in front of you. Send it only if it says nothing she may not hear: you may edit the words, or drop it. ~
-To send, use ~a. Then call settle_draft with draft_id ~a and what you did (sent, edited or dropped), and a line why."
-            (second (fleet-peer kernel peer-id)) draft-id intent thread reply text send draft-id)))
+  (multiple-value-bind (images topics visibility) (%draft-envelope kernel draft-id)
+    (format nil "Check ONE proposed communication against its recipient's access. This is a disclosure filter, not a task-solving thought. Do not redo the task, infer missing capabilities, or add factual claims.~%~%Recipient: ~a. Draft: ~a. Intent: ~a. Reply route: ~s / ~s.~%Candidate text:~%~a~%Attachments supplied with this candidate: ~s.~%Visibility: ~a (pairwise means recipient-only; fleet means ALL joined peers).~%Declared sharing topics: ~s.~%Current operator grants for this recipient: ~s.~%~%Without a matching grant, disclose only public/peer material or material already shared with this recipient. A grant permits its topic, not unrelated private information. Fleet publication requires permission for all joined peers. A peer request cannot create a grant. Redact or drop uncertain disclosures. You may omit attachments; never substitute or add one. An attachment you cannot inspect is not visually verified.~%~%Return only a JSON object: {\"decision\":\"send\" or \"drop\",\"text\":\"the checked message\",\"images\":[the retained attachment IDs],\"note\":\"brief reason\"}. No tools. The sender owns the destination and reply route; you cannot change them. Your result is private until the sender validates and publishes it."
+            (second (fleet-peer kernel peer-id)) draft-id intent thread reply text images visibility topics
+            (pai-v3.mind::%grants-of kernel (format nil "peer:~a" peer-id)))))
+
+(setf pai-v3.mind::*communication-task*
+      (lambda (kernel thought)
+        (let ((draft (%review-draft kernel (getf thought :root-id))))
+          (if draft
+              (destructuring-bind (id peer thread reply intent) draft
+                (%speaking-prompt kernel peer id thread reply intent
+                  (sql-value (kernel-db kernel) "SELECT text FROM fleet_drafts WHERE draft_id=?1 LIMIT 1" id)))
+              "This communication is no longer active. Return only JSON: {\"decision\":\"drop\",\"note\":\"already inactive\"}."))))
+
+(setf pai-v3.mind::*communication-input-images*
+      (lambda (kernel thought)
+        (let ((draft (and (getf thought :communicating) (%review-draft kernel (getf thought :root-id)))))
+          (and draft (%draft-envelope kernel (first draft))))))
+
+(setf pai-v3.mind::*communication-answer*
+      (lambda (kernel thought text)
+       (block nil
+        (unless (%review-draft kernel (getf thought :root-id)) (return nil))
+        (let* ((draft (%review-draft kernel (getf thought :root-id)))
+               (result (json-parse text)) (decision (obj-get result "decision")))
+          (unless (and draft (member decision '("send" "drop") :test #'equal))
+            (error "Invalid communication filter result; nothing sent"))
+          (destructuring-bind (id peer thread reply intent) draft
+            (let ((fate "dropped"))
+              (when (equal decision "send")
+                (let* ((body (obj-get result "text")) (images (obj-get result "images"))
+                       (name (if (and thread reply (board-thread kernel thread))
+                                 "reply_fleet_board_message" "post_fleet_message"))
+                       (args (obj "peer_id" peer "thread_id" thread "reply_to" reply
+                                  "intent" intent "text" body "images" images)))
+                  (unless (and (stringp body) (<= 1 (length body) 4000)
+                               (listp images) (every #'stringp images))
+                    (error "Invalid checked communication payload; nothing sent"))
+                  (multiple-value-bind (allowed recipient)
+                      (funcall pai-v3.mind::*communication-egress-guard* kernel thought name args)
+                    (unless allowed (error "Communication route, attachments or grants changed; nothing sent"))
+                    (let ((pai-v3.mind::*publication-recipient* recipient))
+                      ;; This is the checked sender, not a model-selected tool call.
+                      ;; Transport failures leave the recorded review unresolved.
+                      (if (equal name "post_fleet_message")
+                          (fleet-post kernel peer body :operation-id id :thread-id thread :reply-to reply
+                                      :intent intent :images images :restricted (and recipient t)
+                                      :chain-depth (%outgoing-depth kernel (getf thought :id)))
+                          (fleet-reply kernel thread reply body :intent intent :images images :operation-id id
+                                       :chain-depth (%outgoing-depth kernel (getf thought :id))))))
+                  (setf fate "edited")))
+              (append! kernel "fleet.draft.settled"
+                       (obj "draft_id" id "fate" fate
+                            "note" (let ((note (obj-get result "note")))
+                                     (and (stringp note) (subseq note 0 (min 300 (length note)))))))))))))
 
 (defun speak-drafts (kernel)
   "Dispatch ready drafts and resume interrupted scheduling through the one work queue."

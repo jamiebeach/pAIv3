@@ -1,7 +1,7 @@
 (in-package #:pai-v3.mind)
 
 ;;; Tools (spec §16.10). A tool is a Lisp function with a docstring. What a
-;;; thought may use is computed from its origin and audience; tools it may not
+;;; thought may use is computed from its phase and private/recipient scope; tools it may not
 ;;; use are never mentioned. Native schemas are sent only for the tools in
 ;;; hand (core for the origin, describe_tool, and any the thought has picked
 ;;; up); every other available tool is one line in a compact index. All
@@ -18,7 +18,7 @@
 (defmacro define-tool (name &key description summary parameters (available :any) core run publishes)
   "Declare a tool. DESCRIPTION is its documentation; SUMMARY (default: the
 first sentence of DESCRIPTION) is its index line. PARAMETERS is a JSON-schema
-object. AVAILABLE is :ANY, :OPERATOR-TRUST (only thoughts whose audience is
+object. AVAILABLE is :ANY, :OPERATOR-TRUST (private cognition, or communication to
 the operator), or a list of the audiences that may use it. CORE is T, or a list of origins, for which the tool is always
 in hand. RUN is (lambda (kernel thought-id arguments-object)) returning a
 string, or :PENDING when the result will arrive later. PUBLISHES marks tools
@@ -41,27 +41,45 @@ defines for itself is always operator-trust and never core.")
   "Both ordinary introspection and fleet-digest reflection think privately."
   (member (getf thought :origin) '("introspection" "reflection") :test #'equal))
 
+(defvar *publication-recipient* nil
+  "Dynamically bound by the checked dispatcher, never by model arguments.")
+
+(defvar *communication-root-p* (lambda (kernel root) (declare (ignore kernel root)) nil)
+  "Registered boundary: true only for an assigned draft review root.")
+(defvar *communication-egress-guard* (lambda (kernel thought name args) (declare (ignore kernel thought name args)) nil)
+  "Recipient/route/artifact guard; fails closed before a publishing tool runs.")
+
+(defvar *communication-answer* (lambda (kernel thought text)
+                               (declare (ignore kernel thought text))
+                               (error "No communication sender registered"))
+  "Registered communication boundary: validate a filter result and publish its assigned candidate.")
+(defvar *communication-task* (lambda (kernel thought) (declare (ignore kernel thought)) nil)
+  "Current candidate and recipient policy, independent of an older persisted prompt.")
+(defvar *communication-input-images* (lambda (kernel thought) (declare (ignore kernel thought)) nil)
+  "Attachments supplied with a communication candidate, not private resource permissions.")
+
+(defun peer-audience-p (audience)
+  (and (stringp audience) (> (length audience) 5) (string= "peer:" audience :end2 5)))
+
 (defun private-initiative-p (thought)
-  "Operator-context initiative must draft before speaking to a peer."
-  (and (equal "operator" (getf thought :audience))
-       (member (getf thought :origin)
-               '("introspection" "reflection" "concern" "docket" "noticing" "unbidden" "private")
-               :test #'equal)))
+  "Every stimulus is considered privately; communication is a separate phase."
+  (and thought (not (getf thought :communicating))))
+
+(defun thought-reading-audience (thought)
+  "Private cognition reads as the pAI; communication uses recipient permissions."
+  (if (private-initiative-p thought) "operator" (getf thought :audience)))
 
 (defun tool-available-p (tool thought)
-  ;; Private initiative thinks with operator context, so nothing it does may reach anyone
-  ;; else directly: the tools that publish are not its to use (docs/reflect-then-speak.md).
-  (and (not (and (tool-publishes tool) (private-initiative-p thought)))
-   (let ((available (tool-available tool)))
-    (if (listp available)
-        (member (getf thought :audience) available :test #'equal)
-        (ecase available
-          (:any t)
-          (:operator-trust (equal "operator" (getf thought :audience)))
-          ;; The operator, and fleet peers (audience "peer:<id>").
-          (:operator-and-peers (let ((a (getf thought :audience)))
-                                 (or (equal "operator" a)
-                                     (and (stringp a) (> (length a) 5) (string= "peer:" a :end2 5))))))))))
+  (and (private-initiative-p thought)
+       (not (tool-publishes tool))
+       (let ((available (tool-available tool))
+             (audience (thought-reading-audience thought)))
+         (if (listp available)
+             (member audience available :test #'equal)
+             (ecase available
+               (:any t)
+               (:operator-trust (equal "operator" audience))
+               (:operator-and-peers (or (equal "operator" audience) (peer-audience-p audience))))))))
 
 (defun tools-for (thought)
   "Tools THOUGHT may use, in name order."

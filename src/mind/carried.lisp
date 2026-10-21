@@ -206,7 +206,7 @@
                    "required" (list "action"))
   :run (lambda (kernel thought-id args)
          (let* ((row (thought-row kernel thought-id))
-                (audience (getf row :audience))
+                (audience (thought-reading-audience row))
                 (action (obj-get args "action" "list"))
                 (id (obj-get args "id")))
            (flet ((say (id why-not ok)
@@ -219,7 +219,7 @@
                     (carry-add kernel :what (obj-get args "what") :why (obj-get args "why") :source (obj-get args "source")
                                       :consider-at (obj-get args "consider_at") :due-at (obj-get args "due_at")
                                       :condition (obj-get args "condition") :thought-id thought-id
-                                      :by (if (and (equal audience "operator") (equal (getf row :origin) "responding")) "conversation" "self"))
+                                      :by (if (and (equal (getf row :audience) "operator") (equal (getf row :origin) "responding")) "conversation" "self"))
                   (cond ((and id why-not) (format nil "Already carrying that as ~a." id))
                         (id (format nil "Carrying ~a." id))
                         (t (format nil "Not done: ~a." why-not)))))

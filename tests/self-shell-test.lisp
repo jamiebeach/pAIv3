@@ -26,8 +26,8 @@
 (deftest only-operator-trust-thoughts-have-it
   (let ((tool (gethash "shell" pai-v3.mind::*tools*)))
     (is (pai-v3.mind::tool-available-p tool '(:audience "operator")))
-    (is (not (pai-v3.mind::tool-available-p tool '(:audience "coding-agent"))))
-    (is (not (pai-v3.mind::tool-available-p tool '(:audience "guest"))))))
+    (is (not (pai-v3.mind::tool-available-p tool '(:audience "coding-agent" :communicating t))))
+    (is (not (pai-v3.mind::tool-available-p tool '(:audience "guest" :communicating t))))))
 
 (deftest it-runs-in-the-workspace-and-reports-the-exit-code
   (with-workspace (k root)

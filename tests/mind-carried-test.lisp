@@ -62,22 +62,14 @@
     (multiple-value-bind (x why) (carry-add k :what "five" :why "x" :by "operator")
       (is (null x)) (is (search "as many" why)))))
 
-(deftest outside-content-may-add-and-ask-but-not-change
-  (with-carrying (k)
-    (let ((id (carry-add k :what "Renew the passport" :why "Expires in spring" :by "operator")))
-      (let ((said (carry-tool k "external" "noticing" (obj "action" "add" "what" "Reply to Sam about Friday" "why" "He asked in mail"
-                                                           "source" "mail 1a15" "consider_at" (tomorrow-local 5)))))
-        (is (search "Carrying c-" said)))
-      (is (search "will be looked at" (carry-tool k "external" "noticing" (obj "action" "consider" "id" id "note" "mail says the office is open"))))
-      (is (search "mail says the office is open" (obj-get (carried-item k id) "note")))
-      (is (<= (parse-iso8601 (obj-get (carried-item k id) "consider_at")) (now)) "it is due now")
-      (dolist (args (list (obj "action" "close" "id" id "state" "dropped")
-                          (obj "action" "revise" "id" id "what" "Something else")))
-        (is (search "from outside content" (carry-tool k "external" "noticing" args))))
-      (is (equal "Renew the passport" (obj-get (carried-item k id) "what")) "an email cannot rewrite what is carried")
-      (is (null (carried-items k :state "dropped")))
-      (is (search "Closed" (carry-tool k "operator" "responding" (obj "action" "close" "id" id "state" "done")))
-          "the operator's own thought can close it"))))
+(deftest outside-content-stimulates-private-consideration-with-normal-capabilities
+ (with-carrying (k)
+  (let ((id (carry-add k :what "Synthetic commitment" :why "Synthetic reason" :by "operator")))
+   (is (search "Updated" (carry-tool k "external" "noticing"
+         (obj "action" "revise" "id" id "what" "Reconsidered privately"))))
+   (is (equal "Reconsidered privately" (obj-get (carried-item k id) "what")))
+   (is (search "Closed" (carry-tool k "external" "noticing"
+         (obj "action" "close" "id" id "state" "done")))))))
 
 (deftest who-added-an-item-is-recorded
   (with-carrying (k)
@@ -152,7 +144,7 @@
     (let ((tool (gethash "set_avatar" *tools*)))
       (is (pai-v3.mind::tool-available-p tool '(:audience "operator")) "in conversation and quiet time")
       (is (pai-v3.mind::tool-available-p tool '(:audience "peer:aria")) "and when answering a sister on a board")
-      (is (not (pai-v3.mind::tool-available-p tool '(:audience "external"))) "but not in a thought made of outside content")
+      (is (not (pai-v3.mind::tool-available-p tool '(:audience "external" :communicating t))) "but not in a thought made of outside content")
       (is (member "work" (pai-v3.mind::tool-core tool) :test #'string=) "in hand when replying, so she remembers it is there"))))
 
 (run-suite "mind-carried")

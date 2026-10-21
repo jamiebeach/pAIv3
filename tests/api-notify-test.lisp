@@ -99,7 +99,7 @@ instead of sent."
       (is (sql-value (kernel-db k) "SELECT 1 FROM working_dialogue WHERE kind=?1 AND rendered LIKE ?2 LIMIT 1"
                      "notice" "%quarterly report%")
           "the longer message is in the terminal"))
-    (is (not (pai-v3.mind::tool-available-p (gethash "notify_operator" *tools*) '(:audience "peer:x")))
+    (is (not (pai-v3.mind::tool-available-p (gethash "notify_operator" *tools*) '(:audience "peer:x" :communicating t)))
         "a peer cannot make me notify the operator")))
 
 ;;; Shadow mode (docs/charges-and-attention.md §5)

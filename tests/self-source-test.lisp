@@ -51,7 +51,7 @@
   (let ((tool (gethash "source" *tools*)))
     (is (member tool (tools-for (list :audience "operator"))))
     (is (member tool (tools-for (list :audience "coding-agent"))))
-    (is (not (member tool (tools-for (list :audience "guest:alex")))))))
+    (is (not (member tool (tools-for (list :audience "guest:alex" :communicating t)))))))
 
 (deftest it-outlines-and-keeps-searches-useful
   (with-source-copy (k root)

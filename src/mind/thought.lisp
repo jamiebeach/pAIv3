@@ -92,7 +92,7 @@ sub-calls. Change budgets here, not per kind.")
            ("part" :integer) ("text" :string)
            ("tool" :string :optional) ("call_id" :string :optional)
            ("arguments" :string :optional)
-           ("failed" :boolean :optional)))        ; a tool result that is a failure
+           ("failed" :boolean :optional) ("private_context" :boolean :optional)))        ; a tool result that is a failure
 
 (define-event-type "thought.ended"
   :schema (("thought_id" :integer) ("outcome" :string) ("summary" :string)))
@@ -134,6 +134,7 @@ sub-calls. Change budgets here, not per kind.")
   :tables ("CREATE TABLE IF NOT EXISTS thoughts (id INTEGER PRIMARY KEY, origin TEXT NOT NULL, reason TEXT NOT NULL, audience TEXT NOT NULL, channel TEXT, source_event_id INTEGER, parent_id INTEGER, parent_call_id TEXT, root_id INTEGER NOT NULL, depth INTEGER NOT NULL, status TEXT NOT NULL, model_calls INTEGER NOT NULL, steps INTEGER NOT NULL, outcome TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)"
            "CREATE INDEX IF NOT EXISTS thoughts_status_idx ON thoughts(status,updated_at)"
            "CREATE INDEX IF NOT EXISTS thoughts_audience_idx ON thoughts(audience,id)"
+           "CREATE INDEX IF NOT EXISTS thoughts_audience_time_idx ON thoughts(audience,created_at)"
            "CREATE INDEX IF NOT EXISTS thoughts_root_idx ON thoughts(root_id)"
            "CREATE TABLE IF NOT EXISTS thought_steps (event_id INTEGER PRIMARY KEY, thought_id INTEGER NOT NULL, kind TEXT NOT NULL, part INTEGER NOT NULL, text TEXT NOT NULL, tool TEXT, call_id TEXT, arguments TEXT)"
            "CREATE INDEX IF NOT EXISTS thought_steps_thought_idx ON thought_steps(thought_id,event_id)")
@@ -240,7 +241,8 @@ the parent's origin, audience and root allowance. Returns its id."
                (list :id id :origin origin :reason reason :audience audience :channel channel
                      :status status :model-calls calls :steps steps :outcome outcome
                      :parent-id parent-id :parent-call-id parent-call-id
-                     :root-id root-id :depth depth :source-event-id source)))))
+                     :root-id root-id :depth depth :source-event-id source
+                     :communicating (funcall *communication-root-p* kernel root-id))))))
 
 (defun thought-steps (kernel id &key (limit 400))
   "Recorded steps of thought ID in order, as (kind part text tool call-id arguments)."
@@ -250,12 +252,14 @@ the parent's origin, audience and root allowance. Returns its id."
 
 (defun %record-text (kernel id kind text &rest more)
   "Record TEXT as one or more step parts; nothing is cut."
+  ;; Reviewing a proposed communication is also private. Only transport
+  ;; events record what was actually shared with the recipient.
   (loop for start from 0 below (max 1 (length text)) by *step-text-limit*
         for part from 0
         do (append! kernel "thought.step"
                     (apply #'obj "thought_id" id "kind" kind "part" part
                            "text" (subseq text start (min (length text) (+ start *step-text-limit*)))
-                           more))))
+                           "private_context" t more))))
 
 (defun %replay-messages (kernel id)
   "The argument of thought ID: the messages it has produced so far, rebuilt
@@ -456,6 +460,11 @@ trampoline rebuilds them on the next bounce; recurring is re-queuing."
                   :priority (getf (%policy (mind-kernel mind) (getf thought :origin)) :priority)
                   :caused-by (getf thought :id))))
 
+(defun direct-reply-p (thought)
+  "Only the private owner receives an unfiltered reply; other recipients use review."
+  (and (equal "responding" (getf thought :origin)) (getf thought :channel)
+       (equal "operator" (getf thought :audience))))
+
 (defun answer (mind reply)
   (let* ((kernel (mind-kernel mind)) (thought (mind-thought mind))
          (text (let ((text (obj-get reply "content" "")))
@@ -464,11 +473,13 @@ trampoline rebuilds them on the next bounce; recurring is re-queuing."
                      (format nil "~a … [cut off: I reached my output limit before finishing]" text)
                      text))))
     (%activity thought "reply-ready")
-    (when (and (string= "responding" (getf thought :origin)) (getf thought :channel))
+    (when (getf thought :communicating)
+      (funcall *communication-answer* kernel thought text))
+    (when (direct-reply-p thought)
       (deliver-reply kernel :channel (getf thought :channel) :audience (getf thought :audience)
                             :text text :in-reply-to (getf thought :id)))
     (conclude kernel thought "thought.ended"
-              (obj "outcome" (if (getf thought :channel) "replied" "concluded")
+              (obj "outcome" (if (direct-reply-p thought) "replied" "concluded")
                    "summary" (subseq text 0 (min 500 (length text))))
               text)))
 
@@ -516,7 +527,7 @@ TOOLS NIL asks for an answer with no tools offered."
                               (tools-in-hand thought tools (%picked-up messages)))))
          (frame (funcall *assemble-thought-context* kernel thought (tool-index-text tools hand)))
          (spoken (make-string-output-stream))
-         (streaming (and (string= "responding" (getf thought :origin)) (getf thought :channel)))
+         (streaming (direct-reply-p thought))
          (all (let ((all (append frame messages)))
                 (if images (with-images kernel all images profile) all)))
          (result
@@ -610,9 +621,16 @@ sub-call's result arrives later."
                                ((not (and tool (tool-available-p tool thought)))
                                 (setf failed t)
                                 (format nil "No tool named ~a." name))
-                               (t (let* ((result (handler-case
+                               (t (let* ((*publication-recipient* nil)
+                                         (result (handler-case
                                                     (funcall (tool-run tool) kernel id
-                                                             (json-parse (obj-get fn "arguments")))
+                                                             (let ((args (json-parse (obj-get fn "arguments"))))
+                                                               (when (tool-publishes tool)
+                                                                 (multiple-value-bind (allowed restricted-recipient)
+                                                                     (funcall *communication-egress-guard* kernel thought name args)
+                                                                   (unless allowed (error "Publication refused: no matching recipient-bound disclosure draft"))
+                                                                   (setf *publication-recipient* restricted-recipient)))
+                                                               args))
                                                   (error (e) (setf failed t) (format nil "Tool error: ~a" e))))
                                         (notes (and (stringp result) (%step-notes kernel id name (obj-get fn "arguments") prior result))))
                                     (if (and notes (stringp result)) (format nil "~{~a~%~%~}~a" notes result) result)))))
