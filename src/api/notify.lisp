@@ -381,21 +381,32 @@ deliver it if so. Returns the decision."
 ;;; The agent's tool
 
 (define-tool "notify_operator"
-  :description "Tell the operator something they would want to know now. Your message is posted in the terminal; the notification policy alone decides whether their phone is also woken (caps, quiet hours, topics), and most requests rightly are not. Use it sparingly. summary is one short plain sentence (at most 140 characters, no links); message is the optional longer text for the terminal. topic: reminder for something you set yourself to remember, system-alert only for your own operational problems, update for anything else worth their attention now, calendar or important-mail for those. importance: 1 low, 2 normal, 3 high; your judgment."
+  :description "Tell the operator something they would want to know now. Your message is posted in the terminal; the notification policy alone decides whether their phone is also woken (caps, quiet hours, topics), and most requests rightly are not. Use it sparingly. summary is one short plain sentence (at most 140 characters, no links); message is the optional longer text for the terminal. topic: reminder for something you set yourself to remember, system-alert only for your own operational problems, update for anything else worth their attention now, calendar or important-mail for those. importance: 1 low, 2 normal, 3 high; your judgment. about: the id of what this is about (a carried item, concern, mail or event id) whenever there is one; the operator is told about the same thing once an hour, however it is worded, so parallel thoughts do not repeat each other."
   :summary "Notify the operator."
   :parameters (obj "type" "object"
                    "properties" (obj "topic" (obj "type" "string" "enum" (mapcar #'car +notify-topics+))
                                      "importance" (obj "type" "integer")
                                      "summary" (obj "type" "string")
-                                     "message" (obj "type" "string"))
+                                     "message" (obj "type" "string")
+                                     "about" (obj "type" "string" "description" "id of the thing this is about, e.g. a carried item or concern id"))
                    "required" (list "topic" "importance" "summary"))
   ;; The operator's own thoughts, and digests of their mail and calendar.
   :available '("operator" "external")
   :run (lambda (kernel id args)
          (let ((topic (obj-get args "topic")) (importance (obj-get args "importance"))
                (summary (obj-get args "summary")) (message (%given (obj-get args "message")))
-               (origin (%root-origin kernel id)))
+               (origin (%root-origin kernel id))
+               (about (let ((a (%given (obj-get args "about"))))
+                        (and (stringp a) (plusp (length (string-trim " " a))) (format nil "about:~a" (string-trim " " a)))))
+               (told nil))
            (cond ((not (assoc topic +notify-topics+ :test #'equal)) "Choose a topic from the list.")
+                 ;; One voice per thing per window: another thought may already have said it, in other words.
+                 ((and about
+                       (setf told (sql-value (kernel-db kernel) "SELECT max(at_unix) FROM notifications WHERE dedupe=?1 AND at_unix>?2 LIMIT 1"
+                                             (pai-v3.kernel::sha256-hex about)
+                                             (- (unix-now) (obj-get (notify-policy kernel) "dedupe_window_seconds" 3600)))))
+                  (format nil "Not sent: the operator was already told about ~a ~d minute~:p ago. Nothing more to do."
+                          (subseq about 6) (max 1 (round (- (unix-now) told) 60))))
                  ((not (typep importance '(integer 1 3))) "importance is 1, 2 or 3.")
                  ((not (and (stringp summary) (plusp (length summary)))) "Give a short summary.")
                  ((>= (or (sql-value (kernel-db kernel) "SELECT count(*) FROM notifications WHERE origin=?1 AND at_unix>?2 LIMIT 1"
@@ -413,7 +424,7 @@ deliver it if so. Returns the decision."
                  (t (let* ((event (post-notice kernel :channel "notify" :audience "operator"
                                                       :importance (if (= importance 3) "high" "normal")
                                                       :text (if message (subseq message 0 (min 1500 (length message))) summary)))
-                           (decision (notify kernel :topic topic :importance importance :summary summary
+                           (decision (notify kernel :topic topic :importance importance :summary summary :dedupe-key about
                                                     :deep-link (format nil "/terminal#m=~d" (event-id event))
                                                     :message-event-id (event-id event))))
                       (format nil "Posted in the terminal. Phone: ~a."

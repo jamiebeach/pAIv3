@@ -102,6 +102,22 @@ instead of sent."
     (is (not (pai-v3.mind::tool-available-p (gethash "notify_operator" *tools*) '(:audience "peer:x" :communicating t)))
         "a peer cannot make me notify the operator")))
 
+(deftest the-same-thing-is-told-once-however-it-is-worded
+  (with-notify (k)
+    (let ((run (pai-v3.mind::tool-run (gethash "notify_operator" *tools*))))
+      (is (search "Phone: woken" (funcall run k 1 (obj "topic" "reminder" "importance" 2 "about" "c-synthetic"
+                                                       "summary" "SYNTHETIC-FIRST review the plan."))))
+      (is (search "already told about c-synthetic"
+                  (funcall run k 1 (obj "topic" "update" "importance" 2 "about" "c-synthetic"
+                                        "summary" "SYNTHETIC-SECOND the plan needs a review."))))
+      (is (null (sql-value (kernel-db k) "SELECT 1 FROM working_dialogue WHERE kind=?1 AND rendered LIKE ?2 LIMIT 1"
+                           "notice" "%SYNTHETIC-SECOND%"))
+          "nothing reaches the terminal either")
+      (is (= 1 (length *pushed*)))
+      (is (search "Phone:" (funcall run k 1 (obj "topic" "update" "importance" 2 "about" "c-other"
+                                                 "summary" "SYNTHETIC-THIRD something else.")))
+          "another thing is told"))))
+
 ;;; Shadow mode (docs/charges-and-attention.md §5)
 
 (deftest shadow-mode-keeps-what-i-start-and-sends-what-i-am-asked
