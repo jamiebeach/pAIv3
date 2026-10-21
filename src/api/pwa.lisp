@@ -536,6 +536,8 @@ localhost), the URL to send it to; passkeys only work at the agent's origin."
                            ((string= path "/api/dashboard/observability/history")
                             (reply 200 (observed-history
                                         k (or (ignore-errors (parse-integer (funcall param "hours"))) 24))))
+                           ((string= path "/api/dashboard/screens")
+                            (reply 200 (obj "flagged" (pai-v3.mind::flagged-screens k))))
                            ((string= path "/api/dashboard/drafts")
                             (reply 200 (obj "drafts" (recent-drafts k))))
                            ((string= path "/api/dashboard/model-context")

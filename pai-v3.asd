@@ -33,6 +33,7 @@
                  (:file "open-items")
                  (:file "affect")
                  (:file "appraisal")
+                 (:file "injection")
                  (:file "schedule")
                  (:file "summary")
                  (:file "consolidation")

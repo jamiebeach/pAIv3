@@ -186,6 +186,9 @@ render audited content safe for every audience. Unreviewed sources default to op
                                      (getf thought :audience) tools-text)))
           (when guidance
             (setf tools-text (format nil "~a~@[~%~%~a~]" guidance tools-text)))
+          (let ((caution (ignore-errors (funcall *injection-note* kernel thought))))
+            (when caution
+              (setf tools-text (format nil "~a~@[~%~%~a~]" caution tools-text))))
         (assemble-context kernel
                           (cond ((getf thought :communicating) "communication-review")
                                 ((string= "responding" (getf thought :origin)) "operator-turn")

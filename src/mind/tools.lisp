@@ -41,6 +41,11 @@ defines for itself is always operator-trust and never core.")
   "Both ordinary introspection and fleet-digest reflection think privately."
   (member (getf thought :origin) '("introspection" "reflection") :test #'equal))
 
+(defvar *injection-note* (lambda (kernel thought) (declare (ignore kernel thought)) nil)
+  "Registered by the injection screen: a caution for a thought whose outside content tries to instruct it, or NIL.")
+(defvar *tool-action-hook* (lambda (kernel thought name arguments) (declare (ignore kernel thought name arguments)) nil)
+  "Registered by the injection screen: called before a tool runs, to record high-impact use by a flagged thought.")
+
 (defvar *publication-recipient* nil
   "Dynamically bound by the checked dispatcher, never by model arguments.")
 

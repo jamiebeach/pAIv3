@@ -623,14 +623,16 @@ sub-call's result arrives later."
                                 (format nil "No tool named ~a." name))
                                (t (let* ((*publication-recipient* nil)
                                          (result (handler-case
-                                                    (funcall (tool-run tool) kernel id
+                                                    (progn
+                                                      (ignore-errors (funcall *tool-action-hook* kernel thought name (obj-get fn "arguments")))
+                                                      (funcall (tool-run tool) kernel id
                                                              (let ((args (json-parse (obj-get fn "arguments"))))
                                                                (when (tool-publishes tool)
                                                                  (multiple-value-bind (allowed restricted-recipient)
                                                                      (funcall *communication-egress-guard* kernel thought name args)
                                                                    (unless allowed (error "Publication refused: no matching recipient-bound disclosure draft"))
                                                                    (setf *publication-recipient* restricted-recipient)))
-                                                               args))
+                                                               args)))
                                                   (error (e) (setf failed t) (format nil "Tool error: ~a" e))))
                                         (notes (and (stringp result) (%step-notes kernel id name (obj-get fn "arguments") prior result))))
                                     (if (and notes (stringp result)) (format nil "~{~a~%~%~}~a" notes result) result)))))
