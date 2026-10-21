@@ -605,6 +605,8 @@
       (obj "content" (json-encode (obj "decision" "send" "text" "SYNTHETIC-CHECKED"
                                      "images" nil "peer_id" "FORGED-DESTINATION" "note" "Synthetic safe edit"))))
     (is (equal "settled" (sql-value (kernel-db a) "SELECT state FROM fleet_drafts WHERE speaking_thought_id=?1 LIMIT 1" review)))
+    (is (equal "edited" (sql-value (kernel-db a) "SELECT fate FROM fleet_drafts WHERE speaking_thought_id=?1 LIMIT 1" review)))
+    (is (equal "settled" (obj-get (first (pai-v3.api::recent-drafts a)) "state")) "the observability page sees it")
     (is (search "SYNTHETIC-CHECKED" (json-encode (pai-v3.api::board-index-json b))))
     (is (null (pai-v3.api::board-index-json b :peer "unrelated")))))))
 
@@ -652,5 +654,18 @@
      (is (null (second (first calls))))
      (is (eq :get (third (first calls)))))
     (setf (symbol-function 'pai-v3.api::%fleet-http) original)))))
+
+(deftest a-peer-of-the-same-operator-may-hear-what-the-operator-may
+ (with-two-agents (a b)
+  (join a b)
+  (let ((peer (pai-v3.api::fleet-agent-id b)))
+   (flet ((prompt () (pai-v3.api::%speaking-prompt a peer "d-x" nil nil "fyi" "Synthetic text")))
+    (is (not (pai-v3.api::same-operator-peer-p a peer)))
+    (is (search "not marked as sharing your operator" (prompt)))
+    (change-setting a "fleet.same_operator_peers" (list (second (pai-v3.api::fleet-peer a peer))) :origin *operator*)
+    (is (pai-v3.api::same-operator-peer-p a peer) "marked by name")
+    (is (search "same operator" (prompt)))
+    (is (search "calendar, mail" (prompt)))
+    (is (search "Never disclose credentials" (prompt)))))))
 
 (run-suite "api-fleet")

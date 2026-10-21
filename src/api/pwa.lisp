@@ -536,6 +536,8 @@ localhost), the URL to send it to; passkeys only work at the agent's origin."
                            ((string= path "/api/dashboard/observability/history")
                             (reply 200 (observed-history
                                         k (or (ignore-errors (parse-integer (funcall param "hours"))) 24))))
+                           ((string= path "/api/dashboard/drafts")
+                            (reply 200 (obj "drafts" (recent-drafts k))))
                            ((string= path "/api/dashboard/model-context")
                             (let ((id (ignore-errors (parse-integer (funcall param "model_call_id")))))
                               (reply 200 (if id (model-capture k id)

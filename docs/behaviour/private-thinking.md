@@ -53,6 +53,15 @@ unfiltered direct replies are limited to the operator, who has full access.
 Additional recipient/channel integrations must use this same candidate/filter
 boundary; unsupported direct recipient delivery fails closed.
 
+## Peers of the same operator
+
+Fleet membership alone does not prove a shared operator: a join code can bind
+two operators. The operator marks peers that share them in
+`fleet.same_operator_peers` (names or ids). The review treats such a recipient
+as able to receive what the operator may see, including the operator's
+calendar, mail and personal details and the agent's own looks and pictures,
+but never credentials or secrets. Other peers keep the grant rule.
+
 ## Persistence and qualification
 
 The original stimulus audience remains persisted. Private reading scope and the
