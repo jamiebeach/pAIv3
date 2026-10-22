@@ -59,11 +59,10 @@ Ordinary startup reads only projection state rows, never history (REL-2)."
   (let* ((db (kernel-db kernel))
          (event-type (validate-payload type payload))
          (encoded (json-encode payload)))
-    (when (> (length (babel:string-to-octets encoded :encoding :utf-8))
-             *payload-limit-bytes*)
-      (error 'event-type-error :type type
-                               :detail (format nil "payload exceeds ~d bytes"
-                                               *payload-limit-bytes*)))
+    (let ((limit (or (event-type-max-bytes event-type) *payload-limit-bytes*)))
+      (when (> (length (babel:string-to-octets encoded :encoding :utf-8)) limit)
+        (error 'event-type-error :type type
+                                 :detail (format nil "payload exceeds ~d bytes" limit))))
     (let* ((id (%next-event-id db))
            (event (make-event :id id :type type
                               :version (event-type-version event-type)

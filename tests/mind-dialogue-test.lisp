@@ -60,4 +60,13 @@
       (age 72) (say "SYNTHETIC days later")
       (is (search "it's been 3 days" (dialogue-row-text (car (last (recent-dialogue k "operator")))))))))
 
+(deftest a-long-pasted-message-is-kept-whole
+  (with-temp-kernel (k)
+    (let ((text (make-string 40000 :initial-element #\a)))
+      (receive-turn k :channel "web" :audience "operator" :speaker "Operator" :text text
+                      :origin (obj "principal_type" "operator"))
+      (is (= 40000 (length (obj-get (event-payload (event-by-id k (sql-value (kernel-db k) "SELECT max(event_id) FROM working_dialogue WHERE audience=?1 LIMIT 1" "operator"))) "text"))))
+      (signals error (append! k "notice.posted" (obj "channel" "web" "audience" "operator" "text" text "importance" "normal"))
+               "other events keep the ordinary limit"))))
+
 (run-suite "mind-dialogue")

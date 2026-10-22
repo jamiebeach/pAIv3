@@ -12,7 +12,9 @@
            ("text" :string)
            ("origin" :object)          ; verified origin attestation (spec §16.5)
            ("images" :array :optional)
-           ("semantic_affect" :boolean :optional))) ; ids of images kept in the blob store
+           ("semantic_affect" :boolean :optional)) ; ids of images kept in the blob store
+  ;; A pasted document or a long answer is kept whole (bead v3-ggn).
+  :max-bytes 131072)
 
 (define-event-type "reply.delivered"
   :schema (("channel" :string)
@@ -20,7 +22,8 @@
            ("text" :string)
            ("in_reply_to" :integer :optional)
            ("interrupted" :boolean :optional)    ; partial reply kept (EXT-3)
-           ("interim" :boolean :optional)))      ; said between steps; the turn goes on
+           ("interim" :boolean :optional))      ; said between steps; the turn goes on
+  :max-bytes 131072)
 
 (define-event-type "notice.posted"
   :schema (("channel" :string)

@@ -17,7 +17,7 @@
                      (event-type-error-type c) (event-type-error-detail c)))))
 
 (defstruct event-type
-  name version schema upcasters)
+  name version schema upcasters max-bytes)
 
 (defvar *event-types* (make-hash-table :test 'equal))
 
@@ -31,13 +31,14 @@
               (list key type (and (member :optional flags) t))))
           schema))
 
-(defmacro define-event-type (name &key (version 1) schema upcast)
+(defmacro define-event-type (name &key (version 1) schema upcast max-bytes)
   "Declare event type NAME. UPCAST is an alist (FROM-VERSION . FUNCTION)
 where FUNCTION maps a payload at FROM-VERSION to FROM-VERSION + 1. Legacy
-v2 events have no version and are treated as version 0."
+v2 events have no version and are treated as version 0. MAX-BYTES raises the
+payload limit for a type whose text is someone's whole message."
   `(setf (gethash ,name *event-types*)
          (make-event-type :name ,name :version ,version
-                          :schema (%fields ',schema)
+                          :schema (%fields ',schema) :max-bytes ,max-bytes
                           :upcasters (list ,@(loop for (from . fn) in upcast
                                                    collect `(cons ,from ,fn))))))
 
