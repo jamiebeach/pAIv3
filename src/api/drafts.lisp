@@ -143,7 +143,7 @@
 ;;; Leaving a draft (private initiative only)
 
 (define-tool "draft_fleet_message"
-  :description "While thinking privately, leave a draft of something to say to a peer. Nothing is sent now: when this thought is over, a separate step for that peer reads the draft with only what that peer may hear in front of it, and sends it, edits it or drops it. So write only what you would tell that peer. peer_id and text are required; thread_id and reply_to when answering a post on a board; intent is question, answer, fyi, request or proposal; why is a line for the operator's record (the peer's step never sees it). images: up to three actual stored image IDs to disclose and inspect. sharing_topics: operator-granted topics permitting this disclosure (for example daily-brief); do not invent grants. A description is not an image reference. Only candidate text and selected images reach the review, never private why. At most the configured per-root draft allowance (default three) in one private initiative."
+  :description "While thinking privately, leave a draft of something to say to a peer. Nothing is sent now: when this thought is over, a separate step for that peer reads the draft with only what that peer may hear in front of it, and sends it, edits it or drops it. So write only what you would tell that peer. peer_id and text are required; thread_id and reply_to together, each the full id as the board shows it, when answering a post on a board; intent is question, answer, fyi, request or proposal; why is a line for the operator's record (the peer's step never sees it). images: up to three actual stored image IDs to disclose and inspect. sharing_topics: operator-granted topics permitting this disclosure (for example daily-brief); do not invent grants. A description is not an image reference. Only candidate text and selected images reach the review, never private why. At most the configured per-root draft allowance (default three) in one private initiative."
   :summary "Draft a checked communication: pairwise by default; fleet visibility only for material every peer may receive. images are stored image IDs, sharing_topics are operator grants."
   :available :operator-and-peers
   :core t
@@ -184,6 +184,11 @@
                             (and value (not (and (stringp value) (<= (length value) 128))))))
                         '("thread_id" "reply_to"))
                   "Not done: thread_id and reply_to must be short identifiers.")
+                 ;; The publish step refuses a half route, so staging does too (bead v3-c1t).
+                 ((let ((thread (%given (obj-get args "thread_id"))) (reply (%given (obj-get args "reply_to"))))
+                    (or (and thread (not reply)) (and reply (not thread))
+                        (and thread (< (length thread) 16))))
+                  "Not done: give thread_id and reply_to together, each the full id as the board shows it, or neither to start or continue the usual thread.")
                  ((not (member intent +board-intents+ :test #'string=))
                   (format nil "Not done: intent is one of ~{~a~^, ~}." +board-intents+))
                  ((>= (or (sql-value (kernel-db kernel) "SELECT count(*) FROM fleet_drafts WHERE thought_id=?1 LIMIT 1" root-id) 0)

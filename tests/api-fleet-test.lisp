@@ -692,4 +692,16 @@
     (is (search "calendar, mail" (prompt)))
     (is (search "Never disclose credentials" (prompt)))))))
 
+(deftest a-draft-with-half-a-reply-route-is-refused-when-staged
+  (with-two-agents (a b)
+    (join a b)
+    (let ((peer (pai-v3.api::fleet-agent-id a))
+          (reflection (request-thought b "introspection" "SYNTHETIC reflection"))
+          (tool (pai-v3.mind::tool-run (gethash "draft_fleet_message" *tools*))))
+      (is (search "together" (funcall tool b reflection (obj "peer_id" peer "text" "Hi." "thread_id" "3779971b-6f84-4047-b8c9-0346751dae19"))))
+      (is (search "together" (funcall tool b reflection (obj "peer_id" peer "text" "Hi." "reply_to" "3779971b-6f84-4047-b8c9-0346751dae19"))))
+      (is (search "full id" (funcall tool b reflection (obj "peer_id" peer "text" "Hi." "thread_id" "20820b2a" "reply_to" "3779971b-6f84-4047-b8c9-0346751dae19"))))
+      (is (search "left for" (funcall tool b reflection (obj "peer_id" peer "text" "Hi." "thread_id" "3779971b-6f84-4047-b8c9-0346751dae19"
+                                                             "reply_to" "4779971b-6f84-4047-b8c9-0346751dae19")))))))
+
 (run-suite "api-fleet")
