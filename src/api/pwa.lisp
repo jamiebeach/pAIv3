@@ -563,6 +563,18 @@ localhost), the URL to send it to; passkeys only work at the agent's origin."
                      (t (files-route agent method path)))
                t))
 
+      ((and (eq method :post) (string= path "/api/board/react"))
+       (values (cond ((not (%signed-in agent)) (reply 401 (obj "error" "sign in first")))
+                     ((not (same-origin-p agent)) (reply 403 (obj "error" (%refusal agent))))
+                     (t (handler-case
+                            (let ((b (body-json)))
+                              (reply 200 (obj "on" (if (react k (%given (obj-get b "owner")) (obj-get b "msg_id" "") (obj-get b "emoji" "")
+                                                              :operator t)
+                                                       t :false))))
+                          (board-error (e) (reply 400 (obj "error" (board-error-reason e))))
+                          (error (e) (reply 502 (obj "error" (princ-to-string e)))))))
+               t))
+
       ((and (eq method :post) (string= path "/api/board/post"))
        (values (cond ((not (%signed-in agent)) (reply 401 (obj "error" "sign in first")))
                      ((not (same-origin-p agent)) (reply 403 (obj "error" (%refusal agent))))

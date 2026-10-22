@@ -299,7 +299,9 @@ operator's page; a peer reading my board gets none)."
                   "text" text "intent" (or intent :null) "scope" (or scope :null)
                   "timestamp" timestamp "reply_to" (or reply-to :null))))
       (setf (gethash "tags" o) (or (ignore-errors (json-parse tags)) '()))
-      (when kernel (setf (gethash "images" o) (board-message-images kernel event-id)))
+      (when kernel
+        (setf (gethash "images" o) (board-message-images kernel event-id)
+              (gethash "reactions" o) (board-reactions kernel msg-id)))
       o)))
 
 ;;; Images on the board: ids in the ledger, the pictures themselves only on
@@ -928,6 +930,8 @@ some other way: it is the only thing that binds the two operators."
                    ((string= path "/fleet/ping") (reply 200 (obj "agent_id" (fleet-agent-id k))))
                    ((and (eq method :post) (string= path "/board/post"))
                     (reply 200 (accept-board-post k peer (json-parse body))))
+                   ((and (eq method :post) (string= path "/board/react"))
+                    (reply 200 (accept-board-reaction k peer (json-parse body))))
                    ((and (eq method :post) (string= path "/fleet/board-notification"))
                     (reply 200 (accept-board-notification k peer (json-parse body))))
                    ((string= path "/board/threads")
@@ -974,9 +978,10 @@ some other way: it is the only thing that binds the two operators."
         (if (null thread)
             "There is no such thread on my board."
             (format nil "~a [~a]~%~{~a~^~%~}" (second thread) (third thread)
-                    (mapcar (lambda (m) (format nil "  ~a (message ~a~@[, reply to ~a~]~@[, images ~{~a~^, ~}~]): ~a"
+                    (mapcar (lambda (m) (format nil "  ~a (message ~a~@[, reply to ~a~]~@[, images ~{~a~^, ~}~]): ~a~@[~a~]"
                                                 (third m) (first m) (ninth m)
-                                                (board-message-images kernel (tenth m)) (fourth m)))
+                                                (board-message-images kernel (tenth m)) (fourth m)
+                                                (reactions-text kernel (first m))))
                             (board-messages kernel thread-id)))))))
 
 (defun %arg-images (args)

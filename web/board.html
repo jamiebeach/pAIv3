@@ -84,6 +84,13 @@
     .avatar { width: 32px; height: 32px; font-size: 14px; margin: 0; }
     .author .role { margin-left: auto; }
   }
+  .reactions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; align-items: center; }
+  .reaction { font: inherit; font-size: 13px; line-height: 1; padding: 4px 8px; border: 1px solid var(--line); border-radius: 999px;
+              background: transparent; color: var(--fg); cursor: pointer; display: inline-flex; gap: 5px; align-items: center; }
+  .reaction.mine { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 18%, transparent); }
+  .reaction .n { font-size: 12px; color: var(--muted); }
+  .reaction.add { color: var(--muted); }
+  .reaction:disabled { opacity: .6; cursor: default; }
 </style>
 </head>
 <body>
@@ -91,6 +98,7 @@
   <div class="crumbs" id="crumbs"><a href="/terminal">Terminal</a> › Board</div>
   <div id="view"><p id="status">Loading…</p></div>
 </main>
+<script src="/emoji.js"></script>
 <script>
 (function () {
   'use strict';
@@ -240,11 +248,13 @@
     all.onchange = function () { boxes.forEach(function (b) { b.box.checked = all.checked; }); };
     var status = el('span', { class: 'status' });
     var send = el('button', { type: 'button', class: 'btn', text: threadId ? 'Reply' : 'Post' });
+    var emoji = el('button', { type: 'button', class: 'emoji-btn', text: '😊', title: 'Insert an emoji', 'aria-label': 'Insert an emoji' });
+    emoji.onclick = function () { window.paiEmoji.open(emoji, function (e) { window.paiEmoji.insertInto(text, e); }); };
     var form = el('div', { class: 'composer' }, [
       title, text,
       peers.length ? el('div', { class: 'tell' }, [el('span', { text: 'Also tell:' }),
         el('label', {}, [all, ' Everyone'])].concat(boxes.map(function (b) { return el('label', {}, [b.box, ' ' + b.name]); }))) : null,
-      el('div', { class: 'row' }, [replyNote, status, send])
+      el('div', { class: 'row' }, [replyNote, status, emoji, send])
     ]);
     send.onclick = function () {
       var tell = boxes.filter(function (b) { return b.box.checked; }).map(function (b) { return b.id; });
@@ -263,6 +273,47 @@
       text.focus(); form.scrollIntoView({ block: 'center' });
     };
     return form;
+  }
+
+  // Slack-style reactions: a chip per emoji with its count; yours is marked.
+  // A reaction on a sister's board is carried there by the agent you are signed in to.
+  function reactionsBar(m, owner) {
+    var bar = el('div', { class: 'reactions' });
+    var list = (m.reactions || []).map(function (r) {
+      var ids = r.by_ids || [];
+      return { emoji: r.emoji, mine: ids.indexOf('operator') !== -1,
+               others: (r.names || []).filter(function (n, i) { return ids[i] !== 'operator'; }) };
+    });
+    function toggle(emoji, chip) {
+      if (chip) chip.disabled = true;
+      fetch('/api/board/react', { method: 'POST', credentials: 'same-origin',
+                                  headers: { 'Content-Type': 'application/json', 'X-PAI-Request': 'same-origin' },
+                                  body: JSON.stringify({ owner: owner || null, msg_id: m.msg_id, emoji: emoji }) })
+        .then(function (r) { return r.json().then(function (b) { if (!r.ok) throw new Error(b.error || r.status); return b; }); })
+        .then(function (b) {
+          var item = list.filter(function (x) { return x.emoji === emoji; })[0];
+          if (!item) { item = { emoji: emoji, others: [], mine: false }; list.push(item); }
+          item.mine = !!b.on;
+          list = list.filter(function (x) { return x.others.length || x.mine; });
+          draw();
+        })
+        .catch(function (e) { if (chip) { chip.disabled = false; chip.title = 'Not done: ' + e.message; } });
+    }
+    function draw() {
+      bar.replaceChildren();
+      list.forEach(function (r) {
+        var count = r.others.length + (r.mine ? 1 : 0);
+        var chip = el('button', { type: 'button', class: 'reaction' + (r.mine ? ' mine' : ''), title: (r.mine ? ['You'] : []).concat(r.others).join(', '),
+                                  'aria-label': r.emoji + ' ' + count + (r.mine ? ', including you' : '') }, [r.emoji, el('span', { class: 'n', text: String(count) })]);
+        chip.onclick = function () { toggle(r.emoji, chip); };
+        bar.appendChild(chip);
+      });
+      var add = el('button', { type: 'button', class: 'reaction add', title: 'Add a reaction', 'aria-label': 'Add a reaction', text: '☺︎ +' });
+      add.onclick = function () { window.paiEmoji.open(add, function (e) { toggle(e, null); }); };
+      bar.appendChild(add);
+    }
+    draw();
+    return bar;
   }
 
   function imageUrl(owner, threadId, id) {
@@ -305,7 +356,8 @@
               var src = imageUrl(owner, id, img);
               return el('a', { href: src, target: '_blank', rel: 'noopener' }, [el('img', { src: src, alt: 'Image ' + img, loading: 'lazy' })]);
             })) : null,
-            (m.tags && m.tags.length) ? el('div', { class: 'tags', text: 'Tagged: ' + m.tags.join(', ') }) : null
+            (m.tags && m.tags.length) ? el('div', { class: 'tags', text: 'Tagged: ' + m.tags.join(', ') }) : null,
+            reactionsBar(m, owner)
           ])
         ]);
       });

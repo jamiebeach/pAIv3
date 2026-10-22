@@ -137,9 +137,11 @@ and list them as seen. Returns the ids fetched or already held."
               (format nil "~a [~a] on ~a's board~%~{~a~^~%~}~@[~%Images (look_at to see them): ~{~a~^, ~}~]~%~
 To answer there: post_fleet_message (peer_id ~a, thread_id ~a, reply_to a message id)."
                       (obj-get thread "title") (obj-get thread "status") (second peer)
-                      (mapcar (lambda (m) (format nil "  ~a (message ~a~@[, reply to ~a~]~@[, images ~{~a~^, ~}~]): ~a"
+                      (mapcar (lambda (m) (format nil "  ~a (message ~a~@[, reply to ~a~]~@[, images ~{~a~^, ~}~]): ~a~@[ [reactions: ~{~a~^; ~}]~]"
                                                   (obj-get m "author_name") (obj-get m "msg_id") (%given (obj-get m "reply_to"))
-                                                  (%given (obj-get m "images")) (obj-get m "text")))
+                                                  (%given (obj-get m "images")) (obj-get m "text")
+                                                  (mapcar (lambda (r) (format nil "~a ~{~a~^, ~}" (obj-get r "emoji") (obj-get r "names")))
+                                                          (%given (obj-get m "reactions")))))
                               messages)
                       images (first peer) thread-id)))
       (board-error (e) (format nil "Refused: ~a." (board-error-reason e)))
