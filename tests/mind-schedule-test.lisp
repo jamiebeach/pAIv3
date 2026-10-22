@@ -140,4 +140,14 @@
       (is ran)
       (is (= 1 (length (latest-event-ids k "periodic.failed" 10))) "recorded once an hour, not every tick"))))
 
+(deftest a-time-with-its-own-zone-is-read-in-that-zone
+  (let ((z (new-york)))
+    (is (= (utc 2026 10 20 13 0) (local-to-universal "2026-10-20T09:00" z)) "local wall time, EDT")
+    (is (= (utc 2026 10 20 13 0) (local-to-universal "2026-10-20T13:00:00Z" z)) "Z is UTC, not local")
+    (is (= (utc 2026 10 20 13 0) (local-to-universal "2026-10-20T13:00:00.000Z" z)))
+    (is (= (utc 2026 10 20 13 0) (local-to-universal "2026-10-20T09:00-04:00" z)))
+    (is (= (utc 2026 10 20 13 0) (local-to-universal "2026-10-20T14:00:00+0100" z)))
+    (is (= (utc 2026 11 2 14 0) (local-to-universal "2026-11-02T09:00" z)) "after DST ends, EST")
+    (signals error (local-to-universal "2026-10-20T09:00 EDT" z))))
+
 (run-suite "mind-schedule")

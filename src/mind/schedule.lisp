@@ -125,13 +125,30 @@ did, more than once) even with the clock slot saying otherwise."
 
 (defun local-to-universal (text zone)
   "Universal time of local wall time TEXT (YYYY-MM-DDTHH:MM[:SS], or with a
-space) in ZONE."
+space) in ZONE. A Z or +HH:MM suffix names its own zone and is honoured, never
+read as local time (bead v3-s4r)."
   (flet ((n (from to) (parse-integer text :start from :end to)))
     (unless (and (>= (length text) 16) (member (char text 10) '(#\T #\Space)))
       (error "~a is not a date and time such as 2026-10-12T09:30" text))
-    (local-time:timestamp-to-universal
-     (local-time:encode-timestamp 0 (if (>= (length text) 19) (n 17 19) 0) (n 14 16) (n 11 13)
-                                  (n 8 10) (n 5 7) (n 0 4) :timezone zone))))
+    (let* ((seconds-p (and (>= (length text) 19) (char= #\: (char text 16))))
+           (end (if seconds-p 19 16))
+           (end (if (and (< end (length text)) (char= #\. (char text end)))
+                    (or (position-if-not #'digit-char-p text :start (1+ end)) (length text))
+                    end))
+           (suffix (subseq text end))
+           (offset (cond ((string= suffix "") nil)
+                         ((string-equal suffix "Z") 0)
+                         ((and (member (char suffix 0) '(#\+ #\-))
+                               (let ((digits (remove #\: (subseq suffix 1))))
+                                 (and (= 4 (length digits)) (every #'digit-char-p digits)
+                                      (* (if (char= #\- (char suffix 0)) -1 1)
+                                         (+ (* 3600 (parse-integer digits :end 2)) (* 60 (parse-integer digits :start 2))))))))
+                         (t (error "~a has a zone suffix I cannot read; give local time such as 2026-10-12T09:30" text)))))
+      (if offset
+          (- (encode-universal-time (if seconds-p (n 17 19) 0) (n 14 16) (n 11 13) (n 8 10) (n 5 7) (n 0 4) 0) offset)
+          (local-time:timestamp-to-universal
+           (local-time:encode-timestamp 0 (if seconds-p (n 17 19) 0) (n 14 16) (n 11 13)
+                                        (n 8 10) (n 5 7) (n 0 4) :timezone zone))))))
 
 ;;; Cron: five fields, minute hour day month weekday, as in v2.
 
