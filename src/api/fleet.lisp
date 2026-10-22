@@ -313,6 +313,30 @@ operator's page; a peer reading my board gets none)."
     (dolist (id ids ids)
       (unless (pai-v3.mind::image-row kernel id) (%board-refuse "there is no stored image ~a" id)))))
 
+(defun text-image-ids (kernel text)
+  "Ids of my own stored images that TEXT shows by a local link such as
+![x](/api/v2/images/ID). A relative link means nothing on a peer's board, so
+these travel as attachments (bead v3-uvx)."
+  (let ((ids '()) (marker "/api/v2/images/"))
+    (when (stringp text)
+      (loop for start = (search marker text) then (search marker text :start2 end)
+            for end = (and start (or (position-if-not (lambda (c) (digit-char-p c 16)) text :start (+ start (length marker)))
+                                     (length text)))
+            while start
+            do (let ((id (subseq text (+ start (length marker)) end)))
+                 (when (and (plusp (length id)) (pai-v3.mind::image-row kernel id))
+                   (pushnew id ids :test #'equal)))))
+    (nreverse ids)))
+
+(defun %with-text-images (kernel text images)
+  "IMAGES plus my images TEXT links to, up to the most a message carries. A
+checked communication keeps exactly the images its review allowed."
+  (if pai-v3.mind::*publication-recipient*
+      images
+      (let ((all (remove-duplicates (append (remove-if-not #'stringp images) (text-image-ids kernel text))
+                                    :test #'equal :from-end t)))
+        (subseq all 0 (min +board-images-most+ (length all))))))
+
 (defun %image-payload (kernel ids)
   "The images IDS as data URLs, for the wire."
   (mapcar (lambda (id) (pai-v3.mind::image-data-url kernel id)) ids))
@@ -586,6 +610,7 @@ message id."
       (%board-refuse "give thread_id and reply_to together, without new_thread"))
     (when (and intent (not (member intent +board-intents+ :test #'string=)))
       (%board-refuse "intent must be one of ~{~a~^, ~}" +board-intents+))
+    (setf images (%with-text-images kernel text images))
     (%check-own-images kernel images)
     (let* ((send-id (or operation-id (fleet-uuid)))
            (prior (%op kernel "publication-intent" send-id))
@@ -646,6 +671,7 @@ answer does not wake the peer; a question or request does."
     (unless parent (%board-refuse "reply_to is not a message in that thread; read the thread first"))
     (unless (member intent +board-intents+ :test #'string=)
       (%board-refuse "intent must be one of ~{~a~^, ~}" +board-intents+))
+    (setf images (%with-text-images kernel text images))
     (%check-own-images kernel images)
     (%check-post-allowance kernel)
     (let ((operation-id (or operation-id (fleet-uuid))))
@@ -687,6 +713,7 @@ peer in TAGS (peer ids). Returns what was done."
     (unless (fleet-peer kernel tag) (%board-refuse "~a is not one of my peers; tag them by id from list_fleet_peers" tag)))
   (unless (member intent +board-intents+ :test #'string=)
     (%board-refuse "intent must be one of ~{~a~^, ~}" +board-intents+))
+  (setf images (%with-text-images kernel text images))
   (%check-own-images kernel images)
   (%check-post-allowance kernel)
   (let ((operation-id (fleet-uuid)))

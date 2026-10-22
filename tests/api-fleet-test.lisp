@@ -120,7 +120,11 @@
         (progn
           (is (search "Beta was told" (pai-v3.api::fleet-reply b thread (first message) "Here is mine." :images (list mine) :intent "question")))
           (is (equal (list mine) (pai-v3.mind::turn-images a (thought-row a (first (first (peer-thoughts a b))))))
-              "a reply's images reach the peer it tells"))))))
+              "a reply's images reach the peer it tells"))
+        (pai-v3.api::fleet-post a b-id (format nil "Linked only:~%![me](/api/v2/images/~a)" mine) :thread-id thread :reply-to (first message))
+        (is (equal (list mine) (pai-v3.api::board-message-images
+                                b (tenth (car (last (pai-v3.api::board-messages b thread))))))
+            "an image my text links to travels as an attachment")))))
 
 (deftest the-fleet-view-reads-every-board
   (with-two-agents (a b)

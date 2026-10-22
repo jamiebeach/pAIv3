@@ -161,7 +161,11 @@
                 (root-id (getf row :root-id))
                (peer-id (obj-get args "peer_id")) (text (obj-get args "text"))
                (intent (or (%given (obj-get args "intent")) "fyi"))
-               (images (%given (obj-get args "images")))
+               (images (let ((given (%given (obj-get args "images"))))
+                         ;; Images the text links to are reviewed and sent as attachments (bead v3-uvx).
+                         (if (listp given)
+                             (remove-duplicates (append given (text-image-ids kernel (obj-get args "text"))) :test #'equal :from-end t)
+                             given)))
                (topics (%given (obj-get args "sharing_topics")))
                (visibility (obj-get args "visibility" "pairwise")))
            (cond ((or (not (member visibility '("pairwise" "fleet") :test #'equal))
