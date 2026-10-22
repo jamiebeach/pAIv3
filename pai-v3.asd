@@ -98,6 +98,7 @@
                  (:file "carried")
                  (:file "files")
                  (:file "artifacts")
+                 (:file "progress")
                  (:file "pwa")))
    (:module "src/recall"
     :serial t

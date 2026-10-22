@@ -188,7 +188,7 @@ assets. Returns the compiler's output."
   '(("/" . "terminal.html") ("/terminal" . "terminal.html") ("/dashboard" . "observability.html")
     ("/graph" . "graph-explorer.html") ("/g" . "graph-explorer.html") ("/affect" . "affect.html")
     ("/notifications" . "notifications.html") ("/settings" . "settings.html")
-    ("/board-view" . "board.html") ("/artifacts" . "artifacts.html") ("/carried" . "carried.html") ("/secrets" . "secrets.html") ("/avatars" . "avatars.html"))
+    ("/board-view" . "board.html") ("/artifacts" . "artifacts.html") ("/carried" . "carried.html") ("/secrets" . "secrets.html") ("/avatars" . "avatars.html") ("/stats" . "stats.html"))
   "Pages that need a signed-in operator. /login is open.")
 
 (defun %named (name body)
@@ -512,6 +512,12 @@ localhost), the URL to send it to; passkeys only work at the agent's origin."
        (values (if (%signed-in agent)
                    (artifacts-route agent method path)
                    (reply 401 (obj "error" "sign in first"))) t))
+
+      ((string= path "/api/progress")
+       (values (if (%signed-in agent)
+                   (reply 200 (progress-report (agent-kernel agent)))
+                   (reply 401 (obj "error" "not signed in")))
+               t))
 
       ((uiop:string-prefix-p "/api/carried" path)
        (values (let ((origin (%signed-in agent)))

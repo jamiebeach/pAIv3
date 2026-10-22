@@ -20,7 +20,7 @@
 ;;;   push only points to it.
 
 (defparameter +notify-topics+
-  '(("system-alert" . 3) ("reminder" . 2) ("calendar" . 2) ("important-mail" . 2) ("update" . 2) ("reach-out" . 1))
+  '(("system-alert" . 3) ("reminder" . 2) ("calendar" . 2) ("important-mail" . 2) ("update" . 2) ("reach-out" . 1) ("level-up" . 1))
   "Topics and their default importance.")
 (defparameter +push-hosts+
   '("fcm.googleapis.com" "push.services.mozilla.com" "push.apple.com" "notify.windows.com" "push.api.windows.com")

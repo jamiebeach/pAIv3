@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0b0f14">
+<title>Stats</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<script src="/app-shell.js" defer></script>
+<style>
+  :root { color-scheme: dark light; --bg: #0b0f14; --panel: #111821; --fg: #e3f2ff; --muted: #8aa0b4; --line: #1f3446; --accent: #4fd1ff; --gold: #ffcc4d; --bad: #ff7a7a; }
+  @media (prefers-color-scheme: light) { :root { --bg: #f2f6fa; --panel: #ffffff; --fg: #10202e; --muted: #5a6b7c; --line: #cfdbe6; --accent: #0a84c6; --gold: #b07d00; --bad: #c0392b; } }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
+  main { max-width: 760px; margin: 0 auto; padding: calc(12px + env(safe-area-inset-top)) 16px 32px; }
+  h1 { font-size: 18px; margin: 0 0 4px; letter-spacing: .08em; text-transform: uppercase; }
+  .sub, .muted { color: var(--muted); font-size: 12px; }
+  .window { border: 1px solid var(--accent); border-radius: 6px; background: var(--panel); padding: 12px 14px; margin: 14px 0; box-shadow: 0 0 12px color-mix(in srgb, var(--accent) 25%, transparent); }
+  .title { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap; border-bottom: 1px solid var(--line); padding-bottom: 6px; margin-bottom: 8px; }
+  .name { font-size: 16px; font-weight: 700; color: var(--accent); text-transform: uppercase; letter-spacing: .06em; }
+  .lvl { color: var(--gold); font-weight: 700; }
+  .bar { height: 8px; border: 1px solid var(--line); border-radius: 4px; overflow: hidden; margin: 3px 0 2px; }
+  .bar > div { height: 100%; background: var(--accent); }
+  .skill { margin: 8px 0; }
+  .skill .row { display: flex; justify-content: space-between; gap: 8px; }
+  .delta { font-size: 12px; color: var(--muted); }
+  .up { color: var(--accent); } .down { color: var(--bad); }
+  .log { font-size: 12px; margin: 2px 0; overflow-wrap: anywhere; }
+  .log .amt { display: inline-block; min-width: 3.2em; }
+  h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 12px 0 4px; }
+  details summary { cursor: pointer; color: var(--accent); }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  td { padding: 2px 4px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  #status { min-height: 1.5em; color: var(--muted); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Status</h1>
+  <p class="sub">Read from what is in the record, never from what anyone says about themselves. Volume earns nothing; an honest correction counts.</p>
+  <div id="status" role="status" aria-live="polite"></div>
+  <div id="agent"></div>
+  <div id="operator"></div>
+  <details class="window"><summary>How experience is earned</summary><table id="rules"></table></details>
+</main>
+<script src="/stats.js"></script>
+</body>
+</html>
