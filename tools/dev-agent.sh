@@ -76,8 +76,10 @@ case "${1:-}" in
     before=$(docker exec "$name" sh -c "cd /home/pai/v3 && $risky_hash" 2>/dev/null || echo none)
     copy_source
     after=$(sh -c "$risky_hash")
-    if [ "${2:-}" = "--restart" ] || [ "$before" != "$after" ]; then
-      [ "${2:-}" = "--restart" ] || echo "Kernel, trust or package files changed: restarting $name instead of reloading live."
+    # Live reload wedged all three agents on 2026-10-22 (threads deadlocked
+    # waiting on locks after the reload), so it now happens only on request.
+    if [ "${2:-}" != "--live" ] || [ "$before" != "$after" ]; then
+      [ "${2:-}" != "--live" ] || echo "Kernel, trust or package files changed: restarting $name instead of reloading live."
       docker restart "$name" >/dev/null
       wait_up && echo "Restarted $name."
     else
