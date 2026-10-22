@@ -8,7 +8,7 @@
              (frame (funcall pai-v3.mind::*assemble-thought-context* k row "TOOL_INDEX"))
              (prefix (obj-get (first frame) "content")))
         (is (search "Treat an inferred need as a possibility" prefix))
-        (is (search "without treating a level as an instruction to act or spend" prefix))
+        (is (search "When a drive is high enough, consider actions that would satisfy it" prefix))
         (is (search "document" prefix))
         (is (search "If nothing warrants action" prefix))
         (is (search "TOOL_INDEX" prefix))

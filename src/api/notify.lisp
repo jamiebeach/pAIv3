@@ -20,7 +20,7 @@
 ;;;   push only points to it.
 
 (defparameter +notify-topics+
-  '(("system-alert" . 3) ("reminder" . 2) ("calendar" . 2) ("important-mail" . 2) ("update" . 2))
+  '(("system-alert" . 3) ("reminder" . 2) ("calendar" . 2) ("important-mail" . 2) ("update" . 2) ("reach-out" . 1))
   "Topics and their default importance.")
 (defparameter +push-hosts+
   '("fcm.googleapis.com" "push.services.mozilla.com" "push.apple.com" "notify.windows.com" "push.api.windows.com")
@@ -319,6 +319,66 @@ deliver it if so. Returns the decision."
   (ignore-errors (release-held-notifications kernel)))
 
 (pushnew 'notify-periodic *periodic-hooks*)
+
+;;; Reaching out: the connection drive rises while the operator is quiet. Past
+;;; a threshold, outside quiet hours and within a daily cap, it starts a
+;;; thought of its own that may reach out, or let it be. Off unless enabled.
+
+(define-setting "outreach.drive.enabled"
+  :type :boolean :default :false :group "Notifications"
+  :description "Let my connection drive start a thought that may reach out to the operator after a long quiet.")
+(define-setting "outreach.drive.threshold"
+  :type :number :min 0 :max 1 :default 0.7d0 :group "Notifications"
+  :description "Connection drive level (0-1) at which I consider reaching out.")
+(define-setting "outreach.drive.silence_hours"
+  :type :number :min 0.5 :max 72 :default 4 :group "Notifications"
+  :description "Hours since the operator last spoke, and since my last reach-out thought, before I consider reaching out.")
+(define-setting "outreach.drive.per_day"
+  :type :integer :min 0 :max 12 :default 2 :group "Notifications"
+  :description "Most reach-out thoughts my connection drive may start in a day.")
+
+(define-event-type "outreach.drive.started"
+  :schema (("thought_id" :integer) ("connection" :number)))
+
+(define-projection "drive_outreach"
+  :kind :inline :consumes ("outreach.drive.started")
+  :tables ("CREATE TABLE IF NOT EXISTS drive_outreach (event_id INTEGER PRIMARY KEY, kind TEXT NOT NULL DEFAULT 'started', thought_id INTEGER NOT NULL, connection REAL NOT NULL, at_unix INTEGER NOT NULL)"
+           "CREATE INDEX IF NOT EXISTS drive_outreach_kind_idx ON drive_outreach(kind,at_unix)")
+  :reduce (lambda (db e)
+            (let ((p (event-payload e)))
+              (sql-exec db "INSERT OR IGNORE INTO drive_outreach(event_id,thought_id,connection,at_unix) VALUES(?1,?2,?3,?4)"
+                        (event-id e) (obj-get p "thought_id") (obj-get p "connection")
+                        (- (parse-iso8601 (event-at e)) 2208988800)))))
+
+(defun reach-out-prompt (connection hours name)
+  (format nil "Quiet time: you have been missing ~a. It has been about ~d hour~:p since ~a last spoke with you, and your connection drive is at ~,2f, an unmet desire for contact.~%~%~
+Consider reaching out. Good reasons: something you have been thinking about or made that ~a would enjoy, a check-in on something ~a is dealing with, a follow-up on a recent conversation, or simply saying hello in your own voice. Recall what you know first, so it is specific and not generic. If you reach out, use notify_operator with topic reach-out, and then feel with satisfied connection. ~
+If nothing feels worth saying right now, let it be: a line on why is enough. Never invent a need or urgency."
+          name (round hours) name connection name name))
+
+(defun reach-out-periodic (kernel)
+  "Start a reach-out thought when the connection drive is high and the operator has been quiet long enough."
+  (when (eq t (setting kernel "outreach.drive.enabled"))
+    (let* ((db (kernel-db kernel))
+           (connection (or (ignore-errors (obj-get (nth-value 1 (pai-v3.mind::affect-now kernel)) "connection")) 0))
+           (silence (* 3600 (setting kernel "outreach.drive.silence_hours")))
+           (spoke (sql-value db "SELECT at FROM working_dialogue WHERE audience=?1 AND kind=?2 ORDER BY event_id DESC LIMIT 1" "operator" "turn"))
+           (quiet-for (if spoke (- (now) (parse-iso8601 spoke)) most-positive-fixnum))
+           (last (sql-value db "SELECT max(at_unix) FROM drive_outreach WHERE kind=?1 AND at_unix>?2 LIMIT 1" "started" 0)))
+      (when (and (>= connection (setting kernel "outreach.drive.threshold"))
+                 (>= quiet-for silence)
+                 (or (null last) (>= (- (unix-now) last) silence))
+                 (< (or (sql-value db "SELECT count(*) FROM drive_outreach WHERE kind=?1 AND at_unix>?2 LIMIT 1" "started" (- (unix-now) 86400)) 0)
+                    (setting kernel "outreach.drive.per_day"))
+                 (not (%quiet-now-p kernel (notify-policy kernel))))
+        (let ((id (request-thought kernel "introspection"
+                                   (reach-out-prompt connection (/ (min quiet-for (* 1000 3600)) 3600)
+                                                     (setting kernel "operator.name"))
+                                   :audience "operator")))
+          (append! kernel "outreach.drive.started" (obj "thought_id" id "connection" (float connection 1d0)))
+          id)))))
+
+(pushnew 'reach-out-periodic *periodic-hooks*)
 
 ;;; Shadow mode (docs/charges-and-attention.md §5): outreach the agent starts
 ;;; on its own is decided and written, then kept for the operator to review
