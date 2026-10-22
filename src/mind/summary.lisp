@@ -123,10 +123,30 @@ as the fleet's notification retries.")
 (defun run-periodic (kernel)
   "Fire due reminders, ask for any summary folds that are due, and give quiet
 time to an open concern. Each part fails on its own."
-  (ignore-errors (run-due-schedules kernel))
-  (ignore-errors (request-summaries kernel))
-  (ignore-errors (quiet-tick kernel))
-  (ignore-errors (request-graph-formation kernel))
-  (ignore-errors (request-episode-sealing kernel))
-  (ignore-errors (request-missing-embeddings kernel))
-  (dolist (hook *periodic-hooks*) (ignore-errors (funcall hook kernel))))
+  (%periodic-part kernel "schedules" #'run-due-schedules)
+  (%periodic-part kernel "summaries" #'request-summaries)
+  (%periodic-part kernel "quiet-time" #'quiet-tick)
+  (%periodic-part kernel "graph-formation" #'request-graph-formation)
+  (%periodic-part kernel "episodes" #'request-episode-sealing)
+  (%periodic-part kernel "embeddings" #'request-missing-embeddings)
+  (dolist (hook *periodic-hooks*)
+    (%periodic-part kernel (string-downcase (princ-to-string hook)) hook)))
+
+(define-event-type "periodic.failed"
+  :schema (("part" :string) ("error" :string)))
+
+(defvar *periodic-failures-recorded* (make-hash-table :test 'equal)
+  "Part name -> universal time its failure was last recorded.")
+
+(defun %periodic-part (kernel name fn)
+  "Run one part of the periodic tick. A failure does not stop the others; it
+is recorded as periodic.failed at most once an hour per part (bead v3-899)."
+  (handler-case (funcall fn kernel)
+    (error (e)
+      (let ((last (gethash name *periodic-failures-recorded*)))
+        (unless (and last (< (- (get-universal-time) last) 3600))
+          (setf (gethash name *periodic-failures-recorded*) (get-universal-time))
+          (ignore-errors
+           (append! kernel "periodic.failed"
+                    (obj "part" (subseq name 0 (min 120 (length name)))
+                         "error" (let ((s (princ-to-string e))) (subseq s 0 (min 500 (length s))))))))))))

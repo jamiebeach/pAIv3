@@ -99,4 +99,45 @@
     (is (not (search (subseq (now-iso8601) 0 10) (subseq (dialogue-row-text (first (recent-dialogue k "operator"))) 0 5)))
         "the line no longer starts with the bare UTC date")))
 
+(deftest a-reminder-that-cannot-fire-retries-and-says-so-without-stopping-the-rest
+  (with-temp-kernel (k)
+    (at-utc ((utc 2026 10 12 12 0))
+      (append! k "schedule.added" (obj "id" "s-poison" "kind" "cron" "text" "SYNTHETIC poison" "mode" "notify"
+                                       "audience" "operator" "next_at" (iso8601 (utc 2026 10 12 11 0)) "cron" "not a cron"
+                                       "timezone" "Not/AZone" "wake" :false))
+      (add-schedule k "SYNTHETIC fine" :in 60))
+    (at-utc ((utc 2026 10 12 12 5))
+      (run-due-schedules k)
+      (is (sql-value (kernel-db k) "SELECT 1 FROM scheduled_items WHERE id=?1 AND last_fired_at IS NOT NULL LIMIT 1"
+                     (sql-value (kernel-db k) "SELECT id FROM scheduled_items WHERE text=?1 LIMIT 1" "SYNTHETIC fine"))
+          "the good one still fired")
+      (is (string< (now-iso8601) (sql-value (kernel-db k) "SELECT next_at FROM scheduled_items WHERE id=?1 LIMIT 1" "s-poison"))
+          "the bad one waits an hour instead of failing every tick")
+      (is (sql-value (kernel-db k) "SELECT 1 FROM working_dialogue WHERE kind=?1 AND rendered LIKE ?2 LIMIT 1"
+                     "notice" "%failed to go off%")
+          "the operator is told"))))
+
+(deftest a-context-reminder-wakes-unless-told-not-to
+  (with-temp-kernel (k)
+    (let ((id (request-thought k "responding" "remind me" :audience "operator"))
+          (run (pai-v3.mind::tool-run (gethash "schedule" pai-v3.mind::*tools*))))
+      (at-utc ((utc 2026 10 12 12 0))
+        (funcall run k id (obj "action" "add" "text" "SYNTHETIC ctx" "in" 60 "mode" "context"))
+        (funcall run k id (obj "action" "add" "text" "SYNTHETIC ctx quiet" "in" 60 "mode" "context" "wake" :false))
+        (funcall run k id (obj "action" "add" "text" "SYNTHETIC note" "in" 60)))
+      (flet ((wake (text) (sql-value (kernel-db k) "SELECT wake FROM scheduled_items WHERE text=?1 LIMIT 1" text)))
+        (is (= 1 (wake "SYNTHETIC ctx")))
+        (is (= 0 (wake "SYNTHETIC ctx quiet")))
+        (is (= 0 (wake "SYNTHETIC note")))))))
+
+(deftest a-failing-periodic-part-is-recorded-and-the-rest-still-run
+  (with-temp-kernel (k)
+    (clrhash pai-v3.mind::*periodic-failures-recorded*)
+    (let ((ran nil))
+      (pai-v3.mind::%periodic-part k "synthetic" (lambda (k) (declare (ignore k)) (error "SYNTHETIC broke")))
+      (pai-v3.mind::%periodic-part k "synthetic" (lambda (k) (declare (ignore k)) (error "SYNTHETIC broke")))
+      (pai-v3.mind::%periodic-part k "other" (lambda (k) (declare (ignore k)) (setf ran t)))
+      (is ran)
+      (is (= 1 (length (latest-event-ids k "periodic.failed" 10))) "recorded once an hour, not every tick"))))
+
 (run-suite "mind-schedule")

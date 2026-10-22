@@ -232,6 +232,21 @@ recorded) and its delivery appended in one transaction. Returns the count."
     (dolist (row due (length due))
       (destructuring-bind (id kind text mode audience cron timezone wake next-at last-slot) row
         (declare (ignore last-slot))
+        ;; One bad row must not stop the rest, nor fail unseen (bead v3-899):
+        ;; it retries in an hour and the operator is told.
+        (handler-case (%fire-schedule kernel id kind text mode audience cron timezone wake next-at)
+          (error (e)
+            (let ((why (let ((s (princ-to-string e))) (subseq s 0 (min 200 (length s))))))
+              (ignore-errors
+               (append! kernel "schedule.rescheduled"
+                        (obj "id" id "next_at" (iso8601 (+ (now) 3600)) "reason" (format nil "firing failed: ~a" why))))
+              (ignore-errors
+               (post-notice kernel :channel "notify" :audience "operator" :importance "high"
+                                   :text (format nil "Reminder ~a (~a) failed to go off and will retry in an hour: ~a"
+                                                 id (subseq text 0 (min 60 (length text))) why))))))))))
+
+(defun %fire-schedule (kernel id kind text mode audience cron timezone wake next-at)
+  (progn
         (let* ((zone (%zone kernel timezone))
                (scheduled (parse-iso8601 next-at))
                (slot (local-slot scheduled zone))
@@ -249,7 +264,7 @@ recorded) and its delivery appended in one transaction. Returns the count."
             ;; already holds, so a crash here loses the thought, never repeats it.
             (when (eql wake 1)
               (request-thought kernel "noticing" (format nil "It is ~a: ~a" slot text)
-                               :audience audience :source-event-id (event-id fired)))))))))
+                               :audience audience :source-event-id (event-id fired)))))))
 
 ;;; The Coming up slot: what has just gone off (context mode), then what is next.
 
@@ -274,7 +289,7 @@ recorded) and its delivery appended in one transaction. Returns the count."
 ;;; The agent's tool
 
 (define-tool "schedule"
-  :description "Set, list or cancel reminders in the operator's time zone. action: add (text, and one of at: a local time like 2026-10-12T09:30, in: seconds from now, cron: five fields minute hour day month weekday; mode: notify sends the text as is, context keeps it in mind for my next turn; wake: also start a thought then), list, or cancel (id)."
+  :description "Set, list or cancel reminders in the operator's time zone. action: add (text, and one of at: a local time like 2026-10-12T09:30, in: seconds from now, cron: five fields minute hour day month weekday; mode: notify sends the text as is, context keeps it in mind for my next turn; wake: also start a thought then; when omitted, context reminders wake and notify ones do not), list, or cancel (id)."
   :parameters (obj "type" "object"
                    "properties" (obj "action" (obj "type" "string" "enum" (list "add" "list" "cancel"))
                                      "text" (obj "type" "string") "at" (obj "type" "string")
@@ -291,7 +306,9 @@ recorded) and its delivery appended in one transaction. Returns the count."
                   (multiple-value-bind (sid next)
                       (add-schedule kernel (obj-get args "text" "") :at (obj-get args "at") :in (obj-get args "in")
                                                                     :cron (obj-get args "cron") :mode (obj-get args "mode" "notify")
-                                                                    :audience audience :wake (eq t (obj-get args "wake"))
+                                                                    :audience audience :wake (let ((w (obj-get args "wake")))
+                                                                            (cond ((eq w t) t) ((eq w :false) nil)
+                                                                                  (t (string= (obj-get args "mode" "notify") "context"))))
                                                                     :origin (obj "principal_type" "self" "thought_id" id))
                     (format nil "Scheduled ~a for ~a (~a)." sid (local-slot next (%zone kernel nil)) (setting kernel "time.zone"))))
                  ((string= action "cancel")
