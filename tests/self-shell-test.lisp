@@ -54,4 +54,24 @@
       (is (search "5000" said) "the end is kept")
       (is (< (length said) 600)))))
 
+(deftest software-installs-into-my-own-tools-and-my-shell-finds-it
+  (with-workspace (k root)
+    (let ((install (lambda (action &rest packages)
+                     (funcall (pai-v3.mind::tool-run (gethash "install_software" pai-v3.mind::*tools*)) k 1
+                              (obj "action" action "packages" packages)))))
+      ;; A stand-in micromamba, so the test needs no network: it makes the
+      ;; environment and a program in it.
+      (let ((path (format nil "~a.local/bin/micromamba" root)))
+        (ensure-directories-exist path)
+        (with-open-file (o path :direction :output :if-exists :supersede)
+          (format o "#!/bin/sh~%echo mamba \"$@\"~%mkdir -p $HOME/.local/tools/bin~%printf '#!/bin/sh~%echo synthetic-tool~%' > $HOME/.local/tools/bin/synthtool~%chmod +x $HOME/.local/tools/bin/synthtool~%"))
+        (shell-tool k "chmod +x .local/bin/micromamba"))
+      (is (search "Name 1 to 10" (funcall install "install" "rm -rf /")) "only package names")
+      (let ((said (funcall install "install" "python=3.12" "git")))
+        (is (search "create -y -q -p" said) "the first install makes the environment")
+        (is (search "conda-forge" said))
+        (is (search "Installed: python=3.12 git" said)))
+      (is (search "install -y -q -p" (funcall install "install" "ffmpeg")) "later ones add to it")
+      (is (search "synthetic-tool" (shell-tool k "synthtool")) "my shell finds what I installed"))))
+
 (run-suite "self-shell")

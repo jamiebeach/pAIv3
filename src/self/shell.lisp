@@ -33,10 +33,16 @@
         (format nil "~a~%[... ~d characters cut ...]~%~a" (subseq text 0 half)
                 (- (length text) (* 2 half)) (subseq text (- (length text) half))))))
 
-(defun run-shell (kernel command)
+(defun %shell-path (root)
+  "Software I installed comes first: my tools environment, then ~/.local/bin."
+  (format nil "~a:~a:/usr/local/bin:/usr/bin:/bin"
+          (namestring (merge-pathnames ".local/tools/bin/" root))
+          (namestring (merge-pathnames ".local/bin/" root))))
+
+(defun run-shell (kernel command &key seconds)
   "Run COMMAND with bash in the workspace. Returns the exit code and output as text."
   (let ((root (%shell-root kernel))
-        (seconds (setting kernel "shell.timeout_seconds"))
+        (seconds (or seconds (setting kernel "shell.timeout_seconds")))
         (limit (setting kernel "shell.output_chars")))
     (cond ((null root) "There is no shell here: shell.workspace is not set.")
           ((not (probe-file *shell-container-marker*))
@@ -50,7 +56,8 @@
                      (uiop:run-program
                       (list "timeout" "--signal=TERM" "--kill-after=2s" (format nil "~ds" seconds)
                             "env" "-i" (format nil "HOME=~a" (namestring root))
-                            "PATH=/usr/local/bin:/usr/bin:/bin" "LANG=C.UTF-8"
+                            (format nil "PATH=~a" (%shell-path root)) "LANG=C.UTF-8"
+                            (format nil "MAMBA_ROOT_PREFIX=~a" (namestring (merge-pathnames ".local/mamba/" root)))
                             "bash" "--noprofile" "--norc" "-c" command)
                       :directory root :input nil :output :string :error-output :string
                       :ignore-error-status t)
@@ -79,3 +86,48 @@ not carry over, so chain with && in one command. Long output is cut in the middl
          (declare (ignore id))
          (let ((command (obj-get args "command")))
            (run-shell kernel (if (stringp command) command "")))))
+
+;;; Installing software (operator request 2026-10-22): the container has no
+;;; root and almost nothing installed, so an agent installs into her own
+;;; persistent home with micromamba from conda-forge: Python, Node, git,
+;;; ffmpeg and thousands more, with pip and npm working inside. Nothing
+;;; system-wide changes; every install is a recorded tool step.
+
+(defparameter +micromamba-url+
+  "https://github.com/mamba-org/micromamba-releases/releases/latest/download/micromamba-linux-64")
+
+(defun %package-name-p (name)
+  (and (stringp name) (< 0 (length name) 80)
+       (every (lambda (c) (or (alphanumericp c) (find c "-_.=<>*"))) name)))
+
+(defun install-software (kernel action packages)
+  "ACTION install, remove or list conda-forge PACKAGES in my tools environment."
+  (cond ((not (member action '("install" "remove" "list") :test #'equal))
+         "action is install, remove or list.")
+        ((and (not (equal action "list"))
+              (or (null packages) (> (length packages) 10) (notevery #'%package-name-p packages)))
+         "Name 1 to 10 conda-forge packages, such as python, nodejs, git or ffmpeg (a version like python=3.12 is fine).")
+        (t
+         (let ((mamba "$HOME/.local/bin/micromamba") (env "$HOME/.local/tools"))
+           (run-shell kernel
+                      (format nil "set -e; mkdir -p $HOME/.local/bin; [ -x ~a ] || { curl -fsSL -o ~a.part ~a && chmod +x ~a.part && mv ~a.part ~a; }; ~a"
+                              mamba mamba +micromamba-url+ mamba mamba mamba
+                              (cond ((equal action "list") (format nil "[ -d ~a ] && ~a list -p ~a || echo 'Nothing installed yet.'" env mamba env))
+                                    ((equal action "remove") (format nil "~a remove -y -p ~a ~{'~a'~^ ~}" mamba env packages))
+                                    (t (format nil "if [ -d ~a ]; then ~a install -y -q -p ~a -c conda-forge ~{'~a'~^ ~}; else ~a create -y -q -p ~a -c conda-forge ~{'~a'~^ ~}; fi && echo Installed: ~{~a~^ ~}"
+                                               env mamba env packages mamba env packages packages))))
+                      :seconds 540)))))
+
+(define-tool "install_software"
+  :description "Install software for myself, without root: conda-forge packages (python, nodejs, git, ffmpeg, imagemagick, pandoc, and thousands more) go into my own tools environment, which my shell finds first. pip install and npm install -g then work inside it. action: install, remove or list; packages: names, optionally with versions. Installing can take a few minutes."
+  :summary "Install conda-forge packages for my own shell."
+  :parameters (obj "type" "object"
+                   "properties" (obj "action" (obj "type" "string" "enum" (list "install" "remove" "list"))
+                                     "packages" (obj "type" "array" "items" (obj "type" "string")))
+                   "required" (list "action"))
+  :available :operator-trust
+  :core '("introspection" "work" "docket")
+  :run (lambda (kernel id args)
+         (declare (ignore id))
+         (let ((packages (obj-get args "packages")))
+           (install-software kernel (obj-get args "action" "list") (if (listp packages) packages nil)))))
