@@ -62,7 +62,7 @@ my board; else NIL. Only what the board already shows is served."
         (mapcar (lambda (peer)
                   (handler-case
                       (obj "owner" (first peer) "name" (second peer) "reachable" t
-                           "threads" (or (%given (obj-get (%peer-get kernel peer "/board/threads") "threads")) '()))
+                           "threads" (or (%given (obj-get (%peer-get kernel peer "/board/threads?for=operator") "threads")) '()))
                     (error (e)
                       (obj "owner" (first peer) "name" (second peer) "reachable" :false "threads" '()
                            "error" (let ((m (princ-to-string e))) (subseq m 0 (min 200 (length m))))))))
@@ -75,7 +75,7 @@ my board; else NIL. Only what the board already shows is served."
       (let ((peer (fleet-peer kernel owner)))
         (and peer (stringp thread-id)
              (ignore-errors
-              (%peer-get kernel peer (format nil "/board/thread?id=~a" (hunchentoot:url-encode thread-id))))))))
+              (%peer-get kernel peer (format nil "/board/thread?id=~a&for=operator" (hunchentoot:url-encode thread-id))))))))
 
 (defun fleet-board-image (kernel owner thread-id image-id)
   "The (mime octets) of an image on OWNER's board, or NIL."

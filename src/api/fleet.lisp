@@ -472,6 +472,16 @@ woken reply reads the thread and not only the post that woke it (bead v3-gkt)."
                                           (let ((s (fourth m))) (if (> (length s) 400) (format nil "~a…" (subseq s 0 400)) s))))
                       shown)))))
 
+(defun %board-reader (kernel peer)
+  "Whom a board read is for: NIL (everything) when a peer of the same operator
+fetches it for that operator's own fleet view, else the peer, who sees only
+what was disclosed to it. Posts restricted to one sister are still the
+operator's to read on any of them."
+  (if (and (equal "operator" (hunchentoot:get-parameter "for"))
+           (same-operator-peer-p kernel (first peer)))
+      nil
+      (first peer)))
+
 (defun accept-board-post (kernel peer parsed)
   "A verified peer's post on my board: kept, then considered."
   (destructuring-bind (peer-id name &rest ignore) peer
@@ -922,9 +932,9 @@ some other way: it is the only thing that binds the two operators."
                     (reply 200 (accept-board-notification k peer (json-parse body))))
                    ((string= path "/board/threads")
                     ;; Forum rows: a v2 peer reads the fields it knows and ignores the rest.
-                    (reply 200 (obj "threads" (board-index-json k :peer (first peer)) "restricted_posts" t)))
+                    (reply 200 (obj "threads" (board-index-json k :peer (%board-reader k peer)) "restricted_posts" t)))
                    ((string= path "/board/thread")
-                    (let ((thread (board-thread-json k (hunchentoot:get-parameter "id") :peer (first peer))))
+                    (let ((thread (board-thread-json k (hunchentoot:get-parameter "id") :peer (%board-reader k peer))))
                       (if thread (reply 200 thread) (reply 404 (obj "status" "not-found")))))
                    ((string= path "/fleet/avatar")
                     ;; My picture, for a sister's board page to show beside my posts.

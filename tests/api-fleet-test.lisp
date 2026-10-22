@@ -714,4 +714,23 @@
       (is (search "left for" (funcall tool b reflection (obj "peer_id" peer "text" "Hi." "thread_id" "3779971b-6f84-4047-b8c9-0346751dae19"
                                                              "reply_to" "4779971b-6f84-4047-b8c9-0346751dae19")))))))
 
+(deftest the-operators-fleet-view-shows-posts-restricted-to-another-sister
+  (with-two-agents (a b)
+    (join a b)
+    (let* ((b-id (pai-v3.api::fleet-agent-id b))
+           (a-id (pai-v3.api::fleet-agent-id a)))
+      (pai-v3.api::fleet-post a b-id "SYNTHETIC open post")
+      (let ((thread (first (first (pai-v3.api::board-threads b)))))
+        ;; A post on B's board disclosed to some other sister only.
+        (multiple-value-bind (msg) (pai-v3.api::board-post b :thread-id thread :author-id "sister-c" :author-name "C"
+                                                             :text "SYNTHETIC for B only" :scope "pairwise" :operation-id "op-r"
+                                                             :request-key "r" :visibility-peer "sister-c")
+          (declare (ignore msg)))
+        (flet ((texts () (mapcar (lambda (m) (obj-get m "text")) (obj-get (pai-v3.api::fleet-board-thread a b-id thread) "messages"))))
+          (is (not (member "SYNTHETIC for B only" (texts) :test #'equal)) "hidden from a sister not marked as the same operator's")
+          (change-setting b "fleet.same_operator_peers" (list a-id) :origin *operator*)
+          (is (member "SYNTHETIC for B only" (texts) :test #'equal) "the operator sees it through any sister of theirs")
+          (let ((tool (pai-v3.api::read-peer-board a b-id thread "operator")))
+            (is (not (search "SYNTHETIC for B only" tool)) "the agent's own reading stays restricted")))))))
+
 (run-suite "api-fleet")
