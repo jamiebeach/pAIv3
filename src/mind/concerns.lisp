@@ -448,6 +448,27 @@ material, nothing."
 tried after the work docket and before rumination; each returns a thought id
 or NIL. The fleet digest is one.")
 
+(defparameter *orphan-seconds* 1800
+  "How long a queued or running thought tree may sit with no work left to carry it on before it is closed as abandoned.")
+
+(defun %close-orphans (kernel)
+  "Fail thoughts that say queued or running but that nothing will ever run
+again: no thought in their tree has queued work or has moved for a while.
+Left alone, one blocks quiet thinking for good (Angel, 2026-10-21: two
+replies stranded mid-stream kept her from quiet time for a day)."
+  (let ((db (kernel-db kernel)))
+    (dolist (row (sql-rows db "SELECT id,root_id,updated_at FROM thoughts WHERE status IN (?1,?2) ORDER BY updated_at LIMIT 20"
+                           "queued" "running"))
+      (destructuring-bind (id root updated) row
+        (when (> (or (%seconds-since updated) 0) *orphan-seconds*)
+          (let ((tree (sql-rows db "SELECT id,updated_at FROM thoughts WHERE root_id=?1 LIMIT 200" root)))
+            (unless (some (lambda (r) (or (work-pending-p kernel "thought" (first r))
+                                          (< (or (%seconds-since (second r)) 0) *orphan-seconds*)))
+                          tree)
+              (append! kernel "thought.failed"
+                       (obj "thought_id" id "class" "abandoned"
+                            "reason" (format nil "abandoned: no work left to carry it on since ~a" updated))))))))))
+
 (defun quiet-tick (kernel)
   "In quiet time, give one thought to the best material there is: a review of
 new conversation, then the most salient open concern, then the work item that
@@ -456,6 +477,7 @@ comes first, then, with none of those, rumination. Returns the thought id, or NI
   (%park-spent kernel)
   (%park-spent-work kernel)
   (%rotate kernel)
+  (ignore-errors (%close-orphans kernel))
   (let ((db (kernel-db kernel)))
     (flet ((no (why) (return-from quiet-tick (values nil why))))
       (unless (eq t (setting kernel "quiet.enabled")) (no "off"))

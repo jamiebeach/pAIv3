@@ -223,4 +223,23 @@
       (is (= 0 (seventh (concern-row k waiting))))
       (is (= 1 (seventh (concern-row k ready))) "another concern can proceed"))))
 
+(deftest a-thought-nothing-will-run-again-no-longer-blocks-quiet-time
+  (with-temp-kernel (k)
+    (let* ((stranded (request-thought k "responding" "SYNTHETIC stranded" :audience "operator"))
+           (waiting (request-thought k "responding" "SYNTHETIC waiting on a child" :audience "operator"))
+           (child (request-thought k "work" "SYNTHETIC child" :parent-id waiting))
+           (old (iso8601 (- (now) 7200))))
+      (append! k "work.completed" (obj "work_id" (sql-value (kernel-db k) "SELECT id FROM v3_work WHERE handler=?1 AND entity=?2 LIMIT 1" "thought" (princ-to-string stranded))))
+      (append! k "work.completed" (obj "work_id" (sql-value (kernel-db k) "SELECT id FROM v3_work WHERE handler=?1 AND entity=?2 LIMIT 1" "thought" (princ-to-string waiting))))
+      (sql-exec (kernel-db k) "UPDATE thoughts SET status='running',updated_at=?1" old)
+      (pai-v3.mind::%close-orphans k)
+      (is (equal "failed" (getf (thought-row k stranded) :status)) "nothing will run it again")
+      (is (search "abandoned" (getf (thought-row k stranded) :outcome)))
+      (is (equal "running" (getf (thought-row k waiting) :status)) "its child still has work queued")
+      (is (equal "running" (getf (thought-row k child) :status)))
+      (let ((fresh (request-thought k "responding" "SYNTHETIC just started" :audience "operator")))
+        (append! k "work.completed" (obj "work_id" (sql-value (kernel-db k) "SELECT id FROM v3_work WHERE handler=?1 AND entity=?2 LIMIT 1" "thought" (princ-to-string fresh))))
+        (pai-v3.mind::%close-orphans k)
+        (is (equal "queued" (getf (thought-row k fresh) :status)) "a recent thought is left alone")))))
+
 (run-suite "mind-concerns")

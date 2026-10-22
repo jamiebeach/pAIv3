@@ -164,8 +164,9 @@ becomes a stimulus (pai-v3.mind:coding-agent-message)."
                                       "response" (and r (or (ignore-errors (json-parse (third r))) (clip (third r) 6000))))))
                   ((equal what "thoughts")
                    (mapcar (lambda (r) (obj "id" (first r) "origin" (second r) "audience" (third r) "status" (fourth r)
-                                            "steps" (fifth r) "outcome" (clip (sixth r) 500) "reason" (clip (seventh r) 500)))
-                           (rows "SELECT id,origin,audience,status,steps,outcome,reason FROM thoughts WHERE status IN (?1,?2,?3,?4,?5,?6) ORDER BY id DESC LIMIT ?7"
+                                            "steps" (fifth r) "outcome" (clip (sixth r) 500) "reason" (clip (seventh r) 500)
+                                            "model_calls" (eighth r) "created_at" (ninth r) "updated_at" (tenth r)))
+                           (rows "SELECT id,origin,audience,status,steps,outcome,reason,model_calls,created_at,updated_at FROM thoughts WHERE status IN (?1,?2,?3,?4,?5,?6) ORDER BY id DESC LIMIT ?7"
                                  "queued" "requested" "running" "ended" "failed" "interrupted" limit)))
                   (t (list "what is dialogue, calls, failures or thoughts"))))
       o)))
