@@ -105,4 +105,30 @@
         (is (equal "I love the lake" (second (first (fact-evidence k (first (first (entity-facts k sam)))))))
             "the operator's words are its evidence")))))
 
+(deftest a-mislabelled-negative-fact-is-made-positive-keeping-its-evidence
+  (with-temp-kernel (k)
+    (let* ((sam (form-entity k :kind "person" :name "Sam" :lineage (own k)))
+           (city (form-entity k :kind "place" :name "Lisbon" :lineage (own k)))
+           (fact (admit-fact k :subject sam :predicate "lives_at" :object city :text "SYNTHETIC Sam lives in Lisbon"
+                               :grounding (obj "scope" "assertion" "polarity" "negative")
+                               :evidence (quote-of "I live in Lisbon") :lineage (own k)))
+           (new (pai-v3.mind::correct-polarity k fact "positive" "synthetic mislabel")))
+      (is (equal "retracted" (fact-status k fact)))
+      (is (equal "positive" (sql-value (kernel-db k) "SELECT polarity FROM graph_facts WHERE id=?1 LIMIT 1" new)))
+      (is (= 1 (length (fact-evidence k new))) "the evidence comes along"))))
+
+(deftest first-hand-facts-lead-and-the-newest-first
+  (with-temp-kernel (k)
+    (let* ((kid (form-entity k :kind "person" :name "Kid" :lineage (own k)))
+           (age1 (form-entity k :kind "place" :name "Porto" :lineage (own k)))
+           (age2 (form-entity k :kind "place" :name "Faro" :lineage (own k))))
+      (admit-fact k :subject kid :predicate "lives_at" :object age1 :text "SYNTHETIC-IMPORTED Kid is 15"
+                    :evidence (list (obj "kind" "prior-agent-utterance" "quote" "Kid is 15" "at" "2026-10-01T00:00:00Z")) :lineage (own k))
+      (admit-fact k :subject kid :predicate "lives_at" :object age2 :text "SYNTHETIC-TOLD Kid is 16"
+                    :evidence (list (obj "kind" "original-utterance" "quote" "Kid is 16" "at" "2026-10-20T00:00:00Z")) :lineage (own k))
+      (let ((text (entity-knowledge k (graph-entity k kid) (list pai-v3.mind::+real-world+))))
+        (is (< (search "SYNTHETIC-TOLD" text) (search "SYNTHETIC-IMPORTED" text)))
+        (is (search "[first-hand 2026-10-20]" text))
+        (is (search "first-hand fact outranks" text))))))
+
 (run-suite "mind-graph-correct")

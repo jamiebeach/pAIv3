@@ -58,6 +58,26 @@ ends, statement, evidence and lineage, and the old one retracted."
                     "source_event_id" source))
       (format nil "~a now says ~a, as ~a; the old fact is retracted." fact-id predicate new))))
 
+(defun correct-polarity (kernel fact-id polarity reason)
+  "Re-admit FACT-ID with POLARITY, keeping its ends, statement, evidence and
+lineage, and retract the old one. An operator maintenance step (bead v3-678)."
+  (destructuring-bind (subject predicate object character occurred from until derivation lineage scope old attributed text world)
+      (%live-fact kernel fact-id)
+    (when (equal old polarity) (%graph-refuse "that fact is already ~a" polarity))
+    (let ((new (admit-fact kernel :subject subject :predicate predicate :object object
+                                  :temporal (obj "character" character "occurred_at" occurred "valid_from" from "valid_until" until)
+                                  :derivation derivation :lineage (json-parse lineage)
+                                  :grounding (obj "scope" scope "polarity" polarity "attributed_to" attributed)
+                                  :text text :world world
+                                  :evidence (mapcar (lambda (ev)
+                                                      (destructuring-bind (kind quote event speaker origin ref at) ev
+                                                        (obj "kind" kind "quote" quote "source_event_id" event "speaker" speaker
+                                                             "origin" origin "source_ref" ref "at" at)))
+                                                    (fact-evidence kernel fact-id)))))
+      (append! kernel "graph.fact.retracted"
+               (obj "fact_id" fact-id "reason" (%by-operator (format nil "polarity corrected to ~a (~a): ~a" polarity new reason))))
+      new)))
+
 (defun correct-world (kernel entity-ids world reason source)
   "Move ENTITY-IDS (together) into WORLD: a work's entity id, or real."
   (let ((world (%check-world kernel (if (equal world "real") +real-world+ world)))

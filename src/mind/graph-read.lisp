@@ -67,6 +67,14 @@ has passed; else NIL. A fact that has ended stays in the record."
          (string< (subseq until 0 10) (subseq (now-iso8601) 0 10))
          (subseq until 0 10))))
 
+(defun fact-first-hand (kernel fact-id)
+  "The date of the newest first-hand evidence for FACT-ID (the operator's own
+words in conversation), or NIL."
+  (let ((dates (loop for ev in (fact-evidence kernel fact-id)
+                     when (and (equal "original-utterance" (first ev)) (stringp (seventh ev)) (>= (length (seventh ev)) 10))
+                       collect (subseq (seventh ev) 0 10))))
+    (and dates (first (sort dates #'string>)))))
+
 (defun render-fact (kernel row &key lineage)
   "One fact as a line: its statement (or subject predicate object), marked
 when it is in a story's world or is not a plain positive assertion, with
@@ -109,10 +117,18 @@ at. NIL when its facts are all in closed worlds or have ended."
          (facts (remove-if (lambda (f) (fact-ended kernel (first f)))
                            (remove-if-not (lambda (f) (member (nth 10 f) open-worlds :test #'equal)) all))))
     (when (or facts (null all))
-      (format nil "~a (~a~@[, in ~a~]):~:[ no known connections.~%~;~:*~%~{  - ~a~%~}~]"
-              (third entity) (second entity) (world-name kernel (tenth entity))
-              (mapcar (lambda (f) (render-fact kernel f :lineage (%fact-lineage kernel (first f))))
-                      (subseq facts 0 (min *graph-slot-facts* (length facts))))))))
+      ;; First-hand facts lead, newest first, and say so: when two facts
+      ;; disagree, the operator's own words outrank an import or an
+      ;; inference, and newer first-hand words outrank older (bead v3-u3x).
+      (let* ((dated (mapcar (lambda (f) (cons (fact-first-hand kernel (first f)) f)) facts))
+             (ordered (stable-sort dated (lambda (a b) (and (car a) (or (null (car b)) (string> (car a) (car b)))))))
+             (shown (subseq ordered 0 (min *graph-slot-facts* (length ordered)))))
+        (format nil "~a (~a~@[, in ~a~]):~:[ no known connections.~%~;~:*~%~{  - ~a~%~}~]~:[~;  (Where these disagree, a first-hand fact outranks the rest, and a newer first-hand fact an older one.)~%~]"
+                (third entity) (second entity) (world-name kernel (tenth entity))
+                (mapcar (lambda (d) (format nil "~@[[first-hand ~a] ~]~a" (car d)
+                                            (render-fact kernel (cdr d) :lineage (%fact-lineage kernel (second d)))))
+                        shown)
+                (some #'car shown))))))
 
 ;;; The tool
 

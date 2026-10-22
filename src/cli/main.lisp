@@ -235,6 +235,23 @@ optionally instructions and tone."
     (%with-agent dir (lambda (k) (pai-v3.mind::reset-graph k (format nil "~{~a~^ ~}" reason))
                        (%say "Graph reset. Health: ~a" (json-encode (pai-v3.mind:graph-health k)))))))
 
+(defun cmd-graph-polarity (args)
+  "With no fact ids, list live negative facts; with FACT-ID... and a reason
+after --, set each to positive."
+  (destructuring-bind (dir &rest rest) (%positional args)
+    (let* ((cut (position "--" rest :test #'equal))
+           (ids (if cut (subseq rest 0 cut) rest))
+           (reason (if cut (format nil "~{~a~^ ~}" (subseq rest (1+ cut))) "")))
+      (%with-agent dir
+                   (lambda (k)
+                     (if (null ids)
+                         (dolist (r (sql-rows (kernel-db k) "SELECT id,text FROM graph_facts WHERE status=?1 AND polarity=?2 ORDER BY id LIMIT 200" "active" "negative"))
+                           (%say "~a  ~a" (first r) (second r)))
+                         (progn
+                           (when (zerop (length reason)) (error "Give the reason after --."))
+                           (dolist (id ids)
+                             (%say "~a -> ~a" id (pai-v3.mind::correct-polarity k id "positive" reason))))))))))
+
 (defun cmd-graph-recover (args)
   "Recover unconnected entities from an export of the messages that mention them."
   (destructuring-bind (dir file source earlier &optional (limit "200")) (%positional args)
@@ -261,7 +278,7 @@ optionally instructions and tone."
     ("unlock-methods" . cmd-unlock-methods) ("settings" . cmd-settings)
     ("settings-export" . cmd-settings-export) ("settings-import" . cmd-settings-import)
     ("persona-set" . cmd-persona-set) ("graph-import" . cmd-graph-import)
-    ("graph-reset" . cmd-graph-reset) ("graph-recover" . cmd-graph-recover)))
+    ("graph-reset" . cmd-graph-reset) ("graph-polarity" . cmd-graph-polarity) ("graph-recover" . cmd-graph-recover)))
 
 (defun run-command (argv)
   "Run one command. Returns the process exit code."
