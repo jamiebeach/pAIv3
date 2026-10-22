@@ -514,7 +514,13 @@
       (pai-v3.api::fleet-post a b-id "two")
       (pai-v3.api::fleet-post a b-id "three")
       (is (= 3 (length (pai-v3.api::board-messages b (first (first (pai-v3.api::board-threads b)))))))
-      (is (= 2 (length (peer-thoughts b a))) "the third waits on the board"))))
+      (is (= 2 (length (peer-thoughts b a))) "the third waits on the board")
+      (pai-v3.api::fleet-post a b-id "SYNTHETIC operator words" :relayed-operator "Operator")
+      (is (= 3 (length (peer-thoughts b a))) "the operator's relayed words still wake")
+      (is (search "Earlier in the thread" (second (car (last (peer-thoughts b a))))))
+      (is (search "three" (second (car (last (peer-thoughts b a))))) "and see the posts before them")
+      (pai-v3.api::fleet-post a b-id "four")
+      (is (= 3 (length (peer-thoughts b a))) "a relay does not refill the peer's own allowance"))))
 
 (deftest communication-uses-recipient-scope-while-private-thinking-keeps-its-capabilities
   (let ((peer '(:audience "peer:x" :communicating t)) (guest '(:audience "guest")))
