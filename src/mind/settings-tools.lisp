@@ -30,6 +30,14 @@
                                rows))
                "No setting matches that."))))
 
+(defun %setting-value (name value)
+  "VALUE for setting NAME. Many models send every value as a string, so a
+string for a setting that is not a string is read as JSON (bead v3-4lu)."
+  (let ((def (gethash name pai-v3.kernel::*settings*)))
+    (if (and def (stringp value) (not (eq :string (pai-v3.kernel::setting-def-type def))))
+        (handler-case (json-parse value) (error () value))
+        value)))
+
 (define-tool "change_setting"
   :description "Change one of my settings that I am allowed to change, with the reason. Others belong to the operator; propose those instead."
   :parameters (obj "type" "object"
@@ -41,7 +49,7 @@
   :run (lambda (kernel id args)
          (handler-case
              (progn
-               (change-setting kernel (obj-get args "name" "") (obj-get args "value")
+               (change-setting kernel (obj-get args "name" "") (%setting-value (obj-get args "name" "") (obj-get args "value"))
                                :origin (obj "principal_type" "self" "principal_id" (kernel-agent-id kernel)
                                             "thought_id" id)
                                :reason (obj-get args "reason" ""))

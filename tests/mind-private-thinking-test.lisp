@@ -145,4 +145,13 @@
  (is (null (tools-for nil)))
  (is (null (pai-v3.mind::thought-reading-audience nil))))
 
+(deftest a-setting-value-sent-as-a-string-is-read-as-json
+ (with-temp-kernel (k)
+  (let ((id (request-thought k "introspection" "SYNTHETIC tune memory" :audience "operator"))
+        (run (pai-v3.mind::tool-run (gethash "change_setting" pai-v3.mind::*tools*))))
+   (is (search "is now" (funcall run k id (obj "name" "memory.withheld_threshold" "value" "0.4" "reason" "synthetic"))))
+   (is (< (abs (- 0.4 (setting k "memory.withheld_threshold"))) 1e-6) "a number, not the string \"0.4\"")
+   (is (equal "0.5" (pai-v3.mind::%setting-value "avatar.image" "0.5")) "a string setting keeps its string")
+   (is (equal '("a" "b") (pai-v3.mind::%setting-value "fleet.same_operator_peers" "[\"a\",\"b\"]")) "an array is read as one"))))
+
 (run-suite "mind-private-thinking")
