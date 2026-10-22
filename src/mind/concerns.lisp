@@ -57,6 +57,12 @@
 (define-setting "quiet.review"
   :type :boolean :default t :group "Quiet thinking"
   :description "After the operator goes quiet, review the new conversation for things worth looking into.")
+(define-setting "quiet.free_time_minutes"
+  :type :integer :min 0 :max 10080 :default 120 :group "Quiet thinking"
+  :description "About this often, quiet time gives the agent free time of her own: following an interest in the world, searching, reading, learning or making, never her own code or failures. Taken ahead of concerns and work; 0 never.")
+(define-setting "quiet.repairs_per_day"
+  :type :integer :min 0 :max 100 :default 4 :group "Quiet thinking"
+  :description "Most failures looked at at once in a day; past it, repair concerns wait their turn with the others.")
 (define-setting "quiet.rumination_minutes"
   :type :integer :min 0 :max 10080 :default 90 :group "Quiet thinking"
   :description "With no open concern, let the mind wander over memories and mood about this often (sooner when bored); 0 never.")
@@ -64,7 +70,8 @@
 (define-event-type "quiet.reviewed"
   :schema (("through_event_id" :integer) ("thought_id" :integer)))
 (define-event-type "quiet.ruminated"
-  :schema (("memory_ids" :array :optional) ("thought_id" :integer)))
+  :schema (("memory_ids" :array :optional) ("thought_id" :integer)
+           ("free" :boolean :optional)))       ; free time, not wandering
 
 (define-event-type "concern.raised"
   :schema (("concern_id" :string) ("kind" :string) ("question" :string) ("rationale" :string)
@@ -130,8 +137,8 @@
          (sql-exec db "INSERT INTO quiet_marks(name,value,at) VALUES('reviewed',?1,?2) ON CONFLICT(name) DO UPDATE SET value=excluded.value,at=excluded.at"
                    (f "through_event_id") (event-at e)))
         ((string= type "quiet.ruminated")
-         (sql-exec db "INSERT INTO quiet_marks(name,value,at) VALUES('ruminated',?1,?2) ON CONFLICT(name) DO UPDATE SET value=excluded.value,at=excluded.at"
-                   (f "thought_id") (event-at e))
+         (sql-exec db "INSERT INTO quiet_marks(name,value,at) VALUES(?3,?1,?2) ON CONFLICT(name) DO UPDATE SET value=excluded.value,at=excluded.at"
+                   (f "thought_id") (event-at e) (if (eq t (f "free")) "free" "ruminated"))
          (dolist (m (f "memory_ids"))
            (sql-exec db "INSERT INTO rumination_seeds(memory_id,times,last_at) VALUES(?1,1,?2) ON CONFLICT(memory_id) DO UPDATE SET times=times+1,last_at=excluded.last_at"
                      m (event-at e))))
@@ -396,11 +403,38 @@ last look, from the record alone: no model call."
 (defun %start-failure-repair (kernel)
   "A repair concern raised from a failure and not yet looked at starts at
 once, ahead of the operator's grace period: its evidence is freshest now."
-  (let ((pick (find-if (lambda (r) (and (not (%concern-waiting-p r))
+  (let ((pick (find-if (lambda (r) (and (< (%repairs-today kernel) (setting kernel "quiet.repairs_per_day"))
+                                        (not (%concern-waiting-p r))
                                         (equal "repair" (second r)) (zerop (seventh r))
                                         (sql-value (kernel-db kernel) "SELECT 1 FROM concern_failures WHERE concern_id=?1 LIMIT 1" (first r))))
                        (open-concerns kernel))))
     (when pick (%concern-thought kernel pick))))
+
+(defun %repairs-today (kernel)
+  (or (sql-value (kernel-db kernel) "SELECT count(*) FROM thoughts WHERE origin=?1 AND created_at>=?2 AND reason LIKE ?3 LIMIT 1"
+                 "concern" (subseq (now-iso8601) 0 10) "A failure, looked at at once%")
+      0))
+
+(defun %recent-free-time (kernel &key (most 3))
+  "What the last free times ended on, newest first, so a thread can be picked up."
+  (loop for (outcome) in (sql-rows (kernel-db kernel)
+                                   "SELECT outcome FROM thoughts WHERE origin=?1 AND reason LIKE ?2 AND outcome IS NOT NULL ORDER BY id DESC LIMIT ?3"
+                                   "introspection" "Free time.%" most)
+        when (and (stringp outcome) (plusp (length outcome)))
+          collect (subseq outcome 0 (min 400 (length outcome)))))
+
+(defun %start-free-time (kernel)
+  "Free time, about every quiet.free_time_minutes: the agent's own, for the
+world rather than herself, even with concerns and work open."
+  (let ((minutes (setting kernel "quiet.free_time_minutes")))
+    (when (plusp minutes)
+      (let ((last (second (%quiet-mark kernel "free"))))
+        (when (or (null last) (>= (%seconds-since last) (* 60 minutes)))
+          (let* ((seeds (%rumination-seeds kernel))
+                 (id (request-thought kernel "introspection"
+                                      (free-time-prompt (%recent-free-time kernel) (mapcar #'second (subseq seeds 0 (min 1 (length seeds))))))))
+            (append! kernel "quiet.ruminated" (obj "thought_id" id "free" t))
+            id))))))
 
 (defun %start-concern (kernel)
   "A thought for the most salient open concern ready to be attended."
@@ -489,6 +523,7 @@ comes first, then, with none of those, rumination. Returns the thought id, or NI
                                   "operator" "turn")))
         (when (and last-turn (< (%seconds-since last-turn) (setting kernel "quiet.grace_seconds"))) (no "grace")))
       (or (%start-review kernel)
+          (%start-free-time kernel)
           (%start-concern kernel)
           (%start-work kernel)
           (some (lambda (starter) (ignore-errors (funcall starter kernel))) *quiet-starters*)

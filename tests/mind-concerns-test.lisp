@@ -13,6 +13,7 @@
        (advance 43200)                                  ; noon UTC: half the day's budget is open
        (change-setting ,k "quiet.enabled" t :origin *operator*)
        (change-setting ,k "quiet.review" :false :origin *operator*)   ; tested on its own below
+       (change-setting ,k "quiet.free_time_minutes" 0 :origin *operator*) ; likewise
        ,@body)))
 
 (defun concern-thoughts (k)
@@ -241,5 +242,34 @@
         (append! k "work.completed" (obj "work_id" (sql-value (kernel-db k) "SELECT id FROM v3_work WHERE handler=?1 AND entity=?2 LIMIT 1" "thought" (princ-to-string fresh))))
         (pai-v3.mind::%close-orphans k)
         (is (equal "queued" (getf (thought-row k fresh) :status)) "a recent thought is left alone")))))
+
+(deftest free-time-comes-before-concerns-and-is-about-the-world
+  (with-quiet (k)
+    (change-setting k "quiet.free_time_minutes" 120 :origin *operator*)
+    (raise-concern k "SYNTHETIC something to settle")
+    (let ((id (quiet-tick k)))
+      (is (search "Free time." (getf (thought-row k id) :reason)))
+      (is (search "brave_search" (getf (thought-row k id) :reason)))
+      (is (search "Leave your own code" (getf (thought-row k id) :reason)))
+      (sql-exec (kernel-db k) "UPDATE thoughts SET status='ended',outcome=?2 WHERE id=?1" id "SYNTHETIC-THREAD tidal clocks")
+      (is (equal "concern" (getf (thought-row k (quiet-tick k)) :origin)) "not again until it is due"))
+    (sql-exec (kernel-db k) "UPDATE thoughts SET status='ended' WHERE origin=?1" "concern")
+    (advance (* 3 3600))
+    (let ((id (quiet-tick k)))
+      (is (search "SYNTHETIC-THREAD tidal clocks" (getf (thought-row k id) :reason)) "the last thread is offered"))))
+
+(deftest repairs-at-once-are-capped-per-day
+  (with-quiet (k)
+    (change-setting k "quiet.repairs_per_day" 1 :origin *operator*)
+    (quiet-tick k)
+    (dotimes (i 2)
+      (let ((failed (request-thought k "work" (format nil "SYNTHETIC ~d" i))))
+        (sql-exec (kernel-db k) "UPDATE thoughts SET status='failed',outcome=?2 WHERE id=?1" failed "synthetic")))
+    (let ((first (quiet-tick k)))
+      (is (search "A failure, looked at at once" (getf (thought-row k first) :reason)))
+      (sql-exec (kernel-db k) "UPDATE thoughts SET status='ended' WHERE id=?1" first))
+    (receive-turn k :channel "web" :audience "operator" :speaker "Sam" :text "hello"
+                    :origin (obj "principal_type" "operator"))
+    (is (equal "grace" (nth-value 1 (quiet-tick k))) "the second no longer jumps the queue")))
 
 (run-suite "mind-concerns")
