@@ -46,4 +46,18 @@
                      :interrupted t)
     (is (search "[interrupted]" (dialogue-row-text (first (recent-dialogue k "operator")))))))
 
+(deftest a-message-after-a-long-silence-says-how-long-it-has-been
+  (with-temp-kernel (k)
+    (flet ((say (text) (receive-turn k :channel "web" :audience "operator" :speaker "Sam" :text text))
+           (age (hours) (sql-exec (kernel-db k) "UPDATE working_dialogue SET at=?1" (iso8601 (- (now) (* hours 3600))))))
+      (say "SYNTHETIC first") (age 10)
+      (say "SYNTHETIC after ten hours")
+      (say "SYNTHETIC right after")
+      (let ((texts (mapcar #'dialogue-row-text (recent-dialogue k "operator"))))
+        (is (search "[it's been 10 hours since Sam's last message]" (second texts)))
+        (is (not (search "it's been" (first texts))) "the first message has nothing before it")
+        (is (not (search "it's been" (third texts))) "a quick reply is not marked"))
+      (age 72) (say "SYNTHETIC days later")
+      (is (search "it's been 3 days" (dialogue-row-text (car (last (recent-dialogue k "operator")))))))))
+
 (run-suite "mind-dialogue")

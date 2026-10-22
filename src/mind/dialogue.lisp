@@ -100,18 +100,34 @@ channel adapter; it is stored, never inferred from TEXT."
 
 (defstruct dialogue-row event-id channel speaker text tokens)
 
+(define-setting "dialogue.gap_marker_hours"
+  :type :number :min 1 :max 720 :default 6 :group "Context"
+  :description "When someone speaks after at least this many hours of silence, their message is marked with how long it has been.")
+
+(defun %gap-marker (kernel audience id speaker at)
+  "\"[it's been N hours since SPEAKER's last message]\" when the previous turn in AUDIENCE is long enough ago, or NIL."
+  (let* ((before (sql-value (kernel-db kernel) "SELECT at FROM working_dialogue WHERE audience=?1 AND event_id<?2 AND kind=?3 ORDER BY event_id DESC LIMIT 1"
+                            audience id "turn"))
+         (hours (and before (/ (- (parse-iso8601 at) (parse-iso8601 before)) 3600))))
+    (when (and hours (>= hours (setting kernel "dialogue.gap_marker_hours")))
+      (format nil "[it's been ~a since ~a's last message]~%"
+              (if (< hours 48) (format nil "~d hour~:p" (round hours)) (format nil "~d day~:p" (round hours 24)))
+              speaker))))
+
 (defun recent-dialogue (kernel audience &key (token-budget 4000) (max-rows 200) before-id)
   "Most recent dialogue visible to AUDIENCE across all channels, oldest first,
 fitted to TOKEN-BUDGET. One indexed read of at most MAX-ROWS rows."
   (let* ((rows (sql-rows (kernel-db kernel)
-                         "SELECT event_id,channel,speaker,rendered,tokens FROM working_dialogue WHERE audience=?1 AND event_id<?2 ORDER BY event_id DESC LIMIT ?3"
+                         "SELECT event_id,channel,speaker,rendered,tokens,kind,at FROM working_dialogue WHERE audience=?1 AND event_id<?2 ORDER BY event_id DESC LIMIT ?3"
                          audience (or before-id most-positive-fixnum) max-rows))
          (kept '())
          (used 0))
-    (loop for (id channel speaker text tokens) in rows
-          while (<= (+ used tokens) token-budget)
-          do (incf used tokens)
+    (loop for (id channel speaker text tokens kind at) in rows
+          for gap = (and (equal kind "turn") (ignore-errors (%gap-marker kernel audience id speaker at)))
+          for cost = (+ tokens (if gap (estimate-tokens gap) 0))
+          while (<= (+ used cost) token-budget)
+          do (incf used cost)
              (push (make-dialogue-row :event-id id :channel channel :speaker speaker
-                                      :text (localize-dialogue kernel text) :tokens tokens)
+                                      :text (format nil "~@[~a~]~a" gap (localize-dialogue kernel text)) :tokens cost)
                    kept))
     (values kept used)))

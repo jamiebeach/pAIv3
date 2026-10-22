@@ -122,14 +122,21 @@ something I chose to remember)."
   (let ((row (sql-row (kernel-db kernel) "SELECT kind,owner,created_at FROM memory_nodes WHERE id=?1 LIMIT 1" memory-id)))
     (when row
       (destructuring-bind (kind owner at) row
-        (format nil "a memory from ~a, ~a"
-                (or (ignore-errors (subseq (local-stamp kernel at) 4 14)) (subseq at 0 10))
+        ;; Said relative to today: a bare date beside "tonight" was still read as tonight.
+        (format nil "a memory from ~a, ~a~@[~a~]"
+                (let ((date (or (ignore-errors (subseq (local-stamp kernel at) 0 14)) (subseq at 0 10)))
+                      (days (ignore-errors (local-days-ago kernel at))))
+                  (case days
+                    ((nil) date) (0 (format nil "today (~a)" date)) (1 (format nil "yesterday (~a)" date))
+                    (t (format nil "~d days ago (~a)" days date))))
                 (cond ((search "-user-" memory-id)
                        (format nil "of a message from ~a" (setting kernel "operator.name")))
                       ((or (search "-agent-" memory-id) (search "-assistant-" memory-id)) "of something I said")
                       ((equal kind "episode") "of a conversation")
                       ((equal owner "self") (format nil "~a I kept" (string-downcase kind)))
-                      (t (string-downcase kind))))))))
+                      (t (string-downcase kind)))
+                (let ((days (ignore-errors (local-days-ago kernel at))))
+                  (and days (plusp days) "; time words in it such as tonight or tomorrow meant then, not now")))))))
 
 (defun memory-strength (kernel memory-id)
   "MEMORY-ID's strength (0 to 1), or NIL."

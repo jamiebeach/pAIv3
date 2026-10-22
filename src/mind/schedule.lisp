@@ -78,6 +78,12 @@
    :format '(:short-weekday " " (:year 4) "-" (:month 2) "-" (:day 2) " " (:hour 2) ":" (:min 2) " " :timezone)
    :timezone (%zone kernel nil)))
 
+(defun local-days-ago (kernel iso)
+  "Whole calendar days, in the operator's zone, between ISO and today: 0 today, 1 yesterday."
+  (flet ((day (ts) (local-time:format-timestring nil ts :format '((:year 4) "-" (:month 2) "-" (:day 2) "T00:00:00Z")
+                                                         :timezone (%zone kernel nil))))
+    (round (- (parse-iso8601 (day (local-time:now))) (parse-iso8601 (day (local-time:parse-timestring iso)))) 86400)))
+
 (defun localize-dialogue (kernel rendered)
   "A dialogue line with its leading UTC stamp ([2026-10-17 00:53 web] ...)
 in the operator's time. Bare UTC stamps were read as local time (both agents

@@ -135,4 +135,16 @@
     (is (search "insight I kept" (pai-v3.mind::memory-origin k "m-own")))
     (is (null (pai-v3.mind::memory-origin k "no-such-memory")))))
 
+(deftest a-recalled-memory-says-how-long-ago-it-was-written
+  (with-temp-kernel (k)
+    (append! k "memory.formed" (obj "memory_id" "m-yoga" "kind" "observation" "content" "Intro class tonight."
+                                   "sensitivity" "operator-only" "owner" "self" "strength" 0.5d0))
+    (is (search "a memory from today" (pai-v3.mind::memory-origin k "m-yoga")))
+    (is (not (search "meant then" (pai-v3.mind::memory-origin k "m-yoga"))) "today's time words still hold")
+    (sql-exec (kernel-db k) "UPDATE memory_nodes SET created_at=?1 WHERE id=?2" (iso8601 (- (now) 86400)) "m-yoga")
+    (is (search "a memory from yesterday" (pai-v3.mind::memory-origin k "m-yoga")))
+    (is (search "tonight or tomorrow meant then, not now" (pai-v3.mind::memory-origin k "m-yoga")))
+    (sql-exec (kernel-db k) "UPDATE memory_nodes SET created_at=?1 WHERE id=?2" (iso8601 (- (now) (* 5 86400))) "m-yoga")
+    (is (search "5 days ago" (pai-v3.mind::memory-origin k "m-yoga")))))
+
 (run-suite "mind-memory")
