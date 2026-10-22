@@ -49,10 +49,13 @@
                                                  "body" (obj "data" (base64url-encode (babel:string-to-octets "<p>Hello <b>there</b></p>" :encoding :utf-8)))))
                                            (t (obj "headers" headers))))))))))
 
+(defvar *calendar-cancelled* nil "When true, the fake calendar reports ev1 cancelled.")
+
 (hunchentoot:define-easy-handler (fake-calendar :uri (lambda (r) (uiop:string-prefix-p "/calendar/" (hunchentoot:script-name r)))) ()
   (push (list (hunchentoot:script-name*) (hunchentoot:query-string*)) *asked*)
   (setf (hunchentoot:content-type*) "application/json")
   (json-encode (obj "items" (list (obj "id" "ev1" "summary" "Dentist" "updated" "2026-10-16T09:00:00Z"
+                                       "status" (if *calendar-cancelled* "cancelled" "confirmed")
                                        "start" (obj "dateTime" "2026-10-17T10:00:00Z") "end" (obj "dateTime" "2026-10-17T11:00:00Z"))))))
 
 (defvar *gserver* (hunchentoot:start (make-instance 'hunchentoot:easy-acceptor :port *gport* :address "127.0.0.1"
@@ -123,6 +126,14 @@
         (is (<= (abs (- (parse-iso8601 tmin) (get-universal-time))) 120) "the window starts now, not in the past")
         (is (<= (abs (- (parse-iso8601 tmax) (+ (get-universal-time) (* 48 3600)))) 120) "and ends at the horizon")))
     (is (= 0 (pai-v3.api::poll-calendar k "home")) "an unchanged event is not recorded again")
+    (setf *calendar-cancelled* t)
+    (unwind-protect
+     (progn
+      (is (= 1 (pai-v3.api::poll-calendar k "home")))
+      (is (null (sql-value (kernel-db k) "SELECT 1 FROM calendar_events WHERE account=?1 AND id=?2 LIMIT 1" "home" "ev1"))
+          "a cancelled event leaves the calendar")
+      (is (= 0 (pai-v3.api::poll-calendar k "home")) "and is not recorded again"))
+     (setf *calendar-cancelled* nil))
     (signals setting-refused (change-setting k "calendar.horizon_hours" 2000 :origin *operator*) "no reading years ahead")))
 
 (deftest new-items-come-as-one-digest-of-outside-content

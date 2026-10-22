@@ -56,11 +56,12 @@
 (define-event-type "calendar.seen"
   :schema (("account" :string) ("event_id" :string) ("summary" :string) ("start" :string) ("end" :string)
            ("location" :string :optional) ("updated" :string)))
+(define-event-type "calendar.cancelled" :schema (("account" :string) ("event_id" :string)))
 (define-event-type "external.digested" :schema (("account" :string) ("through_event_id" :integer)))
 
 (define-projection "external"
   :kind :inline
-  :consumes ("google.account.connected" "google.account.disconnected" "mail.seen" "calendar.seen" "external.digested")
+  :consumes ("google.account.connected" "google.account.disconnected" "mail.seen" "calendar.seen" "calendar.cancelled" "external.digested")
   :tables ("CREATE TABLE IF NOT EXISTS google_accounts (account TEXT PRIMARY KEY, status TEXT NOT NULL, mail_since_ms INTEGER NOT NULL, digested_through INTEGER NOT NULL DEFAULT 0, connected_at TEXT NOT NULL)"
            "CREATE INDEX IF NOT EXISTS google_accounts_status_idx ON google_accounts(status,account)"
            "CREATE TABLE IF NOT EXISTS mail_items (account TEXT NOT NULL, id TEXT NOT NULL, sender TEXT NOT NULL, subject TEXT NOT NULL, snippet TEXT NOT NULL, date_ms INTEGER NOT NULL, day TEXT NOT NULL, event_id INTEGER NOT NULL, PRIMARY KEY(account,id))"
@@ -88,6 +89,8 @@
           ((string= type "calendar.seen")
            (sql-exec db "INSERT INTO calendar_events(account,id,summary,start_at,end_at,location,updated,event_id) VALUES(?1,?2,?3,?4,?5,?6,?7,?8) ON CONFLICT(account,id) DO UPDATE SET summary=excluded.summary,start_at=excluded.start_at,end_at=excluded.end_at,location=excluded.location,updated=excluded.updated,event_id=excluded.event_id"
                      (f "account") (f "event_id") (f "summary") (f "start") (f "end") (f "location") (f "updated") (event-id e)))
+          ((string= type "calendar.cancelled")
+           (sql-exec db "DELETE FROM calendar_events WHERE account=?1 AND id=?2" (f "account") (f "event_id")))
           (t (sql-exec db "UPDATE google_accounts SET digested_through=max(digested_through,?2) WHERE account=?1"
                        (f "account") (f "through_event_id"))))))))
 
@@ -173,11 +176,16 @@ day's allowance. Returns how many were taken."
   (let ((reply (%google-get kernel account
                             (format nil "~a/calendar/v3/calendars/primary/events?~a" (setting kernel "google.calendar_url")
                                     (%qs (list "timeMin" (%iso-now) "timeMax" (%iso-now (* 3600 (setting kernel "calendar.horizon_hours")))
-                                               "singleEvents" "true" "orderBy" "startTime" "showDeleted" "false"
+                                               "singleEvents" "true" "orderBy" "startTime" "showDeleted" "true"
                                                "maxResults" (setting kernel "calendar.per_poll"))))))
         (changed 0))
     (dolist (ev (subseq (or (obj-get reply "items") '()) 0 (min (setting kernel "calendar.per_poll") (length (obj-get reply "items")))))
       (let ((id (obj-get ev "id")) (updated (obj-get ev "updated" "")))
+        ;; A cancelled event is asked for so its stale row can go (bead v3-ehm).
+        (if (equal "cancelled" (obj-get ev "status"))
+            (when (sql-value (kernel-db kernel) "SELECT 1 FROM calendar_events WHERE account=?1 AND id=?2 LIMIT 1" account id)
+              (append! kernel "calendar.cancelled" (obj "account" account "event_id" id))
+              (incf changed))
         (unless (equal updated (sql-value (kernel-db kernel) "SELECT updated FROM calendar_events WHERE account=?1 AND id=?2 LIMIT 1" account id))
           (flet ((when-of (k) (let ((o (obj-get ev k))) (or (obj-get o "dateTime") (obj-get o "date") ""))))
             (append! kernel "calendar.seen"
@@ -185,7 +193,7 @@ day's allowance. Returns how many were taken."
                           "start" (when-of "start") "end" (when-of "end")
                           "location" (and (stringp (obj-get ev "location")) (%clip (obj-get ev "location") 200))
                           "updated" updated)))
-          (incf changed))))
+          (incf changed)))))
     changed))
 
 (defvar *google-polled-at* (make-hash-table :test 'eq :weakness :key))
