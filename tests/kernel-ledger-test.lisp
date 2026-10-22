@@ -66,4 +66,17 @@
     (let ((e (append! k "test.said" (obj "text" "café — 日本 🌙"))))
       (is (string= "café — 日本 🌙" (obj-get (event-payload (event-by-id k (event-id e))) "text"))))))
 
+(deftest a-timer-firing-mid-query-never-leaves-the-database-locked
+  ;; sb-ext:with-timeout interrupts wherever the thread is; inside SQLite that
+  ;; left the connection's mutex held and every other thread waiting (Angel, 2026-10-22).
+  (with-temp-kernel (k)
+    (let ((db (kernel-db k)))
+      (dotimes (i 300)
+        (handler-case (sb-ext:with-timeout 0.002
+                        (loop (sql-rows db "WITH RECURSIVE n(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM n WHERE x<2000) SELECT sum(x) FROM n")))
+          (sb-ext:timeout () nil)))
+      (let ((other (sb-thread:make-thread (lambda () (sql-value db "SELECT 1")))))
+        (is (eql 1 (sb-thread:join-thread other :timeout 5 :default :hung))
+            "another thread can still use the database")))))
+
 (run-suite "kernel-ledger")

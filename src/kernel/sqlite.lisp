@@ -236,14 +236,18 @@ key: pages are decrypted from SOURCE and encrypted for DEST."
                    (cffi:foreign-string-to-lisp ptr :count n :encoding :utf-8)))))))
 
 (defun %call-with-statement (db sql params fn)
-  (cffi:with-foreign-object (out :pointer)
-    (%check db (%prepare (db-handle db) sql -1 out (cffi:null-pointer)) sql)
-    (let ((stmt (cffi:mem-ref out :pointer)))
-      (unwind-protect
-           (progn
-             (loop for value in params for i from 1 do (%bind db stmt i value sql))
-             (funcall fn stmt))
-        (%finalize stmt)))))
+  ;; Uninterruptible: a timer (sb-ext:with-timeout) unwinding a thread inside
+  ;; SQLite leaves the serialized connection's mutex held, and every other
+  ;; thread then waits on it forever. Interrupts run once the statement is done.
+  (sb-sys:without-interrupts
+    (cffi:with-foreign-object (out :pointer)
+      (%check db (%prepare (db-handle db) sql -1 out (cffi:null-pointer)) sql)
+      (let ((stmt (cffi:mem-ref out :pointer)))
+        (unwind-protect
+             (progn
+               (loop for value in params for i from 1 do (%bind db stmt i value sql))
+               (funcall fn stmt))
+          (%finalize stmt))))))
 
 (defun sql-exec (db sql &rest params)
   "Run SQL to completion; return nothing."
