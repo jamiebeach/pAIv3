@@ -8,12 +8,14 @@
 
 (defparameter *operator* (obj "principal_type" "operator" "auth_method" "passkey"))
 
+;; A fixed midday clock: fixtures that look ahead an hour or call a whole day
+;; quiet must not depend on when the suite runs (bead v3-6yl).
 (defmacro with-watch ((k) &body body)
-  `(with-temp-kernel (,k)
+  `(with-clock (at-hour 12) (with-temp-kernel (,k)
      (change-setting ,k "time.zone" "UTC" :origin *operator*)
      (change-setting ,k "notifications.policy" (obj "quiet_hours" (obj "enabled" :false "start_minute" 0 "end_minute" 0)) :origin *operator*)
      (append! ,k "google.account.connected" (obj "account" "home" "scopes" "" "mail_since_ms" 0))
-     ,@body))
+     ,@body)))
 
 (defun seen-mail (k id from subject &key bulk (snippet ""))
   (append! k "mail.seen" (obj "account" "home" "message_id" id "from" from "subject" subject "snippet" snippet
