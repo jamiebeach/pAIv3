@@ -61,7 +61,7 @@
           (json-encode (projection-counts kernel name)) (projection-digest kernel name)))
 
 (define-tool "inspect"
-  :description "Look at my own derived state, read-only. what: overview (every projection's status, cursor and problems), failures (recent failed model calls and what the provider sent back), rows (a projection's rows; give name, and optionally table, column and value), quarantine (events a projection could not apply; optionally name), live_changes (my skills and repairs), digest (row counts and a digest of a projection, for verification; give name)."
+  :description "Look at my own derived state, read-only. what: overview (every projection's status, cursor and problems), failures (recent failed model calls and what the provider sent back), rows (a projection's rows; give name, and optionally table, column and value), quarantine (events a projection could not apply; optionally name), live_changes (code I defined or repaired in myself with lisp_eval: skills and repairs, and which were lost on restart; not recent ledger events), digest (row counts and a digest of a projection, for verification; give name)."
   :parameters (obj "type" "object"
                    "properties" (obj "what" (obj "type" "string" "enum" (list "overview" "failures" "rows" "quarantine" "live_changes" "digest"))
                                      "name" (obj "type" "string" "description" "A projection name, from the overview.")
