@@ -93,6 +93,16 @@
 (defun call (id name &optional (arguments "{}"))
   (obj "id" id "type" "function" "function" (obj "name" name "arguments" arguments)))
 
+(deftest a-thought-with-hundreds-of-steps-replays-all-of-them
+  (with-thinking (k)
+    (let ((id (request-thought k "private" "SYNTHETIC long thought")))
+      (pai-v3.mind::%record-text k id "model" "")
+      (dotimes (i 450)
+        (pai-v3.mind::%record-text k id "tool_call" "" "tool" "clock" "call_id" (format nil "c~d" i) "arguments" "{}"))
+      (dotimes (i 450)
+        (pai-v3.mind::%record-text k id "tool_result" "It is noon." "tool" "clock" "call_id" (format nil "c~d" i)))
+      (is (null (pai-v3.mind::awaiting-p (pai-v3.mind::%replay-messages k id))) "no result is lost to a limit"))))
+
 (defun operator-turn (k text)
   (let ((turn (receive-turn k :channel "web" :audience "operator" :speaker "Operator"
                               :text text :origin (obj "principal_type" "operator"))))
@@ -212,9 +222,9 @@
            (id (request-thought k "work" "look around")))
       (run-until-idle k)
       (let ((results (remove "tool_result" (thought-steps k id) :key #'first :test-not #'equal)))
-        (is (= 20 (length results)) "every call is answered, so the history stays valid")
-        (is (= 12 (count-if (lambda (r) (not (search "Not run" (third r)))) results)) "the first twelve run")
-        (is (search "asked for 20 tool calls" (third (car (last results)))) "the rest say why"))
+        (is (= 12 (length results)) "only the first twelve are kept, each answered, so the history stays valid")
+        (is (= 12 (count "tool_call" (thought-steps k id) :key #'first :test #'equal)))
+        (is (search "first 12 of the 20" (third (car (last results)))) "the model is told the rest were dropped"))
       (is (equal "ended" (getf (thought-row k id) :status))))))
 
 (defun noting-the-clock (kernel thought-id name arguments prior result)

@@ -244,8 +244,10 @@ the parent's origin, audience and root allowance. Returns its id."
                      :root-id root-id :depth depth :source-event-id source
                      :communicating (funcall *communication-root-p* kernel root-id))))))
 
-(defun thought-steps (kernel id &key (limit 400))
-  "Recorded steps of thought ID in order, as (kind part text tool call-id arguments)."
+(defun thought-steps (kernel id &key (limit -1))
+  "Recorded steps of thought ID in order, as (kind part text tool call-id arguments).
+Every step by default: a replay that keeps tool calls but drops their results
+waits forever (bead v3-fzr)."
   (sql-rows (kernel-db kernel)
             "SELECT kind,part,text,tool,call_id,arguments FROM thought_steps WHERE thought_id=?1 ORDER BY event_id LIMIT ?2"
             id limit))
@@ -568,11 +570,17 @@ TOOLS NIL asks for an answer with no tools offered."
                  (%record-text kernel id "model" (provider-failure-partial f)))
                (error f))))
          (text (obj-get result "content" ""))
+         (most (setting kernel "thought.max_tool_calls_per_step"))
+         (asked 0)
          ;; A call with no name can never run, and every provider rejects a
          ;; history that holds one, so it is dropped here (bead v3-o1z).
+         ;; Calls past the per-step cap are dropped too, before anything is
+         ;; recorded, and the model is told (bead v3-fzr): a reply once asked
+         ;; for 1,179 at once.
          (calls (loop for call in (obj-get result "tool_calls")
                       for fn = (obj-get call "function")
-                      when (and (stringp (obj-get fn "name")) (plusp (length (obj-get fn "name"))))
+                      when (and (stringp (obj-get fn "name")) (plusp (length (obj-get fn "name")))
+                                (<= (incf asked) most))
                       collect (obj "id" (or (obj-get call "id") (format nil "call-~d-~d" id (random 1000000)))
                                    "type" "function"
                                    "function" (obj "name" (obj-get fn "name")
@@ -584,7 +592,9 @@ TOOLS NIL asks for an answer with no tools offered."
       (deliver-reply kernel :channel (getf thought :channel) :audience (getf thought :audience)
                             :text text :in-reply-to id :interim t))
     (if calls
-        (obj "role" "assistant" "content" (if (plusp (length text)) text :null) "tool_calls" calls)
+        (let ((reply (obj "role" "assistant" "content" (if (plusp (length text)) text :null) "tool_calls" calls)))
+          (when (> asked most) (setf (gethash "asked_calls" reply) asked))
+          reply)
         ;; The finish reason travels to ANSWER, which marks a reply the limit cut off.
         (obj "role" "assistant" "content" text "finish_reason" (obj-get result "finish_reason")))))
 
@@ -597,6 +607,7 @@ TOOLS NIL asks for an answer with no tools offered."
 sub-call's result arrives later."
   (let* ((kernel (mind-kernel mind)) (thought (mind-thought mind)) (id (getf thought :id))
          (calls (obj-get reply "tool_calls"))
+         (asked (prog1 (obj-get reply "asked_calls") (remhash "asked_calls" reply)))
          (prior (sql-rows (kernel-db kernel)
                           "SELECT tool,arguments FROM thought_steps WHERE thought_id=?1 AND kind=?2 ORDER BY event_id LIMIT 400"
                           id "tool_call")))
@@ -614,7 +625,7 @@ sub-call's result arrives later."
           for result = (let ((*call-id* (obj-get call "id")))
                          (%activity thought "tool-start" "tool_name" name
                                     "input" (let ((a (or (obj-get fn "arguments") ""))) (subseq a 0 (min 200 (length a)))))
-                         (cond ((> n most)
+                         (let ((result (cond ((> n most)
                                 (setf failed t)
                                 (format nil "Not run: this response asked for ~d tool calls and at most ~d run at once. Ask again for the ones you still need, a few at a time."
                                         (length calls) most))
@@ -635,7 +646,11 @@ sub-call's result arrives later."
                                                                args)))
                                                   (error (e) (setf failed t) (format nil "Tool error: ~a" e))))
                                         (notes (and (stringp result) (%step-notes kernel id name (obj-get fn "arguments") prior result))))
-                                    (if (and notes (stringp result)) (format nil "~{~a~%~%~}~a" notes result) result)))))
+                                    (if (and notes (stringp result)) (format nil "~{~a~%~%~}~a" notes result) result))))))
+                         (when (and asked (= n (length calls)) (stringp result))
+                           (setf result (format nil "~a~%~%[Only the first ~d of the ~d tool calls in that response ran; the rest were dropped. Ask again for the ones you still need, a few at a time.]"
+                                                result most asked)))
+                         result))
           unless (eq result :pending)
             do (%activity thought "tool-result" "tool_name" name
                           "result_characters" (if (stringp result) (length result) 0))
