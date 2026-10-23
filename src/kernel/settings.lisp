@@ -100,9 +100,10 @@ when the value is invalid or ORIGIN may not make this change."
                               :reason (if (consp (setting-def-changed-by def))
                                           "the agent may change this only within its bounds"
                                           "only the operator may change this")))
-    (append! kernel "setting.changed"
-             (obj "name" name "value" value "previous" (setting kernel name)
-                  "reason" reason "origin" origin))
+    (let ((payload (obj "name" name "previous" (setting kernel name) "reason" reason "origin" origin)))
+      ;; Set apart so an empty list, which obj leaves out, is still a value.
+      (setf (gethash "value" payload) value)
+      (append! kernel "setting.changed" payload))
     value))
 
 (defun reset-setting (kernel name &key origin (reason "back to the default"))

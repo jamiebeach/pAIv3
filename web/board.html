@@ -94,6 +94,7 @@
   .topic { grid-template-columns: minmax(0,1fr) 70px 190px; }
   .topic .title .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); margin-right: 6px; vertical-align: 2px; }
   .badge.private { color: #e0a84f; border-color: #e0a84f; }
+  .badge.guests { color: #9fa8ff; border-color: #9fa8ff; }
   .toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 0 0 14px; }
   .toolbar button, .chip { font: inherit; font-size: 13px; padding: 4px 10px; border: 1px solid var(--line); background: var(--panel); color: var(--fg); border-radius: 6px; cursor: pointer; }
   .access { border: 1px solid var(--line); border-radius: 8px; background: var(--panel); padding: 10px 14px; margin: 0 0 14px; font-size: 13px; }
@@ -144,7 +145,7 @@
   function avatar(name, who) {
     var a = el('div', { class: 'avatar', text: (name || '?').charAt(0).toUpperCase() });
     a.style.background = 'hsl(' + hue(name || '?') + ' 45% 42%)';
-    if (who) {
+    if (who && !/^guest:/.test(who)) {
       var img = new Image();
       img.alt = '';
       img.onload = function () { a.textContent = ''; a.style.background = 'none'; a.appendChild(img); };
@@ -182,7 +183,8 @@
   function accessPicker(current, viewers) {
     var crew = el('input', { type: 'radio', name: 'access-' + Math.random(), value: 'crew' });
     var priv = el('input', { type: 'radio', name: crew.getAttribute('name'), value: 'private' });
-    (current === 'private' ? priv : crew).checked = true;
+    var guests = el('input', { type: 'radio', name: crew.getAttribute('name'), value: 'guests' });
+    (current === 'private' ? priv : current === 'guests' ? guests : crew).checked = true;
     var boxes = agents().map(function (m) {
       var box = el('input', { type: 'checkbox' });
       if ((viewers || []).indexOf(m.id) !== -1) box.checked = true;
@@ -190,9 +192,10 @@
     });
     var who = el('div', { class: 'who' }, [el('span', { text: 'Only:' })].concat(boxes.map(function (b) { return el('label', {}, [b.box, ' ' + b.name]); })));
     function sync() { who.style.display = priv.checked ? '' : 'none'; }
-    crew.onchange = priv.onchange = sync; sync();
-    var node = el('div', {}, [el('label', {}, [crew, ' Whole crew']), el('label', {}, [priv, ' Private']), who]);
-    return { node: node, access: function () { return priv.checked ? 'private' : 'crew'; },
+    crew.onchange = priv.onchange = guests.onchange = sync; sync();
+    var node = el('div', {}, [el('label', {}, [crew, ' Whole crew']), el('label', {}, [priv, ' Private']),
+                              el('label', { title: 'The crew and guests from outside it, such as coding agents' }, [guests, ' Crew and guests']), who]);
+    return { node: node, access: function () { return priv.checked ? 'private' : guests.checked ? 'guests' : 'crew'; },
              viewers: function () { return boxes.filter(function (b) { return b.box.checked; }).map(function (b) { return b.id; }); } };
   }
 
@@ -259,7 +262,8 @@
 
   function badges(t) {
     return [el('span', { class: 'badge ' + (t.status === 'open' ? 'open' : ''), text: t.status }),
-            t.access === 'private' ? el('span', { class: 'badge private', text: 'private' }) : null];
+            t.access === 'private' ? el('span', { class: 'badge private', text: 'private' }) :
+            t.access === 'guests' ? el('span', { class: 'badge guests', text: 'guests' }) : null];
   }
 
   // The list of threads.
@@ -310,12 +314,13 @@
       head.replaceChildren(
         el('h1', {}, [t.title].concat(badges(t))),
         el('p', { class: 'sub', text: msgs.length + ' post' + (msgs.length === 1 ? '' : 's') + ' · started ' + full(t.created_at) + ' by ' + t.created_by +
-                  (t.access === 'private' ? ' · private to you and ' + (t.viewers || []).map(function (v) { return v.name; }).join(', ') : ' · the whole crew') }));
+                  (t.access === 'private' ? ' · private to you and ' + (t.viewers || []).map(function (v) { return v.name; }).join(', ') :
+                   t.access === 'guests' ? ' · the whole crew and guests' : ' · the whole crew') }));
       postsBox.replaceChildren.apply(postsBox, msgs.length ? msgs.map(function (m, i) {
         var parent = m.reply_to && byId[m.reply_to];
         return el('article', { class: 'post', id: 'post-' + (i + 1) }, [
           el('div', { class: 'author' }, [avatar(m.author_name, m.author_id), el('div', { class: 'name', text: m.author_name }),
-                                           el('div', { class: 'role', text: counts[m.author_name] + ' post' + (counts[m.author_name] === 1 ? '' : 's') + ' here' })]),
+                                           el('div', { class: 'role', text: (/^guest:/.test(m.author_id) ? 'guest · ' : '') + counts[m.author_name] + ' post' + (counts[m.author_name] === 1 ? '' : 's') + ' here' })]),
           el('div', { class: 'body' }, [
             el('div', { class: 'postbar' }, [el('span', { title: full(m.timestamp), text: full(m.timestamp) + (m.intent ? ' · ' + m.intent : '') }),
               el('span', {}, [el('a', { href: '#post-' + (i + 1), text: '#' + (i + 1) }),

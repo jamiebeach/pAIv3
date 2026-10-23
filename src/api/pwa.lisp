@@ -573,6 +573,16 @@ localhost), the URL to send it to; passkeys only work at the agent's origin."
                      (t (files-route agent method path)))
                t))
 
+      ((string= path "/api/forum/guests")
+       (values (let ((origin (%signed-in agent)))
+                 (cond ((null origin) (reply 401 (obj "error" "sign in first")))
+                       ((and (eq method :post) (not (same-origin-p agent))) (reply 403 (obj "error" (%refusal agent))))
+                       (t (guests-admin-route k method origin))))
+               t))
+
+      ((uiop:string-prefix-p "/v1/guest/forum/" path)
+       (values (guest-route k method path) t))
+
       ((uiop:string-prefix-p "/api/forum/" path)
        (values (cond ((not (%signed-in agent)) (reply 401 (obj "error" "sign in first")))
                      ((and (eq method :post) (not (same-origin-p agent))) (reply 403 (obj "error" (%refusal agent))))

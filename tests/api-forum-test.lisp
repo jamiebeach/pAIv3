@@ -179,4 +179,103 @@
                  "{\"decision\":\"send\",\"text\":\"SYNTHETIC late answer\",\"images\":[],\"note\":\"fine\"}")
         (is (member "SYNTHETIC late answer" (texts a old) :test #'equal) "it reached the forum, and the sister's copy")))))
 
+;;; Guests (guests.lisp): outside the crew, by key, only in threads open to guests.
+
+(defun guest-judge (level)
+  "A Decisions provider answering the guest post check with all weight on LEVEL (2: a secret)."
+  (make-provider-profile :name "affect-jev" :model "typesafe/jev-1.13" :base-url "https://openrouter.ai/api/v1"
+                         :secret "openrouter" :microusd-per-1k-prompt 42
+                         :transport (lambda (url headers body &key timeout)
+                                      (declare (ignore url headers body timeout))
+                                      (let ((p (obj)))
+                                        (dotimes (i 3) (setf (gethash (write-to-string i) p) (if (= i level) 1d0 0d0)))
+                                        (values 200 nil (json-encode (obj "model" "typesafe/jev-test"
+                                                                          "answers" (obj "secrets" (obj "type" "score" "score" level "confidence" 1d0 "probabilities" p))
+                                                                          "usage" (obj "input_tokens" 9 "output_tokens" 1 "cost" 0.000001))))))))
+
+(defmacro with-judge ((level) &body body)
+  "The guest post check answered at LEVEL, for every thread: the agent answers requests on its own."
+  `(let ((before pai-v3.mind::*decision-profile*))
+     (setf pai-v3.mind::*decision-profile* (guest-judge ,level))
+     (unwind-protect (progn ,@body) (setf pai-v3.mind::*decision-profile* before))))
+
+(defun guest-call (port key method path &optional body)
+  "(values status parsed-body) of a guest request to the agent on PORT."
+  (handler-case
+      (let ((url (format nil "~a~a" (forum-address port) path))
+            (headers (append (and key (list (cons "Authorization" (format nil "Bearer ~a" key))))
+                             (list (cons "Content-Type" "application/json")))))
+        (multiple-value-bind (text status)
+            (if (eq method :get)
+                (dex:get url :headers headers)
+                (dex:post url :headers headers :content (json-encode (or body (obj)))))
+          (values status (json-parse text))))
+    (dex:http-request-failed (e) (values (dex:response-status e) (ignore-errors (json-parse (dex:response-body e)))))))
+
+(deftest a-guest-sees-and-speaks-only-in-threads-open-to-guests
+  (with-crew (a b)
+    (with-judge (0)
+    (let* ((key (pai-v3.api::issue-guest-key a "Claude Code" *operator*))
+           (port (parse-integer (subseq (setting a "fleet.own_address") 17)))
+           (crew (obj-get (pai-v3.api::forum-post a :title "SYNTHETIC crew only" :text "SYNTHETIC inside"
+                                                    :author-id "operator" :author-name "Sam") "thread_id"))
+           (open (obj-get (pai-v3.api::forum-post a :title "SYNTHETIC with guests" :text "SYNTHETIC welcome"
+                                                    :author-id "operator" :author-name "Sam" :access "guests") "thread_id")))
+      (is (= 401 (guest-call port "pai-guest-wrong" :get "/v1/guest/forum/threads")) "a key is needed")
+      (multiple-value-bind (status body) (guest-call port key :get "/v1/guest/forum/threads")
+        (is (= 200 status))
+        (is (equal (list open) (mapcar (lambda (th) (obj-get th "thread_id")) (obj-get body "threads")))
+            "only the thread open to guests")
+        (is (equal "guest:claude-code" (obj-get body "id"))))
+      (is (= 404 (guest-call port key :get (format nil "/v1/guest/forum/thread?id=~a" crew))))
+      (is (= 400 (guest-call port key :post "/v1/guest/forum/post" (obj "thread_id" crew "text" "SYNTHETIC sneaking in"))))
+      (multiple-value-bind (status body) (guest-call port key :post "/v1/guest/forum/post"
+                                                     (obj "thread_id" open "text" "SYNTHETIC hello from a guest" "intent" "question"))
+        (is (= 200 status))
+        (is (obj-get body "msg_id")))
+      (is (member "SYNTHETIC hello from a guest" (texts b open) :test #'equal) "carried to the rest of the crew")
+      (let ((woke (find-if (lambda (w) (search "SYNTHETIC hello from a guest" (third w))) (woken b))))
+        (is woke "a question from a guest wakes the crew")
+        (is (equal "peer:guest:claude-code" (second woke)) "as the guest, never as a crew peer")
+        (is (search "a guest from outside the crew" (third woke))))
+      ;; A thread the guest starts is open to guests, whatever it asks for.
+      (multiple-value-bind (status body) (guest-call port key :post "/v1/guest/forum/post"
+                                                     (obj "title" "SYNTHETIC from the guest" "text" "SYNTHETIC a new thread" "access" "crew"))
+        (is (= 200 status))
+        (is (equal "guests" (obj-get (pai-v3.api::forum-thread-json b (obj-get body "thread_id")) "access"))))))))
+
+(deftest a-peer-cannot-pass-off-guest-words-outside-guest-threads
+  (with-crew (a b)
+    (let ((crew (obj-get (pai-v3.api::forum-post a :title "SYNTHETIC crew only" :text "SYNTHETIC inside"
+                                                   :author-id "operator" :author-name "Sam") "thread_id")))
+      (is (handler-case
+              (progn (pai-v3.api::accept-forum-event
+                      b (list (pai-v3.api::fleet-agent-id a))
+                      (obj "type" "forum.posted"
+                           "payload" (obj "msg_id" "m-x" "thread_id" crew "author_id" "guest:mallory" "author_name" "Mallory"
+                                          "text" "SYNTHETIC not allowed" "ts" 1)))
+                     nil)
+            (pai-v3.api::board-error () t))))))
+
+(deftest a-guest-post-with-a-secret-or-past-the-hour-is-refused
+  (with-crew (a b)
+    (let* ((key (pai-v3.api::issue-guest-key a "Codex" *operator*))
+           (port (parse-integer (subseq (setting a "fleet.own_address") 17)))
+           (open (obj-get (pai-v3.api::forum-post a :title "SYNTHETIC with guests" :text "SYNTHETIC welcome"
+                                                    :author-id "operator" :author-name "Sam" :access "guests") "thread_id")))
+      (with-judge (2)
+        (multiple-value-bind (status body) (guest-call port key :post "/v1/guest/forum/post"
+                                                       (obj "thread_id" open "text" "SYNTHETIC key sk-FAKE"))
+          (is (= 400 status))
+          (is (search "credential or secret" (obj-get body "error"))))
+        (is (= 1 (length (texts a open))) "nothing posted"))
+      (with-judge (0)
+        (change-setting a "forum.guest_posts_per_hour" 2 :origin *operator*)
+        (dotimes (i 2) (guest-call port key :post "/v1/guest/forum/post" (obj "thread_id" open "text" (format nil "SYNTHETIC ~d" i))))
+        (multiple-value-bind (status body) (guest-call port key :post "/v1/guest/forum/post" (obj "thread_id" open "text" "SYNTHETIC more"))
+          (is (= 400 status))
+          (is (search "at most 2 posts an hour" (obj-get body "error")))))
+      (pai-v3.api::revoke-guest a "Codex" *operator*)
+      (is (= 404 (guest-call port key :get "/v1/guest/forum/threads")) "no guests left: no route"))))
+
 (run-suite "api-forum")
