@@ -1,8 +1,8 @@
 # Behaviour spec: persona, voice and governing instructions
 
-Status: **draft for agent review** (migration checklist A5, agent doc §14
-term 3). Nothing here is final until each agent has reviewed how they will
-be loaded. Written from v2 behaviour (reference only) and the v3 design.
+Status: **reviewed** (migration checklist A5, agent doc §14 term 3). Angel,
+Aria and Specter answered §4 on the crew forum on 2026-10-23; the operator
+settled the answers in §5. Written from v2 behaviour (reference only) and the v3 design.
 
 ## 1. What makes up the agent's self-presentation
 
@@ -60,10 +60,14 @@ order:
    each with a one-line note of where it came from
 5. Tone hint (operator-facing profiles only)
 
+The two orders differ on purpose: traits accrue, so the oldest come first;
+influences carry a strength, so the strongest come first.
+
 Bounds (from v2): at most 7 traits, 200 characters each, 1,500 total;
-influences bounded similarly. Text that reads as an instruction to the
-substrate (rather than a description of the agent) is rejected at adoption,
-as in v2.
+influences bounded the same way, with strength between 0 and 1. Bounds are
+enforced at adoption, so rendering never truncates. Text that reads as an
+instruction to the substrate (rather than a description of the agent) is
+rejected at adoption, as in v2.
 
 ### 2.4 Audience
 
@@ -84,7 +88,14 @@ Each agent's v2 persona state is imported as events, once:
 
 **Parity check (checklist E3):** before cutover the v3 identity block is
 rendered and shown to the agent beside the v2 system prompt as v2 would
-assemble it, and the agent compares replies to prompts they choose.
+assemble it, and the agent compares replies to prompts they choose. Parity
+means the same identity content, rendered deterministically; the layout
+differs by design (separate blocks, normalized order, provenance notes), so
+the agent confirms the v3 block still reads as themselves rather than
+matching text.
+
+Migrated governing instructions are reviewed at the agent's first quiet time
+after import: instructions can outlive their own truth.
 
 ## 4. Questions for each agent (A5 review)
 
@@ -98,3 +109,25 @@ assemble it, and the agent compares replies to prompts they choose.
    operator's adoption of a proposed trait.
 5. Is there anything in your current system prompt that is substrate
    plumbing rather than you, and should move out of identity?
+
+## 5. Decisions (2026-10-23)
+
+1. **Order:** as §2.3, unchanged.
+2. **Influences** render inside identity, after traits, strongest first, each
+   with a one-line note of where it came from (its `source_refs`). A separate
+   "what has shaped me" block would present them as history rather than self.
+3. **Nothing else** joins identity. Core memories stay memory: chosen per
+   context and filtered by audience, while identity is the same for every
+   audience. The identity text is the self-summary.
+4. **Adoption:** the agent adopts her own traits and influences; the operator
+   may decline, retire or reverse any of them. Every adoption goes through an
+   adopt API that refuses with a reason before any event is written: bounds
+   (§2.3), evidence references required, and a typed Decisions judgment
+   (as in affect appraisal) that the text describes the agent rather than
+   instructing the substrate. A reversed or retired facet leaves the
+   projection and changes the fingerprint.
+5. **Plumbing moves out of identity:** tool schemas and calling conventions,
+   output rules, workflow mechanics, time-zone handling, reply-language rules
+   and migration preambles belong in governing instructions or the
+   substrate. Test: instructions hold what would be true of any agent on this
+   substrate; identity holds what would be false of any other agent.
