@@ -1,12 +1,12 @@
 (in-package #:pai-v3.mind)
 
 ;;; Avatars (operator request 2026-10-19, raised by the agents on the board):
-;;; each agent has a picture of herself, and the operator has one, shown on
+;;; each agent has a picture of itself, and the operator has one, shown on
 ;;; the board and in the terminal in place of the first-letter circle.
 ;;;
 ;;; A picture is an image already in the agent's blob store, named by its
 ;;; content id (the same ids the image tools and the board use). An agent
-;;; chooses her own with set_avatar from an image she holds; the operator may
+;;; chooses its own with set_avatar from an image it holds; the operator may
 ;;; choose either from the Avatars page. Both are ordinary settings, so every
 ;;; change is in the ledger with who made it.
 
@@ -17,7 +17,7 @@
 (define-setting "avatar.image"
   :type :string :default "" :group "Avatars" :changed-by (:agent)
   :validate #'%avatar-id-problem
-  :description "The id of the image that is this agent's avatar on the board and in the terminal; empty for the first-letter circle. The agent may choose her own.")
+  :description "The id of the image that is this agent's avatar on the board and in the terminal; empty for the first-letter circle. The agent may choose its own.")
 
 (define-setting "operator.avatar"
   :type :string :default "" :group "Avatars"
@@ -30,7 +30,7 @@
     (and (stringp id) (plusp (length id)) (image-row kernel id) id)))
 
 (defun avatar-candidates (kernel audience)
-  "The pictures the agent may be offered as her avatar, newest first, as (id how at caption): those she made, and, for the
+  "The pictures the agent may be offered as its avatar, newest first, as (id how at caption): those it made, and, for the
 operator's own thoughts, those the operator sent. Pictures others posted are not offered."
   (let ((hows (if (equal audience "operator") '("made" "sent") '("made"))))
     (loop for how in hows
@@ -72,8 +72,8 @@ operator's own thoughts, those the operator sent. Pictures others posted are not
 (define-tool "set_avatar"
   :description "Choose the picture that is you on the board and in the terminal. Call it with no image_id to list the pictures you have made (each with its id and a caption when there is one); then call it again with that image_id. image_id is the id of an image you hold. Give an empty image_id to go back to the first-letter circle. If you already have an avatar it is not replaced unless you pass replace true, so you do not overwrite a choice by accident. The operator can also change it. Looking for your picture with search_experience will not find it: that searches what was said, not pictures."
   :summary "Choose your own avatar from an image you hold."
-  ;; The operator's thoughts and fleet peers' (replying on a board): her own picture is hers to
-  ;; choose, from an image she already holds. Not the mail digest, which runs on outside content.
+  ;; The operator's thoughts and fleet peers' (replying on a board): its own picture is its to
+  ;; choose, from an image it already holds. Not the mail digest, which runs on outside content.
   :available :operator-and-peers
   :core '("responding" "introspection" "work" "reflection")
   :parameters (obj "type" "object"

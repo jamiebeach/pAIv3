@@ -5,8 +5,8 @@
 ;;; at a time in the background, within a daily budget. Each passage goes
 ;;; through graph formation with the book as its world, so what happens in a
 ;;; story is never retrieved as real, and the passage is the evidence. After
-;;; each passage the agent keeps a few lines of her own about it, as a memory,
-;;; so she can talk about the book. She says when she has finished.
+;;; each passage the agent keeps a few lines of its own about it, as a memory,
+;;; so it can talk about the book. It says when it has finished.
 ;;;
 ;;; The text is kept in the agent's encrypted blob store, never in the ledger.
 ;;; EPUB, plain text, Markdown and HTML are read.

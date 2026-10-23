@@ -55,7 +55,7 @@
                                 (%seen db id (format nil "peer:~a" (obj-get p "peer_id")) "posted" nil nil at)
                                 (%seen db id "operator" "posted" nil nil at)))
                              ;; A picture I post on a peer's board is one that peer has now met,
-                             ;; so a thought answering her can see and remember it.
+                             ;; so a thought answering them can see and remember it.
                              ((equal "publication-intent" (obj-get p "kind"))
                               (dolist (id (ids (obj-get (obj-get (obj-get p "body") "request") "image_ids")))
                                 (%seen db id (format nil "peer:~a" (obj-get p "peer_id")) "shared" nil nil at)))))

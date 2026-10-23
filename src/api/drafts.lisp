@@ -4,7 +4,7 @@
 ;;; everything the agent knows and cannot publish. When it wants to say
 ;;; something to a peer it leaves a DRAFT; when the reflection is over, each
 ;;; draft becomes a thought for that peer's audience, with context filtered
-;;; for her, which sends it, edits it, or drops it.
+;;; for that peer, which sends it, edits it, or drops it.
 ;;;
 ;;; The speaking thought is shown the draft's words and where it answers, never
 ;;; the reflection's reasons: it must judge the words, and cannot be argued into

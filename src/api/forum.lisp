@@ -90,6 +90,9 @@
 
 ;;; Members and access
 
+(setf pai-v3.mind::*crew-peer-p*
+      (lambda (kernel peer-id) (or (equal peer-id "crew") (same-operator-peer-p kernel peer-id))))
+
 (defun forum-crew (kernel)
   "The peers of my crew: those marked as sharing my operator."
   (remove-if-not (lambda (p) (same-operator-peer-p kernel (first p))) (fleet-peers kernel)))
@@ -334,7 +337,7 @@ where the operator was signed in."
     (unless (and (member type +forum-types+ :test #'equal) (hash-table-p payload))
       (%board-refuse "not a forum event"))
     (let ((author (obj-get payload (if (string= type "forum.posted") "author_id" "by_id"))))
-      ;; History brought over from an old board holds every sister's words; a
+      ;; History brought over from an old board holds every crew member's words; a
       ;; migrated post may name any crew member, never someone outside it.
       (unless (or (equal author (first peer)) (equal author "operator")
                   (and (eq t (obj-get payload "migrated"))
@@ -384,7 +387,7 @@ where the operator was signed in."
                    (mapcar (lambda (g) (format nil "~a ~{~a~^, ~}" (car g) (reverse (cdr g)))) (reverse groups)))))))
 
 (defparameter +forum-guidance+
-  "Decide one of three. Respond, only if you have something new and useful: leave draft_forum_post with this thread_id and reply_to, and intent question or request only if you need an answer back. Acknowledge: if you only agree, thank or have seen it, react_to_post with an emoji instead of replying. Absorb or defer: keep what matters and say nothing. If a sister has already said what you would, react to hers rather than repeating it. A thread that has done its job can be resolved with set_forum_thread.")
+  "Decide one of three. Respond, only if you have something new and useful: leave draft_forum_post with this thread_id and reply_to, and intent question or request only if you need an answer back. Acknowledge: if you only agree, thank or have seen it, react_to_post with an emoji instead of replying. Absorb or defer: keep what matters and say nothing. If another agent has already said what you would, react to theirs rather than repeating it. A thread that has done its job can be resolved with set_forum_thread.")
 
 (defun %forum-consider (kernel payload peer)
   "Whether a post wakes me, and the thought if so. PEER is the crew member it
@@ -544,7 +547,7 @@ came from, or NIL when it was made here."
                                         thread-id))))))))
 
 (define-tool "read_forum"
-  :description "Read the crew forum, shared by the operator and all my sisters: without thread_id, the recent threads; with one, its posts and reactions. To say something there, leave draft_forum_post; to acknowledge, react_to_post."
+  :description "Read the crew forum, shared by the operator and all the other agents: without thread_id, the recent threads; with one, its posts and reactions. To say something there, leave draft_forum_post; to acknowledge, react_to_post."
   :summary "Read the crew forum."
   :parameters (obj "type" "object" "properties" (obj "thread_id" (obj "type" "string")))
   :available :operator-and-peers
@@ -570,7 +573,7 @@ came from, or NIL when it was made here."
                                             :on (not (eq t (obj-get args "remove")))))))))
 
 (define-tool "set_forum_thread"
-  :description "Change a crew forum thread: status open or resolved (a resolved thread wakes nobody); access crew (everyone) or private with viewers (names of sisters; the operator always sees it); or a new title."
+  :description "Change a crew forum thread: status open or resolved (a resolved thread wakes nobody); access crew (everyone) or private with viewers (names of agents; the operator always sees it); or a new title."
   :summary "Resolve, reopen, retitle or set who sees a forum thread."
   :parameters (obj "type" "object"
                    "properties" (obj "thread_id" (obj "type" "string")
@@ -618,7 +621,7 @@ came from, or NIL when it was made here."
     (list (first r) (and r (json-parse (second r))) (and r (json-parse (third r))))))
 
 (define-tool "draft_forum_post"
-  :description "While thinking privately, leave something to say in the crew forum, shared by the operator and all my sisters. Nothing is sent now: when this thought is over, a crew review checks it for secrets and sends, edits or drops it. text is required. To answer in a thread give thread_id and reply_to (the message answered); to start a thread give title instead. intent: question, request or proposal when I need an answer (it wakes my sisters), answer or fyi when not (they see it, unwoken). images: up to three stored image ids. quiet_for: names of sisters not to tell. private_to: for a new thread, the names of the only sisters who may read it. why: a line for the operator's record, never shown to the review."
+  :description "While thinking privately, leave something to say in the crew forum, shared by the operator and all the other agents. Nothing is sent now: when this thought is over, a crew review checks it for secrets and sends, edits or drops it. text is required. To answer in a thread give thread_id and reply_to (the message answered); to start a thread give title instead. intent: question, request or proposal when I need an answer (it wakes the other agents), answer or fyi when not (they see it, unwoken). images: up to three stored image ids. quiet_for: names of agents not to tell. private_to: for a new thread, the names of the only agents who may read it. why: a line for the operator's record, never shown to the review."
   :summary "Draft a crew forum post, sent after the crew review."
   :available :operator-and-peers
   :core t
@@ -684,14 +687,14 @@ came from, or NIL when it was made here."
            (readers (cond ((and th (equal "private" (fourth th)))
                            (format nil "only ~{~a~^, ~} and the operator (a private thread)" (mapcar (lambda (v) (%member-name kernel v)) (fifth th))))
                           (private (format nil "only ~{~a~^, ~} and the operator (a new private thread)" private))
-                          (t "the whole crew: the operator and all your sisters"))))
-      (format nil "Check ONE proposed post for the crew forum. This is a light crew review, not a task-solving thought: do not redo the task, add claims or judge the wording; its wording and accuracy are the sender's.~%~%Readers: ~a. Your sisters are the operator's own agents and may receive what the operator may see: the operator's calendar, mail, plans and personal details, and your looks and pictures. Never let through credentials, keys, passwords, tokens or other secrets; redact them or drop the post. ~:[~;In a private thread, keep to what its readers may hear. ~]~%~%Draft: ~a. Intent: ~a.~@[ New thread: ~s.~]~@[ Thread: ~a~]~@[, replying to ~a~].~@[ Not telling: ~{~a~^, ~}.~]~%Candidate text:~%~a~%Attachments: ~:[none~;~:*~{~a~^, ~}~].~%~%Return only a JSON object: {\"decision\":\"send\" or \"drop\",\"text\":\"the checked post\",\"images\":[the retained attachment IDs],\"note\":\"brief reason\"}. No tools. You may omit attachments; never add one."
+                          (t "the whole crew: the operator and all the other agents"))))
+      (format nil "Check ONE proposed post for the crew forum. This is a light crew review, not a task-solving thought: do not redo the task, add claims or judge the wording; its wording and accuracy are the sender's.~%~%Readers: ~a. The other agents are the operator's own agents and may receive what the operator may see: the operator's calendar, mail, plans and personal details, and your looks and pictures. Never let through credentials, keys, passwords, tokens or other secrets; redact them or drop the post. ~:[~;In a private thread, keep to what its readers may hear. ~]~%~%Draft: ~a. Intent: ~a.~@[ New thread: ~s.~]~@[ Thread: ~a~]~@[, replying to ~a~].~@[ Not telling: ~{~a~^, ~}.~]~%Candidate text:~%~a~%Attachments: ~:[none~;~:*~{~a~^, ~}~].~%~%Return only a JSON object: {\"decision\":\"send\" or \"drop\",\"text\":\"the checked post\",\"images\":[the retained attachment IDs],\"note\":\"brief reason\"}. No tools. You may omit attachments; never add one."
               readers (or private (and th (equal "private" (fourth th))))
               draft-id intent title (and th (second th)) reply quiet text (%draft-envelope kernel draft-id)))))
 
 (defun %crew-draft-p (kernel draft)
   "True when DRAFT is said in the forum: one for the crew, or one left the old
-way for a single sister whose thread now lives in the forum (bead v3-m9m)."
+way for a single peer whose thread now lives in the forum (bead v3-m9m)."
   (and draft
        (or (equal "crew" (second draft))
            (and (third draft) (forum-thread kernel (third draft)) t))))

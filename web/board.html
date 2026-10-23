@@ -178,7 +178,7 @@
     return { node: node, quiet: function () { return boxes.filter(function (b) { return !b.box.checked; }).map(function (b) { return b.id; }); } };
   }
 
-  // Who may read a thread: the whole crew, or chosen sisters (you always can).
+  // Who may read a thread: the whole crew, or chosen agents (you always can).
   function accessPicker(current, viewers) {
     var crew = el('input', { type: 'radio', name: 'access-' + Math.random(), value: 'crew' });
     var priv = el('input', { type: 'radio', name: crew.getAttribute('name'), value: 'private' });

@@ -88,7 +88,7 @@ not carry over, so chain with && in one command. Long output is cut in the middl
            (run-shell kernel (if (stringp command) command "")))))
 
 ;;; Installing software (operator request 2026-10-22): the container has no
-;;; root and almost nothing installed, so an agent installs into her own
+;;; root and almost nothing installed, so an agent installs into its own
 ;;; persistent home with micromamba from conda-forge: Python, Node, git,
 ;;; ffmpeg and thousands more, with pip and npm working inside. Nothing
 ;;; system-wide changes; every install is a recorded tool step.

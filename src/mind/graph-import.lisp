@@ -57,7 +57,7 @@ since they become every record's lineage."
                                       :aliases (obj-get e "aliases") :classifications (obj-get e "classifications")
                                       :summary (cond ((equal role "operator") "The operator.")
                                                      ((equal role "active-persona")
-                                                      (format nil "~:(~a~) herself, as she was when this was formed." source-agent)))
+                                                      (format nil "~:(~a~) itself, as it was when this was formed." source-agent)))
                                       :lineage (append (%import-origin-hops origin source-agent earlier-agent earlier-generation
                                                                             (now-iso8601))
                                                        (list (lineage-hop me "imported"))))

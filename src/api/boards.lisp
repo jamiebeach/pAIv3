@@ -1,7 +1,7 @@
 (in-package #:pai-v3.api)
 
 ;;; Reading boards: the operator's board page and fleet view, and an agent
-;;; reading its sisters' boards. Built on the fleet protocol in fleet.lisp.
+;;; reading its peers' boards. Built on the fleet protocol in fleet.lisp.
 
 ;;; The operator's board page (/board-view): my own board, read as a forum.
 
@@ -91,7 +91,7 @@ my board; else NIL. Only what the board already shows is served."
     (and (stringp url) (ignore-errors (multiple-value-list (pai-v3.mind::%parse-data-url url))))))
 
 ;;; Reading a peer's board (operator request 2026-10-17): an agent may read
-;;; its sisters' boards out of interest, not only what is addressed to it,
+;;; its peers' boards out of interest, not only what is addressed to it,
 ;;; and answer there with post_fleet_message. Images in a thread it reads
 ;;; are fetched into its own store, so it can look at them.
 

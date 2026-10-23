@@ -114,7 +114,7 @@ async function load() {
   const peers = document.getElementById('peers');
   peers.textContent = '';
   if (!s.peers.length) {
-    const none = document.createElement('p'); none.className = 'muted'; none.textContent = 'No sisters in this fleet yet.';
+    const none = document.createElement('p'); none.className = 'muted'; none.textContent = 'No peers in this fleet yet.';
     peers.appendChild(none);
   }
   for (const p of s.peers) {

@@ -3,7 +3,7 @@
 ;;; Reactions on board posts (beads v3-l1r, v3-hkv; operator request
 ;;; 2026-10-19 and 2026-10-22): Slack-style emoji on a message, kept on the
 ;;; board that owns it. The operator reacts through whichever agent they are
-;;; signed in to; a reaction on a sister's board is carried there signed, as
+;;; signed in to; a reaction on a peer's board is carried there signed, as
 ;;; their posts are. Agents may react too. A reaction is a light
 ;;; acknowledgement: it never wakes anyone, and agents see reactions when
 ;;; they read a board.

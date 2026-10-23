@@ -77,9 +77,9 @@
   "(lambda (url headers body)) -> body, status. Replaced in tests.")
 
 (defun %reference-allowed-p (kernel thought-id image-id)
-  "Whether a thought may use IMAGE-ID as a reference: any, for the operator's thoughts; for a sister's, only a
-picture her audience has met or one the agent made, so a picture the operator showed in private cannot leak into one
-made for a sister."
+  "Whether a thought may use IMAGE-ID as a reference: any, for the operator's thoughts; for a peer's, only a
+picture its audience has met or one the agent made, so a picture the operator showed in private cannot leak into one
+made for a peer."
   (let ((audience (thought-reading-audience (thought-row kernel thought-id))))
     (or (null audience) (equal audience "operator")
         (sql-value (kernel-db kernel) "SELECT 1 FROM seen_images WHERE image_id=?1 AND audience=?2 LIMIT 1" image-id audience)
@@ -162,10 +162,10 @@ that keeps identity from references then makes it. Describe the new scene in the
 entity ids of who or what the image shows, so I can find it again as a picture of them (whoever the references
 show is linked anyway)."
   :summary "Make an image from a description."
-  ;; Almost always at hand: the operator's thoughts and a sister's (answering her on a board),
+  ;; Almost always at hand: the operator's thoughts and a peer's (answering it on a board),
   ;; but not a thought made of outside content (the mail digest). Spend is capped by
-  ;; images.generation_daily_usd, and a sister's thought may use as references only pictures
-  ;; she has met or the agent made.
+  ;; images.generation_daily_usd, and a peer's thought may use as references only pictures
+  ;; it has met or the agent made.
   :available :operator-and-peers
   :core t
   :parameters (obj "type" "object"

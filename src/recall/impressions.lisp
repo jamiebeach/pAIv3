@@ -89,7 +89,7 @@ identifier it goes by, so interactions naming any of them are found."
   (if (and (> (length anchor) 2) (string= "h:" anchor :end2 2))
       (let* ((handle (subseq anchor 2))
              (label (second (first (handles-in kernel handle)))))
-        ;; What it was bound to is a name for it too (a peer's id and her name).
+        ;; What it was bound to is a name for it too (a peer's id and its name).
         (list (or label handle) "thing" (remove nil (list handle label)) nil))
       (let ((e (graph-entity kernel anchor)))
         (when e

@@ -118,7 +118,7 @@ becomes a stimulus (pai-v3.mind:coding-agent-message)."
                            (latest-event-ids kernel "attention.pass" limit)))
                   ((equal what "shadow") (shadow-outreach kernel limit))
                   ((equal what "avatars")
-                   ;; What the pages would be given: mine, and each sister's as fetched from her now.
+                   ;; What the pages would be given: mine, and each peer's as fetched from it now.
                    (list (let ((o (avatar-summary kernel)))
                            (multiple-value-bind (mime octets) (own-avatar kernel :self)
                              (setf (gethash "self_picture" o) (if mime (obj "mime" mime "bytes" (length octets)) :null)))

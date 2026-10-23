@@ -479,7 +479,7 @@ woken reply reads the thread and not only the post that woke it (bead v3-gkt)."
 (defun %board-reader (kernel peer)
   "Whom a board read is for: NIL (everything) when a peer of the same operator
 fetches it for that operator's own fleet view, else the peer, who sees only
-what was disclosed to it. Posts restricted to one sister are still the
+what was disclosed to it. Posts restricted to one peer are still the
 operator's to read on any of them."
   (if (and (equal "operator" (hunchentoot:get-parameter "for"))
            (same-operator-peer-p kernel (first peer)))
@@ -938,7 +938,7 @@ some other way: it is the only thing that binds the two operators."
                     (let ((thread (board-thread-json k (hunchentoot:get-parameter "id") :peer (%board-reader k peer))))
                       (if thread (reply 200 thread) (reply 404 (obj "status" "not-found")))))
                    ((string= path "/fleet/avatar")
-                    ;; My picture, for a sister's board page to show beside my posts.
+                    ;; My picture, for a peer's board page to show beside my posts.
                     (let* ((id (pai-v3.mind:avatar-image-id k :self))
                            (url (and id (pai-v3.mind::image-data-url k id))))
                       (if url

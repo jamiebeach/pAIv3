@@ -2,18 +2,18 @@
 
 ;;; Avatars on the wire. The pages ask /api/avatar?who=self|operator|<peer id>;
 ;;; the answer is the picture, or 404 and the page keeps its first-letter
-;;; circle. A sister's picture is fetched from her over the signed fleet
+;;; circle. A peer's picture is fetched from it over the signed fleet
 ;;; route and kept in memory for a few minutes, so a board with many posts
-;;; asks her once. The operator chooses from the Avatars page: a picture is
+;;; asks it once. The operator chooses from the Avatars page: a picture is
 ;;; resized in the browser to a small square, stored like any image, and its
 ;;; id set as the setting.
 
-(defparameter *peer-avatar-seconds* 300 "How long a sister's picture is kept before she is asked again.")
+(defparameter *peer-avatar-seconds* 300 "How long a peer's picture is kept before it is asked again.")
 (defparameter *peer-avatar-none-seconds* 20
-  "How long \"she has none\" (or \"she could not be reached\") is believed: briefly, so a picture she
+  "How long \"it has none\" (or \"it could not be reached\") is believed: briefly, so a picture it
 chooses soon after a page was loaded shows at the next one.")
 (defvar *peer-avatars* (make-hash-table :test 'equal)
-  "(my id . peer id) -> (fetched-at mime octets); mime and octets are NIL when she had none.")
+  "(my id . peer id) -> (fetched-at mime octets); mime and octets are NIL when it had none.")
 (defvar *peer-avatars-lock* (bt:make-lock "peer avatars"))
 
 (defun own-avatar (kernel who)
@@ -23,14 +23,14 @@ chooses soon after a page was loaded shows at the next one.")
     (and row (values (first row) (second row) id))))
 
 (defun %fetch-peer-avatar (kernel peer-id)
-  "(mime octets) of a sister's avatar from her, or NIL."
+  "(mime octets) of a peer's avatar from it, or NIL."
   (let ((peer (fleet-peer kernel peer-id)))
     (and peer
          (let ((url (ignore-errors (%given (obj-get (%peer-get kernel peer "/fleet/avatar") "data_url")))))
            (and (stringp url) (ignore-errors (multiple-value-list (pai-v3.mind::%parse-data-url url))))))))
 
 (defun peer-avatar (kernel peer-id)
-  "(mime octets) of PEER-ID's avatar, remembered for *peer-avatar-seconds* (a miss only for *peer-avatar-none-seconds*); NIL when she has none or cannot be reached."
+  "(mime octets) of PEER-ID's avatar, remembered for *peer-avatar-seconds* (a miss only for *peer-avatar-none-seconds*); NIL when it has none or cannot be reached."
   (let ((hit (bt:with-lock-held (*peer-avatars-lock*) (gethash (cons (kernel-agent-id kernel) peer-id) *peer-avatars*))))
     (if (and hit (< (- (now) (first hit)) (if (second hit) *peer-avatar-seconds* *peer-avatar-none-seconds*)))
         (and (second hit) (list (second hit) (third hit)))
@@ -48,7 +48,7 @@ chooses soon after a page was loaded shows at the next one.")
         ((stringp who) (let ((image (peer-avatar kernel who))) (and image (values (first image) (second image) nil))))))
 
 (defun avatar-summary (kernel)
-  "What the pages need to decide how to draw: whether I and the operator have pictures, and who my sisters are."
+  "What the pages need to decide how to draw: whether I and the operator have pictures, and who my peers are."
   (obj "self" (or (pai-v3.mind:avatar-image-id kernel :self) :null)
        "operator" (or (pai-v3.mind:avatar-image-id kernel :operator) :null)
        "self_id" (fleet-agent-id kernel) "name" (fleet-own-name kernel) "operator_name" (setting kernel "operator.name")

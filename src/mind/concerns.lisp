@@ -59,7 +59,7 @@
   :description "After the operator goes quiet, review the new conversation for things worth looking into.")
 (define-setting "quiet.free_time_minutes"
   :type :integer :min 0 :max 10080 :default 120 :group "Quiet thinking"
-  :description "About this often, quiet time gives the agent free time of her own: following an interest in the world, searching, reading, learning or making, never her own code or failures. Taken ahead of concerns and work; 0 never.")
+  :description "About this often, quiet time gives the agent free time of its own: following an interest in the world, searching, reading, learning or making, never its own code or failures. Taken ahead of concerns and work; 0 never.")
 (define-setting "quiet.repairs_per_day"
   :type :integer :min 0 :max 100 :default 4 :group "Quiet thinking"
   :description "Most failures looked at at once in a day; past it, repair concerns wait their turn with the others.")
@@ -425,7 +425,7 @@ once, ahead of the operator's grace period: its evidence is freshest now."
 
 (defun %start-free-time (kernel)
   "Free time, about every quiet.free_time_minutes: the agent's own, for the
-world rather than herself, even with concerns and work open."
+world rather than itself, even with concerns and work open."
   (let ((minutes (setting kernel "quiet.free_time_minutes")))
     (when (plusp minutes)
       (let ((last (second (%quiet-mark kernel "free"))))
@@ -489,7 +489,7 @@ or NIL. The fleet digest is one.")
   "Fail thoughts that say queued or running but that nothing will ever run
 again: no thought in their tree has queued work or has moved for a while.
 Left alone, one blocks quiet thinking for good (Angel, 2026-10-21: two
-replies stranded mid-stream kept her from quiet time for a day)."
+replies stranded mid-stream kept it from quiet time for a day)."
   (let ((db (kernel-db kernel)))
     (dolist (row (sql-rows db "SELECT id,root_id,updated_at FROM thoughts WHERE status IN (?1,?2) ORDER BY updated_at LIMIT 20"
                            "queued" "running"))
