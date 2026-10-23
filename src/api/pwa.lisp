@@ -157,6 +157,9 @@ becomes a stimulus (pai-v3.mind:coding-agent-message)."
                   ((equal what "formation")
                    (mapcar (lambda (id) (let ((e (event-by-id kernel id))) (obj "event_id" id "at" (event-at e) "run" (event-payload e))))
                            (latest-event-ids kernel "graph.formation.done" limit)))
+                  ;; One forum thread in full, as the operator sees it (?id=).
+                  ((equal what "forum-thread")
+                   (let ((th (forum-thread-json kernel (hunchentoot:get-parameter "id")))) (and th (list th))))
                   ((equal what "forum")
                    (list (obj "threads" (or (sql-value db "SELECT count(*) FROM forum_threads WHERE status IN (?1,?2) LIMIT 1" "open" "resolved") 0)
                               "posts" (or (sql-value db "SELECT count(*) FROM forum_messages WHERE thread_id IN (SELECT thread_id FROM forum_threads WHERE status IN (?1,?2)) LIMIT 1" "open" "resolved") 0)
