@@ -101,6 +101,10 @@
   .access .who { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 6px 0; color: var(--muted); }
   .composer .opts { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 13px; color: var(--muted); margin: 0 0 10px; align-items: center; }
   .pending { color: var(--muted); font-size: 13px; font-style: italic; margin: 0 0 12px; }
+  @media (max-width: 640px) {
+    .topic { grid-template-columns: minmax(0,1fr) 48px; }
+    .topic .last { grid-column: 1 / -1; margin-top: -6px; }
+  }
 </style>
 </head>
 <body>
