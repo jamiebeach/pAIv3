@@ -45,6 +45,18 @@
     (is (< (search "hacked the gate" text) (search "brother" text)) "chapter one first, as the spine says")
     (is (null (search "<p>" text)) "as text, not markup")))
 
+(deftest a-damaged-or-oddly-written-epub-still-gives-its-text
+  ;; A broken image, names written with ./ and backslashes, no container: the prose still comes through.
+  (let* ((good (pai-v3.api::zip-entries *epub*))
+         (odd (stored-zip
+               (list (cons "mimetype" "application/epub+zip")
+                     (cons "./OEBPS\\content.opf" (map 'string #'code-char (cdr (assoc "OEBPS/content.opf" good :test #'equal))))
+                     (cons "OEBPS/Text/ch 1.xhtml" "<html><body><p>Mira Vale hacked the gate of Lowtown.</p></body></html>")
+                     (cons "OEBPS/ch2.xhtml" "<html><body><p>Kade was Mira Vale's brother.</p></body></html>")))))
+    (is (null (pai-v3.api::%inflate (make-array 5 :element-type '(unsigned-byte 8) :initial-contents '(120 156 99 0 1))))
+        "a truncated entry is NIL, not an error")
+    (is (search "brother" (pai-v3.api::epub-text odd)))))
+
 (deftest a-book-is-cut-into-passages-at-paragraph-ends
   (let* ((para (format nil "~a~%~%" (make-string 900 :initial-element #\a)))
          (text (format nil "~{~a~}" (loop repeat 10 collect para)))
@@ -121,7 +133,7 @@
                  (is (search "SYNTHETIC-NOTE Kade" (tool "action" "notes" "book" "neon")))
                  (is (search "Kade was Mira" (tool "action" "passage" "book" "neon" "passage" 2)))
                  (is (sql-value (kernel-db k) "SELECT 1 FROM memory_nodes WHERE content LIKE ?1 LIMIT 1" "%finished reading neon%")
-                     "she remembers finishing it")
+                     "the finish is remembered")
                  (is (sql-value (kernel-db k) "SELECT 1 FROM thoughts WHERE reason LIKE ?1 LIMIT 1" "%just finished reading neon%")
                      "and thinks it over, to tell the operator"))))
         (uiop:delete-directory-tree (uiop:ensure-directory-pathname root) :validate t :if-does-not-exist :ignore)))))

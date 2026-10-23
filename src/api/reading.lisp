@@ -86,8 +86,23 @@
 (defun %u16 (v i) (logior (aref v i) (ash (aref v (1+ i)) 8)))
 (defun %u32 (v i) (logior (%u16 v i) (ash (%u16 v (+ i 2)) 16)))
 
+(defun %zip-name (name)
+  "NAME as a plain forward-slash path, so a lookup matches however the writer spelled it."
+  (string-left-trim "/" (let ((n (substitute #\/ #\\ name)))
+                          (loop while (and (> (length n) 1) (string= "./" n :end2 2)) do (setf n (subseq n 2)))
+                          n)))
+
+(defun %inflate (data)
+  "DATA inflated: raw deflate as zip stores it, or zlib-wrapped as some writers
+produce. A damaged entry (a truncated image, say) gives NIL, not an error, so
+one bad file never costs the rest of the book."
+  (or (ignore-errors (chipz:decompress nil 'chipz:deflate data))
+      (ignore-errors (chipz:decompress nil 'chipz:zlib data))))
+
 (defun zip-entries (octets)
-  "The files in a zip archive, as an alist of name -> octets."
+  "The files in a zip archive, as an alist of name -> octets (NIL for one that
+cannot be read). Sizes and offsets come from the central directory, so entries
+written with a data descriptor read the same as any other."
   (let ((eocd (loop for i from (- (length octets) 22) downto (max 0 (- (length octets) 65558))
                     when (and (= (aref octets i) #x50) (= (%u32 octets i) #x06054b50)) return i)))
     (unless eocd (error "not a zip archive"))
@@ -101,14 +116,16 @@
                            (extra-len (%u16 octets (+ at 30)))
                            (comment-len (%u16 octets (+ at 32)))
                            (local (%u32 octets (+ at 42)))
-                           (name (babel:octets-to-string octets :start (+ at 46) :end (+ at 46 name-len) :encoding :utf-8))
-                           (data-start (+ local 30 (%u16 octets (+ local 26)) (%u16 octets (+ local 28))))
-                           (data (subseq octets data-start (+ data-start size))))
+                           (name (%zip-name (babel:octets-to-string octets :start (+ at 46) :end (+ at 46 name-len)
+                                                                            :encoding :utf-8 :errorp nil)))
+                           (data (ignore-errors
+                                  (let ((data-start (+ local 30 (%u16 octets (+ local 26)) (%u16 octets (+ local 28)))))
+                                    (subseq octets data-start (min (length octets) (+ data-start size)))))))
                       (setf at (+ at 46 name-len extra-len comment-len))
-                      (cons name (case method
-                                   (0 data)
-                                   (8 (chipz:decompress nil 'chipz:deflate data))
-                                   (t nil))))))))
+                      (cons name (and data (case method
+                                             (0 data)
+                                             (8 (%inflate data))
+                                             (t nil)))))))))
 
 (defun %attr (tag name)
   "The value of attribute NAME in TAG's text, or NIL."
@@ -146,10 +163,15 @@
 (defun epub-text (octets)
   "(values text title author) of an EPUB: its spine's documents, in order."
   (let* ((entries (zip-entries octets))
-         (file (lambda (name) (let ((e (assoc name entries :test #'equal)))
+         (file (lambda (name) (let* ((name (%zip-name name))
+                                     (e (or (assoc name entries :test #'equal)
+                                            (assoc name entries :test #'equalp))))
                                 (and e (cdr e) (babel:octets-to-string (cdr e) :encoding :utf-8 :errorp nil)))))
-         (container (or (funcall file "META-INF/container.xml") (error "an EPUB without its container")))
-         (opf-path (or (%attr (first (%tags container "rootfile")) "full-path") (error "an EPUB without a package file")))
+         (container (funcall file "META-INF/container.xml"))
+         ;; Without a readable container, the archive's one package file will do.
+         (opf-path (or (and container (%attr (first (%tags container "rootfile")) "full-path"))
+                       (car (find-if (lambda (e) (and (cdr e) (> (length (car e)) 4) (string-equal ".opf" (car e) :start2 (- (length (car e)) 4)))) entries))
+                       (error (if container "an EPUB without a package file" "an EPUB without its container"))))
          (opf (or (funcall file opf-path) (error "the EPUB's package file is missing")))
          (base (let ((slash (position #\/ opf-path :from-end t))) (if slash (subseq opf-path 0 (1+ slash)) "")))
          (items (mapcar (lambda (tag) (cons (%attr tag "id") (%attr tag "href"))) (%tags opf "item")))
