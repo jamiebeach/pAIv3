@@ -181,8 +181,13 @@ fails is skipped for the rest of this round."
                              "SELECT q.operation_id,q.peer_id FROM fleet_ops q WHERE q.kind=?1 AND NOT EXISTS (SELECT 1 FROM fleet_ops d WHERE d.kind=?2 AND d.operation_id=q.operation_id) ORDER BY q.event_id LIMIT ?3"
                              "forum-queued" "forum-delivered" most))
         (unless (member (second row) down :test #'equal)
-          (unless (ignore-errors (%forum-deliver kernel (first row)))
-            (push (second row) down)))))))
+          (handler-case (%forum-deliver kernel (first row))
+            ;; Refused: it will never be taken, so it stops blocking the rest.
+            (error (e)
+              (if (search " answered 400" (princ-to-string e))
+                  (%journal kernel "forum-delivered" (first row) (second row)
+                            (obj "refused" (let ((m (princ-to-string e))) (subseq m 0 (min 300 (length m))))))
+                  (push (second row) down)))))))))
 
 (pushnew 'flush-forum *periodic-hooks*)
 
@@ -329,7 +334,11 @@ where the operator was signed in."
     (unless (and (member type +forum-types+ :test #'equal) (hash-table-p payload))
       (%board-refuse "not a forum event"))
     (let ((author (obj-get payload (if (string= type "forum.posted") "author_id" "by_id"))))
-      (unless (or (equal author (first peer)) (equal author "operator"))
+      ;; History brought over from an old board holds every sister's words; a
+      ;; migrated post may name any crew member, never someone outside it.
+      (unless (or (equal author (first peer)) (equal author "operator")
+                  (and (eq t (obj-get payload "migrated"))
+                       (or (equal author (fleet-agent-id kernel)) (same-operator-peer-p kernel author))))
         (%board-refuse "a peer may send only its own words or the operator's")))
     (when (string= type "forum.posted")
       (%check-post-text (obj-get payload "text"))

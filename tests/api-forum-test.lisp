@@ -134,7 +134,20 @@
       (is (pai-v3.api::migrate-boards-to-forum a))
       (is (null (pai-v3.api::migrate-boards-to-forum a)) "once")
       (is (equal '("SYNTHETIC old post") (texts b old)) "the sister has the history too")
-      (is (equal '("SYNTHETIC old post") (texts a old))))))
+      (is (equal '("SYNTHETIC old post") (texts a old)))))
+  (with-crew (a b)
+    ;; An old board holds a sister's words too; they come along.
+    (let* ((b-id (pai-v3.api::fleet-agent-id b)))
+      (pai-v3.api::board-post a :new-thread-title "SYNTHETIC hers" :author-id b-id :author-name "Alpha"
+                                :text "SYNTHETIC written by her" :operation-id "op-h" :request-key "h")
+      (pai-v3.api::migrate-boards-to-forum a)
+      (pai-v3.api::flush-forum a)
+      (is (member "SYNTHETIC written by her"
+                  (loop for th in (pai-v3.api::forum-threads b) append (texts b (first th))) :test #'equal)
+          "a sister's own old words reach her copy")
+      (is (= 0 (sql-value (kernel-db a) "SELECT count(*) FROM fleet_ops q WHERE q.kind=?1 AND NOT EXISTS (SELECT 1 FROM fleet_ops d WHERE d.kind=?2 AND d.operation_id=q.operation_id) LIMIT 1"
+                          "forum-queued" "forum-delivered"))
+          "nothing is left waiting"))))
 
 (deftest the-agent-reads-the-forum-and-the-old-tools-are-retired
   (with-crew (a b)
