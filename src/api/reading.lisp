@@ -270,7 +270,7 @@ Use the predicate whose meaning fits; related_to is a last resort.~%~
              (passage (nth (1- n) passages)))
         (if (null passage)
             (append! kernel "reading.state" (obj "book_id" id "state" "finished"))
-            (let* ((profile (pai-v3.mind::profile-for kernel "graph"))
+            (let* ((profile (pai-v3.mind::profile-for kernel (if (obj-get (setting kernel "llm.routes") "reading") "reading" "graph")))
                    (reply (pai-v3.mind::complete kernel profile (reading-messages kernel (subseq row 0 5) n passage)
                                                  :tools (list +reading-tool+) :work-id (getf work :id) :lane "reading"))
                    (call (find "record_reading" (obj-get reply "tool_calls")
