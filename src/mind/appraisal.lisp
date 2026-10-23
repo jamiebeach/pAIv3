@@ -13,7 +13,6 @@
 (define-setting "affect.appraisal.min_probability"
   :type :number :min 0 :max 1 :default 0.8d0 :group "Affect"
   :description "Minimum probability mass supporting a change direction. Uncertainty between two strengths of clear appreciation is not uncertainty that appreciation occurred.")
-(defvar *decision-profile* nil "Tests only: a Decisions provider with an injected transport.")
 
 (define-event-type "affect.appraisal.requested"
   :schema (("source_key" :string) ("source_id" :integer) ("audience" :string)

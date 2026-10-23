@@ -13,6 +13,8 @@
               (sql-exec db "INSERT OR IGNORE INTO provider_decisions(request_key,part,text) VALUES(?1,?2,?3)"
                         (obj-get p "request_key") (obj-get p "part") (obj-get p "text")))))
 
+(defvar *decision-profile* nil "Tests only: a Decisions provider with an injected transport.")
+
 (defun decision-receipt (kernel key)
   "Bounded read; every raw part remains durable even if a result is oversized."
   (let ((last (sql-value (kernel-db kernel) "SELECT max(part) FROM provider_decisions WHERE request_key=?1 LIMIT 1" key)))

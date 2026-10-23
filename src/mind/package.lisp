@@ -31,7 +31,7 @@
    #:*thought-policy* #:*thought-provider* #:*assemble-thought-context*
    #:*reply-delta-hook* #:interrupt-thought
    ;; persona
-   #:render-identity #:*identity-order*
+   #:render-identity #:*identity-order* #:adopt-trait #:adopt-influence
    #:affect-now #:render-affect #:modulator-drift #:drive-drift
    #:run-periodic #:*periodic-hooks* #:*quiet-starters* #:request-summaries #:working-summary #:*activity-hook* #:*progress-hook*
    #:add-schedule #:cancel-schedule #:run-due-schedules #:cron-next #:local-slot #:local-to-universal
