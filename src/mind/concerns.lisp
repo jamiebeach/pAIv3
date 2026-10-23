@@ -411,15 +411,15 @@ once, ahead of the operator's grace period: its evidence is freshest now."
     (when pick (%concern-thought kernel pick))))
 
 (defun %repairs-today (kernel)
-  (or (sql-value (kernel-db kernel) "SELECT count(*) FROM thoughts WHERE origin=?1 AND created_at>=?2 AND reason LIKE ?3 LIMIT 1"
-                 "concern" (subseq (now-iso8601) 0 10) "A failure, looked at at once%")
+  (or (sql-value (kernel-db kernel) "SELECT count(*) FROM thoughts WHERE audience=?4 AND created_at>=?2 AND origin=?1 AND reason LIKE ?3 LIMIT 1"
+                 "concern" (subseq (now-iso8601) 0 10) "A failure, looked at at once%" "operator")
       0))
 
 (defun %recent-free-time (kernel &key (most 3))
   "What the last free times ended on, newest first, so a thread can be picked up."
   (loop for (outcome) in (sql-rows (kernel-db kernel)
-                                   "SELECT outcome FROM thoughts WHERE origin=?1 AND reason LIKE ?2 AND outcome IS NOT NULL ORDER BY id DESC LIMIT ?3"
-                                   "introspection" "Free time.%" most)
+                                   "SELECT outcome FROM thoughts WHERE audience=?4 AND created_at>=?5 AND origin=?1 AND reason LIKE ?2 AND outcome IS NOT NULL ORDER BY created_at DESC LIMIT ?3"
+                                   "introspection" "Free time.%" most "operator" (iso8601 (- (now) (* 14 86400))))
         when (and (stringp outcome) (plusp (length outcome)))
           collect (subseq outcome 0 (min 400 (length outcome)))))
 

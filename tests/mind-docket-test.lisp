@@ -13,6 +13,7 @@
        (advance 43200)
        (change-setting ,k "quiet.enabled" t :origin *operator*)
        (change-setting ,k "quiet.review" :false :origin *operator*)
+       (change-setting ,k "quiet.free_time_minutes" 0 :origin *operator*)
        ,@body)))
 
 (defun open-one (k title &key (priority "normal"))

@@ -105,6 +105,7 @@
            "CREATE INDEX IF NOT EXISTS progress_xp_who_idx ON progress_xp(who,skill,at)"
            "CREATE TABLE IF NOT EXISTS progress_metrics (event_id INTEGER PRIMARY KEY, domain TEXT NOT NULL, metric TEXT NOT NULL, value REAL NOT NULL, unit TEXT, best INTEGER NOT NULL, at TEXT NOT NULL)"
            "CREATE INDEX IF NOT EXISTS progress_metrics_metric_idx ON progress_metrics(metric,at)"
+           "CREATE INDEX IF NOT EXISTS progress_metrics_domain_idx ON progress_metrics(domain,metric)"
            "CREATE TABLE IF NOT EXISTS progress_levels (who TEXT NOT NULL, skill TEXT NOT NULL, level INTEGER NOT NULL, PRIMARY KEY(who,skill))")
   :reduce #'%reduce-progress)
 
