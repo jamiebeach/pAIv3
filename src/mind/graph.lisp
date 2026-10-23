@@ -154,7 +154,10 @@
   '("original-utterance" "prior-agent-utterance" "tool-observation" "generated-summary" "retrieval-metadata"
     ;; A picture the fact was read from (bead v3-3za): its quote describes
     ;; what the image shows, and its source_ref is image:<stored image id>.
-    "image"))
+    "image"
+    ;; A passage of a book or document the agent read (bead v3-clp.21); its
+    ;; source_ref is book:<id>#<passage>.
+    "document"))
 (defparameter +lineage-hows+ '("formed" "imported" "migrated"))
 (defparameter +grounding-scopes+ '("assertion" "reported-speech" "proposal" "intention" "question" "hypothesis"))
 (defparameter +polarities+ '("positive" "negative" "unknown"))
