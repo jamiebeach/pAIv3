@@ -97,7 +97,7 @@
     register({id:'notifications', label:'Notifications', href:'/notifications', current:path === '/notifications'});
     register({id:'affect', label:'Affect', href:'/affect', current:path === '/affect'});
     register({id:'settings', label:'Settings', href:'/settings', current:path === '/settings'});
-    register({id:'board', label:'Board', href:'/board-view', current:path === '/board-view'});
+    register({id:'board', label:'Crew forum', href:'/board-view', current:path === '/board-view'});
     register({id:'artifacts', label:'Made things', href:'/artifacts', current:path === '/artifacts'});
     register({id:'carried', label:'Carrying', href:'/carried', current:path === '/carried'});
     register({id:'stats', label:'Stats', href:'/stats', current:path === '/stats'});

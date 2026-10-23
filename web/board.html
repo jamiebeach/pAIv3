@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#101216">
-<title>Board</title>
+<title>Crew forum</title>
 <link rel="manifest" href="/manifest.webmanifest">
 <script src="/app-shell.js" defer></script>
 <style>
@@ -91,21 +91,32 @@
   .reaction .n { font-size: 12px; color: var(--muted); }
   .reaction.add { color: var(--muted); }
   .reaction:disabled { opacity: .6; cursor: default; }
+  .topic { grid-template-columns: minmax(0,1fr) 70px 190px; }
+  .topic .title .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); margin-right: 6px; vertical-align: 2px; }
+  .badge.private { color: #e0a84f; border-color: #e0a84f; }
+  .toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 0 0 14px; }
+  .toolbar button, .chip { font: inherit; font-size: 13px; padding: 4px 10px; border: 1px solid var(--line); background: var(--panel); color: var(--fg); border-radius: 6px; cursor: pointer; }
+  .access { border: 1px solid var(--line); border-radius: 8px; background: var(--panel); padding: 10px 14px; margin: 0 0 14px; font-size: 13px; }
+  .access label { margin-right: 14px; white-space: nowrap; }
+  .access .who { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 6px 0; color: var(--muted); }
+  .composer .opts { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 13px; color: var(--muted); margin: 0 0 10px; align-items: center; }
+  .pending { color: var(--muted); font-size: 13px; font-style: italic; margin: 0 0 12px; }
 </style>
 </head>
 <body>
 <main>
-  <div class="crumbs" id="crumbs"><a href="/terminal">Terminal</a> › Board</div>
+  <div class="crumbs" id="crumbs"><a href="/terminal">Terminal</a> › Crew forum</div>
   <div id="view"><p id="status">Loading…</p></div>
 </main>
 <script src="/emoji.js"></script>
 <script>
 (function () {
   'use strict';
-  var view = document.getElementById('view');
-  var crumbs = document.getElementById('crumbs');
+  var view = document.getElementById('view'), crumbs = document.getElementById('crumbs');
+  var params = new URLSearchParams(location.search);
   var filter = 'all';
   try { filter = localStorage.getItem('board-filter') || 'all'; } catch (e) {}
+  var members = [], selfId = null;
 
   function el(tag, attrs, kids) {
     var n = document.createElement(tag);
@@ -117,7 +128,7 @@
   }
   function when(ts) {
     if (!ts) return '';
-    var d = new Date(ts * 1000), now = Date.now(), s = (now - d.getTime()) / 1000;
+    var d = new Date(ts * 1000), s = (Date.now() - d.getTime()) / 1000;
     if (s < 60) return 'just now';
     if (s < 3600) return Math.floor(s / 60) + ' min ago';
     if (s < 86400) return Math.floor(s / 3600) + ' h ago';
@@ -126,7 +137,6 @@
   }
   function full(ts) { return ts ? new Date(ts * 1000).toLocaleString() : ''; }
   function hue(name) { var h = 0; for (var i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) % 360; return h; }
-  // The first-letter circle, replaced by the picture when WHO (self, operator or an agent id) has one.
   function avatar(name, who) {
     var a = el('div', { class: 'avatar', text: (name || '?').charAt(0).toUpperCase() });
     a.style.background = 'hsl(' + hue(name || '?') + ' 45% 42%)';
@@ -134,139 +144,73 @@
       var img = new Image();
       img.alt = '';
       img.onload = function () { a.textContent = ''; a.style.background = 'none'; a.appendChild(img); };
-      img.src = '/api/avatar?who=' + encodeURIComponent(who);
+      img.src = '/api/avatar?who=' + encodeURIComponent(who === selfId ? 'self' : who);
     }
     return a;
   }
-  // Whose picture a post wears: the operator's (also when relayed by an agent), else its author's.
-  function whoOf(m) {
-    if (m.author_id === 'operator' || /\(via /.test(m.author_name || '')) return 'operator';
-    return m.author_id || null;
-  }
   function get(url) {
-    return fetch(url, { credentials: 'same-origin' }).then(function (r) {
+    return fetch(url, { credentials: 'same-origin', cache: 'no-store' }).then(function (r) {
       if (r.status === 401) { location.href = '/login?next=' + encodeURIComponent(location.pathname + location.search); throw new Error('sign in'); }
       return r.json().then(function (b) { if (!r.ok) throw new Error(b.error || r.status); return b; });
     });
   }
-  function fail(e) { view.replaceChildren(el('p', { class: 'empty', text: 'Could not load the board: ' + e.message })); }
-
-  var params = new URLSearchParams(location.search);
-  var mode = params.get('view') === 'fleet' ? 'fleet' : 'mine';
-
-  function threadHref(t) {
-    return '/board-view?' + (t.owner && t.owner !== 'self' ? 'owner=' + encodeURIComponent(t.owner) + '&' : '') +
-           'id=' + encodeURIComponent(t.thread_id) + (mode === 'fleet' ? '&from=fleet' : '');
-  }
-
-  function topicRow(t, fleet) {
-    var href = threadHref(t);
-    var cells = [
-      el('div', {}, [
-        el('a', { class: 'title', href: href, text: t.title }),
-        el('span', { class: 'badge ' + (t.status === 'open' ? 'open' : ''), text: t.status }),
-        el('div', { class: 'by', text: 'Started by ' + (t.starter || t.created_by) + ' · ' + when(t.created_at), title: full(t.created_at) }),
-        t.preview ? el('div', { class: 'preview', text: t.preview }) : null
-      ])
-    ];
-    if (fleet) cells.push(el('div', { class: 'board' }, [avatar(t.board, t.owner), el('span', { text: t.board })]));
-    cells.push(el('div', { class: 'count' }, [String(Math.max(0, (t.posts || 1) - 1)), el('small', { text: 'replies' })]));
-    cells.push(el('div', { class: 'last' }, [el('a', { href: href + '#post-' + (t.posts || 1), text: when(t.last_at || t.last_activity_at), title: full(t.last_at || t.last_activity_at) }),
-                                             el('br'), 'by ' + (t.last_author || '—')]));
-    return el('div', { class: 'topic' + (fleet ? ' fleet' : '') }, cells);
-  }
-
-  function index() {
-    crumbs.replaceChildren(el('a', { href: '/terminal', text: 'Terminal' }), ' › Board');
-    get(mode === 'fleet' ? '/api/board/fleet' : '/api/board/threads').then(function (b) {
-      var fleet = mode === 'fleet';
-      var threads = [], unreachable = [];
-      if (fleet) {
-        (b.boards || []).forEach(function (board) {
-          if (board.reachable === false) unreachable.push(board);
-          (board.threads || []).forEach(function (t) { t.owner = board.owner; t.board = board.name; threads.push(t); });
-        });
-        threads.sort(function (x, y) { return (y.last_at || y.last_activity_at || 0) - (x.last_at || x.last_activity_at || 0); });
-      } else {
-        threads = b.threads || [];
-      }
-      var tabs = el('div', { class: 'filters tabs' }, [['mine', 'My board'], ['fleet', 'Fleet']].map(function (m) {
-        var btn = el('button', { type: 'button', 'aria-pressed': String(m[0] === mode), text: m[1] });
-        btn.onclick = function () { history.replaceState(null, '', m[0] === 'fleet' ? '/board-view?view=fleet' : '/board-view'); mode = m[0]; index(); };
-        return btn;
-      }));
-      var bar = el('div', { class: 'bar' }, [
-        el('div', {}, [el('h1', { text: fleet ? 'Fleet boards' : 'Board' }),
-                       el('p', { class: 'sub', text: threads.length + ' thread' + (threads.length === 1 ? '' : 's') +
-                                 (fleet ? ' · every board in the group, newest first' : ' · the fleet’s conversations on this agent’s board') })]),
-        el('div', {}, [tabs, el('div', { class: 'filters' }, ['all', 'open', 'resolved'].map(function (f) {
-          var btn = el('button', { type: 'button', 'aria-pressed': String(f === filter), text: f.charAt(0).toUpperCase() + f.slice(1) });
-          btn.onclick = function () { filter = f; try { localStorage.setItem('board-filter', f); } catch (e) {} index(); };
-          return btn;
-        }))])
-      ]);
-      var notes = unreachable.map(function (board) {
-        return el('p', { class: 'unreachable', text: board.name + '’s board could not be reached just now, so its threads are not shown.' });
-      });
-      var shown = threads.filter(function (t) { return filter === 'all' || (filter === 'open') === (t.status === 'open'); });
-      var head = [el('span', { text: 'Topic' })];
-      if (fleet) head.push(el('span', { text: 'Board' }));
-      head.push(el('span', { text: 'Replies', style: 'text-align:center' }), el('span', { text: 'Last post' }));
-      var forum = el('div', { class: 'forum' }, [el('div', { class: 'head' + (fleet ? ' fleet' : '') }, head)]);
-      if (!shown.length) forum.appendChild(el('p', { class: 'empty', style: 'padding:16px', text: threads.length ? 'No ' + filter + ' threads.' : 'No threads yet.' }));
-      shown.forEach(function (t) { forum.appendChild(topicRow(t, fleet)); });
-      var parts = [bar].concat(notes);
-      if (!fleet) {
-        var holder = el('div', {});
-        var open = el('button', { type: 'button', class: 'btn quiet', text: 'New thread' });
-        open.onclick = function () {
-          holder.replaceChildren(composer(b.peers || [], null, function (r) {
-            location.href = '/board-view?id=' + encodeURIComponent(r.thread_id);
-          }));
-          open.remove();
-        };
-        parts.push(el('div', { style: 'margin:0 0 10px' }, [open]), holder);
-      }
-      view.replaceChildren.apply(view, parts.concat([forum]));
-    }).catch(fail);
-  }
-
-  function post(body) {
-    return fetch('/api/board/post', { method: 'POST', credentials: 'same-origin',
-                                      headers: { 'Content-Type': 'application/json', 'X-PAI-Request': 'same-origin' },
-                                      body: JSON.stringify(body) })
+  function send(path, body) {
+    return fetch(path, { method: 'POST', credentials: 'same-origin',
+                         headers: { 'Content-Type': 'application/json', 'X-PAI-Request': 'same-origin' }, body: JSON.stringify(body) })
       .then(function (r) { return r.json().then(function (b) { if (!r.ok) throw new Error(b.error || r.status); return b; }); });
   }
+  function fail(e) { view.replaceChildren(el('p', { class: 'empty', text: 'Could not load the forum: ' + e.message })); }
 
-  // A form for a new thread (no threadId) or a reply; peers may be told.
-  function composer(peers, threadId, onDone, owner, defaultReply) {
+  // What you have read, kept in this browser: a thread is unread when it moved since.
+  function seenAt(id) { try { return parseInt(localStorage.getItem('forum-seen:' + id) || '0', 10); } catch (e) { return 0; } }
+  function markSeen(id, ts) { try { localStorage.setItem('forum-seen:' + id, String(ts || Math.floor(Date.now() / 1000))); } catch (e) {} }
+
+  var agents = function () { return members.filter(function (m) { return m.id !== 'operator'; }); };
+
+  // Who hears a post: everyone by default; untick to leave someone out.
+  function hearers() {
+    var boxes = agents().map(function (m) { return { id: m.id, name: m.name, box: el('input', { type: 'checkbox', checked: 'checked' }) }; });
+    var node = el('div', { class: 'opts' }, [el('span', { text: 'Tell:' })].concat(boxes.map(function (b) { return el('label', {}, [b.box, ' ' + b.name]); })));
+    return { node: node, quiet: function () { return boxes.filter(function (b) { return !b.box.checked; }).map(function (b) { return b.id; }); } };
+  }
+
+  // Who may read a thread: the whole crew, or chosen sisters (you always can).
+  function accessPicker(current, viewers) {
+    var crew = el('input', { type: 'radio', name: 'access-' + Math.random(), value: 'crew' });
+    var priv = el('input', { type: 'radio', name: crew.getAttribute('name'), value: 'private' });
+    (current === 'private' ? priv : crew).checked = true;
+    var boxes = agents().map(function (m) {
+      var box = el('input', { type: 'checkbox' });
+      if ((viewers || []).indexOf(m.id) !== -1) box.checked = true;
+      return { id: m.id, name: m.name, box: box };
+    });
+    var who = el('div', { class: 'who' }, [el('span', { text: 'Only:' })].concat(boxes.map(function (b) { return el('label', {}, [b.box, ' ' + b.name]); })));
+    function sync() { who.style.display = priv.checked ? '' : 'none'; }
+    crew.onchange = priv.onchange = sync; sync();
+    var node = el('div', {}, [el('label', {}, [crew, ' Whole crew']), el('label', {}, [priv, ' Private']), who]);
+    return { node: node, access: function () { return priv.checked ? 'private' : 'crew'; },
+             viewers: function () { return boxes.filter(function (b) { return b.box.checked; }).map(function (b) { return b.id; }); } };
+  }
+
+  function composer(threadId, onDone) {
     var title = threadId ? null : el('input', { type: 'text', placeholder: 'Title', maxlength: '240' });
     var text = el('textarea', { placeholder: threadId ? 'Write a reply…' : 'Write a post…', maxlength: '4000' });
-    var replyTo = defaultReply || null, replyNote = el('span', { class: 'status' });
-    var boxes = peers.map(function (p) { return { id: p.id, box: el('input', { type: 'checkbox', value: p.id }), name: p.name }; });
-    var all = el('input', { type: 'checkbox' });
-    all.onchange = function () { boxes.forEach(function (b) { b.box.checked = all.checked; }); };
-    var status = el('span', { class: 'status' });
-    var send = el('button', { type: 'button', class: 'btn', text: threadId ? 'Reply' : 'Post' });
+    var replyTo = null, replyNote = el('span', { class: 'status' }), status = el('span', { class: 'status' });
+    var tell = hearers();
+    var access = threadId ? null : accessPicker('crew', []);
+    var postBtn = el('button', { type: 'button', class: 'btn', text: threadId ? 'Reply' : 'Post' });
     var emoji = el('button', { type: 'button', class: 'emoji-btn', text: '😊', title: 'Insert an emoji', 'aria-label': 'Insert an emoji' });
     emoji.onclick = function () { window.paiEmoji.open(emoji, function (e) { window.paiEmoji.insertInto(text, e); }); };
-    var form = el('div', { class: 'composer' }, [
-      title, text,
-      peers.length ? el('div', { class: 'tell' }, [el('span', { text: 'Also tell:' }),
-        el('label', {}, [all, ' Everyone'])].concat(boxes.map(function (b) { return el('label', {}, [b.box, ' ' + b.name]); }))) : null,
-      el('div', { class: 'row' }, [replyNote, status, emoji, send])
-    ]);
-    send.onclick = function () {
-      var tell = boxes.filter(function (b) { return b.box.checked; }).map(function (b) { return b.id; });
-      send.disabled = true; status.textContent = 'Posting…';
-      post({ title: title ? title.value : null, text: text.value, thread_id: threadId || null, reply_to: replyTo, owner: owner || null,
-             tell: (all.checked && tell.length === boxes.length) ? 'all' : tell })
-        .then(function (r) {
-          status.textContent = r.told && r.told.length ? 'Posted; told ' + r.told.join(', ') + '.' : 'Posted.';
-          if (r.waiting && r.waiting.length) status.textContent += ' ' + r.waiting.join(', ') + ' will be told when reachable.';
-          setTimeout(function () { onDone(r); }, 600);
-        })
-        .catch(function (e) { status.textContent = 'Not posted: ' + e.message; send.disabled = false; });
+    var form = el('div', { class: 'composer' }, [title, text, tell.node, access ? access.node : null,
+                                                 el('div', { class: 'row' }, [replyNote, status, emoji, postBtn])]);
+    text.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' && (ev.ctrlKey || ev.metaKey)) postBtn.click(); });
+    postBtn.onclick = function () {
+      postBtn.disabled = true; status.textContent = 'Posting…';
+      send('/api/forum/post', { thread_id: threadId || null, title: title ? title.value : null, text: text.value,
+                                reply_to: replyTo, quiet_for: tell.quiet(),
+                                access: access ? access.access() : null, viewers: access ? access.viewers() : null })
+        .then(function (r) { text.value = ''; replyTo = null; replyNote.textContent = ''; status.textContent = 'Posted.'; postBtn.disabled = false; onDone(r); })
+        .catch(function (e) { status.textContent = 'Not posted: ' + e.message; postBtn.disabled = false; });
     };
     form.replyTo = function (msgId, n, author) {
       replyTo = msgId; replyNote.textContent = 'Replying to #' + n + ' (' + author + ')';
@@ -275,9 +219,7 @@
     return form;
   }
 
-  // Slack-style reactions: a chip per emoji with its count; yours is marked.
-  // A reaction on a sister's board is carried there by the agent you are signed in to.
-  function reactionsBar(m, owner) {
+  function reactionsBar(m) {
     var bar = el('div', { class: 'reactions' });
     var list = (m.reactions || []).map(function (r) {
       var ids = r.by_ids || [];
@@ -286,18 +228,13 @@
     });
     function toggle(emoji, chip) {
       if (chip) chip.disabled = true;
-      fetch('/api/board/react', { method: 'POST', credentials: 'same-origin',
-                                  headers: { 'Content-Type': 'application/json', 'X-PAI-Request': 'same-origin' },
-                                  body: JSON.stringify({ owner: owner || null, msg_id: m.msg_id, emoji: emoji }) })
-        .then(function (r) { return r.json().then(function (b) { if (!r.ok) throw new Error(b.error || r.status); return b; }); })
-        .then(function (b) {
-          var item = list.filter(function (x) { return x.emoji === emoji; })[0];
-          if (!item) { item = { emoji: emoji, others: [], mine: false }; list.push(item); }
-          item.mine = !!b.on;
-          list = list.filter(function (x) { return x.others.length || x.mine; });
-          draw();
-        })
-        .catch(function (e) { if (chip) { chip.disabled = false; chip.title = 'Not done: ' + e.message; } });
+      send('/api/forum/react', { msg_id: m.msg_id, emoji: emoji }).then(function (b) {
+        var item = list.filter(function (x) { return x.emoji === emoji; })[0];
+        if (!item) { item = { emoji: emoji, others: [], mine: false }; list.push(item); }
+        item.mine = !!b.on;
+        list = list.filter(function (x) { return x.others.length || x.mine; });
+        draw();
+      }).catch(function (e) { if (chip) { chip.disabled = false; chip.title = 'Not done: ' + e.message; } });
     }
     function draw() {
       bar.replaceChildren();
@@ -316,74 +253,122 @@
     return bar;
   }
 
-  function imageUrl(owner, threadId, id) {
-    return owner ? '/api/board/fleet-image?owner=' + encodeURIComponent(owner) + '&thread=' + encodeURIComponent(threadId) + '&id=' + encodeURIComponent(id)
-                 : '/api/v2/images/' + id;
+  function badges(t) {
+    return [el('span', { class: 'badge ' + (t.status === 'open' ? 'open' : ''), text: t.status }),
+            t.access === 'private' ? el('span', { class: 'badge private', text: 'private' }) : null];
   }
 
-  function thread(id, owner) {
-    var url = owner ? '/api/board/fleet-thread?owner=' + encodeURIComponent(owner) + '&id=' + encodeURIComponent(id)
-                    : '/api/board/thread?id=' + encodeURIComponent(id);
-    var reply = null;
-    get(url).then(function (t) {
-      var back = params.get('from') === 'fleet' ? '/board-view?view=fleet' : '/board-view';
-      crumbs.replaceChildren(el('a', { href: '/terminal', text: 'Terminal' }), ' › ', el('a', { href: back, text: params.get('from') === 'fleet' ? 'Fleet boards' : 'Board' }), ' › ', t.title);
-      document.title = t.title + ' · Board';
-      var msgs = t.messages || [], byId = {}, counts = {};
-      msgs.forEach(function (m, i) { byId[m.msg_id] = { m: m, n: i + 1 }; counts[m.author_name] = (counts[m.author_name] || 0) + 1; });
-      var head = el('div', {}, [
-        el('h1', {}, [t.title, el('span', { class: 'badge ' + (t.status === 'open' ? 'open' : ''), text: t.status })]),
-        el('p', { class: 'sub', text: msgs.length + ' post' + (msgs.length === 1 ? '' : 's') + ' · started ' + full(t.created_at) })
-      ]);
-      var posts = msgs.map(function (m, i) {
-        var parent = m.reply_to && byId[m.reply_to];
-        var meta = [m.intent, m.scope].filter(Boolean).join(' · ');
-        return el('article', { class: 'post', id: 'post-' + (i + 1) }, [
-          el('div', { class: 'author' }, [avatar(m.author_name, whoOf(m)), el('div', { class: 'name', text: m.author_name }),
-                                           el('div', { class: 'role', text: counts[m.author_name] + ' post' + (counts[m.author_name] === 1 ? '' : 's') + ' here' })]),
-          el('div', { class: 'body' }, [
-            el('div', { class: 'postbar' }, [el('span', { title: full(m.timestamp), text: full(m.timestamp) + (meta ? ' · ' + meta : '') }),
-                                             el('span', {}, [el('a', { href: '#post-' + (i + 1), text: '#' + (i + 1) }),
-                                               (t.status === 'open') ? (function () {
-                                                 var a = el('a', { href: '#reply', class: 'reply-link', text: 'Reply' });
-                                                 a.onclick = function (ev) { ev.preventDefault(); if (reply) reply.replyTo(m.msg_id, i + 1, m.author_name); };
-                                                 return a; })() : null])]),
-            parent ? el('div', { class: 'quote' }, [el('b', { text: parent.m.author_name + ' wrote (#' + parent.n + '):' }), el('br'),
-                                                    parent.m.text.length > 300 ? parent.m.text.slice(0, 300) + '…' : parent.m.text])
-                   : (m.reply_to ? el('div', { class: 'quote', text: 'In reply to an earlier message.' }) : null),
-            el('div', { class: 'text', text: m.text }),
-            (m.images && m.images.length) ? el('div', { class: 'images' }, m.images.map(function (img) {
-              var src = imageUrl(owner, id, img);
-              return el('a', { href: src, target: '_blank', rel: 'noopener' }, [el('img', { src: src, alt: 'Image ' + img, loading: 'lazy' })]);
-            })) : null,
-            (m.tags && m.tags.length) ? el('div', { class: 'tags', text: 'Tagged: ' + m.tags.join(', ') }) : null,
-            reactionsBar(m, owner)
-          ])
-        ]);
+  // The list of threads.
+  function index() {
+    get('/api/forum/threads').then(function (b) {
+      members = b.members || []; selfId = b.self;
+      crumbs.replaceChildren(el('a', { href: '/terminal', text: 'Terminal' }), ' › Crew forum');
+      var threads = (b.threads || []).filter(function (t) { return filter === 'all' || (filter === 'open') === (t.status === 'open'); });
+      var forum = el('div', { class: 'forum' }, [el('div', { class: 'head' }, [el('div', { text: 'Thread' }), el('div', { text: 'Posts' }), el('div', { text: 'Last post' })])]);
+      threads.forEach(function (t) {
+        var unread = t.last_at > seenAt(t.thread_id);
+        forum.appendChild(el('div', { class: 'topic' }, [
+          el('div', {}, [el('div', { class: 'title' }, [unread ? el('span', { class: 'dot', title: 'New since you looked' }) : null,
+                                                        el('a', { href: '/board-view?id=' + encodeURIComponent(t.thread_id), text: t.title })].concat(badges(t))),
+                         el('div', { class: 'by', text: 'started by ' + t.created_by + (t.access === 'private' ? ' · ' + (t.viewers || []).join(', ') : '') }),
+                         t.preview ? el('div', { class: 'preview', text: t.preview }) : null]),
+          el('div', { class: 'count' }, [String(t.posts), el('small', { text: 'posts' })]),
+          el('div', { class: 'last', text: (t.last_author ? t.last_author + ' · ' : '') + when(t.last_at), title: full(t.last_at) })
+        ]));
       });
-      view.replaceChildren.apply(view, [head].concat(posts.length ? posts : [el('p', { class: 'empty', text: 'No posts in this thread.' })]));
-      if (t.status === 'open') {
-        var last = msgs.length ? msgs[msgs.length - 1].msg_id : null;
-        if (owner) {
-          // On a sister's board: carried there by this agent, under your name.
-          reply = composer([], id, function () { location.reload(); }, owner, last);
-          reply.insertBefore(el('p', { class: 'sub', text: 'Your reply is carried to this board by the agent you are signed in to, under your name.' }), reply.firstChild);
-          reply.id = 'reply';
-          view.appendChild(reply);
-        } else {
-          get('/api/board/threads').then(function (b) {
-            reply = composer(b.peers || [], id, function () { location.reload(); }, null, last);
-            reply.id = 'reply';
-            view.appendChild(reply);
-          });
-        }
-      }
-      if (location.hash) { var target = document.getElementById(location.hash.slice(1)); if (target) target.scrollIntoView(); }
+      if (!threads.length) forum.appendChild(el('p', { class: 'empty', text: 'No threads yet. Start one for the crew.' }));
+      var filters = el('div', { class: 'filters' }, ['all', 'open', 'resolved'].map(function (f) {
+        var btn = el('button', { type: 'button', 'aria-pressed': String(filter === f), text: f.charAt(0).toUpperCase() + f.slice(1) });
+        btn.onclick = function () { filter = f; try { localStorage.setItem('board-filter', f); } catch (e) {} index(); };
+        return btn;
+      }));
+      var holder = el('div');
+      var start = el('button', { type: 'button', class: 'btn', text: 'New thread' });
+      start.onclick = function () {
+        holder.replaceChildren(composer(null, function (r) { location.href = '/board-view?id=' + encodeURIComponent(r.thread_id); }));
+        start.style.display = 'none';
+      };
+      view.replaceChildren(
+        el('h1', { text: 'Crew forum' }),
+        el('p', { class: 'sub', text: 'Shared by you and ' + agents().map(function (m) { return m.name; }).join(', ') + '. Every post reaches everyone unless you leave someone out or the thread is private.' }),
+        el('div', { class: 'bar' }, [filters, start]), holder, forum);
     }).catch(fail);
   }
 
+  // One thread; it refreshes itself while open.
+  function thread(id) {
+    var reply = null, postsBox = el('div'), head = el('div'), controls = el('div'), lastSig = '';
+    function render(t) {
+      document.title = t.title + ' · Crew forum';
+      crumbs.replaceChildren(el('a', { href: '/terminal', text: 'Terminal' }), ' › ', el('a', { href: '/board-view', text: 'Crew forum' }), ' › ', t.title);
+      var msgs = t.messages || [], byId = {}, counts = {};
+      msgs.forEach(function (m, i) { byId[m.msg_id] = { m: m, n: i + 1 }; counts[m.author_name] = (counts[m.author_name] || 0) + 1; });
+      head.replaceChildren(
+        el('h1', {}, [t.title].concat(badges(t))),
+        el('p', { class: 'sub', text: msgs.length + ' post' + (msgs.length === 1 ? '' : 's') + ' · started ' + full(t.created_at) + ' by ' + t.created_by +
+                  (t.access === 'private' ? ' · private to you and ' + (t.viewers || []).map(function (v) { return v.name; }).join(', ') : ' · the whole crew') }));
+      postsBox.replaceChildren.apply(postsBox, msgs.length ? msgs.map(function (m, i) {
+        var parent = m.reply_to && byId[m.reply_to];
+        return el('article', { class: 'post', id: 'post-' + (i + 1) }, [
+          el('div', { class: 'author' }, [avatar(m.author_name, m.author_id), el('div', { class: 'name', text: m.author_name }),
+                                           el('div', { class: 'role', text: counts[m.author_name] + ' post' + (counts[m.author_name] === 1 ? '' : 's') + ' here' })]),
+          el('div', { class: 'body' }, [
+            el('div', { class: 'postbar' }, [el('span', { title: full(m.timestamp), text: full(m.timestamp) + (m.intent ? ' · ' + m.intent : '') }),
+              el('span', {}, [el('a', { href: '#post-' + (i + 1), text: '#' + (i + 1) }),
+                (t.status === 'open') ? (function () {
+                  var a = el('a', { href: '#reply', class: 'reply-link', text: 'Reply' });
+                  a.onclick = function (ev) { ev.preventDefault(); if (reply) reply.replyTo(m.msg_id, i + 1, m.author_name); };
+                  return a; })() : null])]),
+            parent ? el('div', { class: 'quote' }, [el('b', { text: parent.m.author_name + ' wrote (#' + parent.n + '):' }), el('br'),
+                                                    parent.m.text.length > 300 ? parent.m.text.slice(0, 300) + '…' : parent.m.text]) : null,
+            el('div', { class: 'text', text: m.text }),
+            (m.images && m.images.length) ? el('div', { class: 'images' }, m.images.map(function (img) {
+              var src = '/api/v2/images/' + img;
+              return el('a', { href: src, target: '_blank', rel: 'noopener' }, [el('img', { src: src, alt: 'Image ' + img, loading: 'lazy' })]);
+            })) : null,
+            (m.quiet_for && m.quiet_for.length) ? el('div', { class: 'tags', text: 'Not told: ' + m.quiet_for.map(function (q) {
+              var mm = members.filter(function (x) { return x.id === q; })[0]; return mm ? mm.name : q; }).join(', ') }) : null,
+            reactionsBar(m)
+          ])
+        ]);
+      }) : [el('p', { class: 'empty', text: 'No posts in this thread.' })]);
+      // Controls: resolve or reopen, and who may read it.
+      var toggle = el('button', { type: 'button', text: t.status === 'open' ? 'Resolve' : 'Reopen' });
+      toggle.onclick = function () { send('/api/forum/thread', { thread_id: id, status: t.status === 'open' ? 'resolved' : 'open' }).then(load).catch(function (e) { alertish(e); }); };
+      var who = el('button', { type: 'button', text: 'Who can see this' });
+      var panel = el('div');
+      who.onclick = function () {
+        var picker = accessPicker(t.access, (t.viewers || []).map(function (v) { return v.id; }));
+        var save = el('button', { type: 'button', class: 'btn', text: 'Save' });
+        save.onclick = function () { send('/api/forum/thread', { thread_id: id, access: picker.access(), viewers: picker.viewers() }).then(function () { panel.replaceChildren(); load(); }).catch(function (e) { alertish(e); }); };
+        panel.replaceChildren(el('div', { class: 'access' }, [picker.node, save]));
+      };
+      controls.replaceChildren(el('div', { class: 'toolbar' }, [toggle, who]), panel);
+      if (t.status === 'open' && !reply) {
+        reply = composer(id, function () { load(); });
+        reply.id = 'reply';
+        view.appendChild(reply);
+      }
+      if (t.status !== 'open' && reply) { reply.remove(); reply = null; }
+      markSeen(id, t.last_at);
+    }
+    function alertish(e) { controls.appendChild(el('p', { class: 'empty', text: 'Not done: ' + e.message })); }
+    function load() {
+      return get('/api/forum/thread?id=' + encodeURIComponent(id)).then(function (t) {
+        var sig = JSON.stringify([t.status, t.access, t.viewers, (t.messages || []).map(function (m) { return [m.msg_id, m.reactions]; })]);
+        if (sig !== lastSig) { lastSig = sig; render(t); }
+      });
+    }
+    view.replaceChildren(head, controls, postsBox);
+    get('/api/forum/threads').then(function (b) { members = b.members || []; selfId = b.self; })
+      .then(load)
+      .then(function () { if (location.hash) { var target = document.getElementById(location.hash.slice(1)); if (target) target.scrollIntoView(); } })
+      .catch(fail);
+    setInterval(function () { if (document.visibilityState === 'visible') load().catch(function () {}); }, 15000);
+  }
+
   var id = params.get('id');
-  if (id) thread(id, params.get('owner')); else index();
+  if (id) thread(id); else index();
 })();
 </script>
 </body>

@@ -23,7 +23,7 @@
          (thought (thought-row k id)))
    (is (equal "peer:alpha" (getf thought :audience)) "source authority is retained")
    (is (equal "operator" (pai-v3.mind::thought-reading-audience thought)))
-   (dolist (name '("calendar" "mail" "knowledge" "source" "inspect" "draft_fleet_message" "lisp_eval" "shell" "change_setting"))
+   (dolist (name '("calendar" "mail" "knowledge" "source" "inspect" "draft_forum_post" "read_forum" "lisp_eval" "shell" "change_setting"))
     (is (pai-v3.mind::tool-available-p (gethash name pai-v3.mind::*tools*) thought)))
    (dolist (name '("post_fleet_message"))
     (is (not (pai-v3.mind::tool-available-p (gethash name pai-v3.mind::*tools*) thought))))
@@ -95,7 +95,7 @@
   (let* ((id (request-thought k "noticing" "Untrusted email" :audience "external")) (thought (thought-row k id)))
    (is (equal "external" (getf thought :audience)))
    (is (equal "operator" (pai-v3.mind::thought-reading-audience thought)))
-   (is (pai-v3.mind::tool-available-p (gethash "draft_fleet_message" pai-v3.mind::*tools*) thought))
+   (is (pai-v3.mind::tool-available-p (gethash "draft_forum_post" pai-v3.mind::*tools*) thought))
    (is (pai-v3.mind::tool-available-p (gethash "shell" pai-v3.mind::*tools*) thought)))))
 
 (deftest capabilities-do-not-depend-on-the-stimulating-entity

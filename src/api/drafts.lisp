@@ -317,15 +317,21 @@
               in (sql-rows db
                            "SELECT draft_id,thought_id,peer_id,thread_id,reply_to,intent,text,source_event_id FROM fleet_drafts WHERE state=?1 ORDER BY created_at LIMIT 10"
                            "ready")
-            do (if (fleet-peer kernel peer-id)
+            do (cond
+                 ((equal peer-id "crew")
+                  (request-thought kernel "work" (%crew-speaking-prompt kernel draft-id thread reply intent text)
+                                   :audience "peer:crew" :source-event-id source)
+                  (incf n))
+                 ((fleet-peer kernel peer-id)
                    (progn
                      ;; The draft projection consumes this request and links its
                      ;; speaking thought atomically. No pre-claim can strand it.
                      (request-thought kernel "work" (%speaking-prompt kernel peer-id draft-id thread reply intent text)
                                       :audience (format nil "peer:~a" peer-id) :source-event-id source)
-                     (incf n))
+                     (incf n)))
+                 (t
                    (append! kernel "fleet.draft.settled"
-                            (obj "draft_id" draft-id "fate" "dropped" "note" "that peer is no longer known"))))
+                            (obj "draft_id" draft-id "fate" "dropped" "note" "that peer is no longer known")))))
       ;; request-thought records before queuing work. A crash in that gap is
       ;; recovered by queuing the same thought, never by making another one.
       (dolist (row (sql-rows db

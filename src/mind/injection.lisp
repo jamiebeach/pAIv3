@@ -45,7 +45,7 @@
 (defun %present (v) (if (eq v :null) nil v))
 
 (defparameter +high-impact-tools+
-  '("shell" "lisp_eval" "inspect" "source" "change_setting" "notify_operator" "draft_fleet_message"
+  '("shell" "lisp_eval" "inspect" "source" "change_setting" "notify_operator" "draft_fleet_message" "draft_forum_post" "set_forum_thread"
     "mail" "host_files" "beads" "remember_to" "schedule")
   "Tools whose use by a flagged thought is recorded against its input.")
 

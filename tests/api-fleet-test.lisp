@@ -277,17 +277,20 @@
       (is (search "resolved" (pai-v3.api::%tool-text (lambda () (pai-v3.api::fleet-post a (pai-v3.api::fleet-agent-id b) "One more thing"))))
           "a post to a resolved thread is refused"))))
 
-(deftest the-digest-reads-what-peers-posted-once
+(deftest the-digest-reads-what-the-crew-posted-once
   (with-two-agents (a b)
     (join a b)
-    (pai-v3.api::fleet-announce a "I finished reading Dune today.")
+    (change-setting a "fleet.same_operator_peers" (list "Alpha") :origin *operator*)
+    (change-setting b "fleet.same_operator_peers" (list "Beta") :origin *operator*)
+    (pai-v3.api::forum-post a :title "Books" :text "I finished reading Dune today." :intent "fyi"
+                              :author-id (pai-v3.api::fleet-agent-id a) :author-name "Beta")
     (let ((thought (pai-v3.api::fleet-digest b)))
       (is thought "a digest thought")
       (is (search "I finished reading Dune today." (getf (thought-row b thought) :reason)))
       (is (equal "reflection" (getf (thought-row b thought) :origin)) "thinking to itself, not speaking")
       (is (equal "operator" (getf (thought-row b thought) :audience))
           "so it may know what the agent knows, her own recent acts included")
-      (is (search "draft_fleet_message" (getf (thought-row b thought) :reason)) "and is told to leave a draft, not post"))
+      (is (search "draft_forum_post" (getf (thought-row b thought) :reason)) "and is told to leave a draft, not post"))
     (is (null (pai-v3.api::fleet-digest b)) "not due again yet")
     (change-setting b "fleet.digest_minutes" 0 :origin *operator*)
     (is (null (pai-v3.api::fleet-digest b)) "off at 0")))
@@ -298,7 +301,7 @@
   (let ((post (gethash "post_fleet_message" pai-v3.mind::*tools*))
         (reply (gethash "reply_fleet_board_message" pai-v3.mind::*tools*))
         (board (gethash "post_fleet_board" pai-v3.mind::*tools*))
-        (draft (gethash "draft_fleet_message" pai-v3.mind::*tools*))
+        (draft (gethash "draft_forum_post" pai-v3.mind::*tools*))
         (notify (gethash "notify_operator" pai-v3.mind::*tools*)))
     (dolist (tool (list post reply board))
       (is (not (pai-v3.mind::tool-available-p tool '(:origin "reflection" :audience "operator"))) "no publishing while reflecting")
@@ -368,7 +371,7 @@
       (is (equal "operator" (getf (thought-row k child) :audience)))
       (dolist (name '("post_fleet_message" "reply_fleet_board_message" "post_fleet_board"))
         (is (not (pai-v3.mind::tool-available-p (gethash name *tools*) row))))
-      (is (pai-v3.mind::tool-available-p (gethash "draft_fleet_message" *tools*) row))
+      (is (pai-v3.mind::tool-available-p (gethash "draft_forum_post" *tools*) row))
       (let ((frame (funcall pai-v3.mind::*assemble-thought-context* k row nil)))
         (is (search "Thinking privately" (json-encode frame)))))))
 

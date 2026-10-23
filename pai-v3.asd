@@ -100,6 +100,7 @@
                  (:file "artifacts")
                  (:file "progress")
                  (:file "reactions")
+                 (:file "forum")
                  (:file "pwa")))
    (:module "src/recall"
     :serial t

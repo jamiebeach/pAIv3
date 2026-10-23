@@ -384,8 +384,9 @@ has done its job should end, and resolve_fleet_thread closes a settled thread on
   "Registered accounting seam: communication reviews are not new inbound wakes.")
 
 (defun %relay-wake-count (kernel peer-id)
-  (or (sql-value (kernel-db kernel) "SELECT count(*) FROM thoughts WHERE audience=?1 AND created_at>=?2 AND reason LIKE ?3 LIMIT 1"
-                 (format nil "peer:~a" peer-id) (iso8601 (- (now) 3600)) "%the operator, posted on your board through%")
+  (or (sql-value (kernel-db kernel) "SELECT count(*) FROM thoughts WHERE audience=?1 AND created_at>=?2 AND (reason LIKE ?3 OR reason LIKE ?4) LIMIT 1"
+                 (format nil "peer:~a" peer-id) (iso8601 (- (now) 3600)) "%the operator, posted on your board through%"
+                 "%(the operator, signed in to %")
       0))
 
 (defun %why-not-wake (kernel peer-id &key intent depth thread-id relayed)
@@ -452,6 +453,7 @@ message that woke it, or 1 when nothing from a peer did."
     (1+ (cond ((null event) 0)
               ((string= (event-type event) "fleet.board.posted") (or (%given (obj-get p "chain_depth")) 1))
               ((string= (event-type event) "fleet.op") (or (%given (obj-get (obj-get p "body") "chain_depth")) 1))
+              ((string= (event-type event) "forum.posted") (or (%given (obj-get p "chain_depth")) 1))
               (t 0)))))
 
 ;;; Receiving
@@ -771,39 +773,32 @@ peer in TAGS (peer ids). Returns what was done."
 (defparameter *digest-chars* 6000 "Most characters of peers' posts one digest thought reads.")
 
 (defun fleet-digest (kernel)
-  "In quiet time, when a digest is due, read what each peer has posted since
-I last looked and give it one thought. Returns the thought id, or NIL."
-  (let ((every (setting kernel "fleet.digest_minutes"))
-        (peers (fleet-peers kernel)))
-    (when (and (eq t (setting kernel "fleet.enabled")) (plusp every) peers
+  "In quiet time, when a digest is due, read what the crew has posted in the
+forum since I last looked and give it one thought. Returns the thought id, or NIL."
+  (let ((every (setting kernel "fleet.digest_minutes")))
+    (when (and (eq t (setting kernel "fleet.enabled")) (plusp every)
                (let ((last (%latest-op kernel "digest-run" "digest")))
                  (or (null last) (>= (- (unix-now) (obj-get last "at" 0)) (* 60 every)))))
       (%journal kernel "digest-run" "digest" "self" (obj "at" (unix-now)))
-      (let ((own (fleet-agent-id kernel)) (lines '()) (used 0))
-        (dolist (peer peers)
-          (let* ((key (format nil "digest/~a" (first peer)))
-                 (since (or (obj-get (%latest-op kernel "digest" key) "through") (- (unix-now) 86400)))
-                 (through since))
-            (handler-case
-                (dolist (m (obj-get (%fleet-http kernel (third peer) (format nil "/board/since?ts=~d" since) nil
-                                                 :peer-id (first peer) :method :get)
-                                    "messages"))
-                  (setf through (max through (or (%given (obj-get m "timestamp")) 0)))
-                  (unless (equal own (obj-get m "author_id"))
-                    (let ((line (format nil "[~a's board] ~a~@[ (~a)~]: ~a  (peer_id ~a, thread_id ~a, message ~a)"
-                                        (second peer) (obj-get m "author_name") (%given (obj-get m "intent"))
-                                        (let ((text (obj-get m "text" ""))) (subseq text 0 (min 400 (length text))))
-                                        (first peer) (obj-get m "thread_id") (obj-get m "msg_id"))))
-                      (when (< (+ used (length line)) *digest-chars*)
-                        (incf used (length line))
-                        (push line lines)))))
-              (error () nil))
-            (when (> through since)
-              (%journal kernel "digest" key (first peer) (obj "through" through)))))
+      (let* ((own (fleet-agent-id kernel))
+             (since (or (obj-get (%latest-op kernel "digest" "digest/forum") "through") (- (unix-now) 86400)))
+             (through since) (lines '()) (used 0))
+        (dolist (m (sql-rows (kernel-db kernel)
+                             "SELECT m.msg_id,m.thread_id,m.author_id,m.author_name,m.text,m.intent,m.ts,t.title FROM forum_messages m JOIN forum_threads t ON t.thread_id=m.thread_id WHERE t.status IN (?2,?3) AND m.ts>?1 ORDER BY m.ts LIMIT 200"
+                             since "open" "resolved"))
+          (destructuring-bind (id thread author name text intent ts title) m
+            (setf through (max through ts))
+            (unless (equal author own)
+              (let ((line (format nil "[~a] ~a~@[ (~a)~]: ~a  (thread_id ~a, message ~a)"
+                                  title name intent (subseq text 0 (min 400 (length text))) thread id)))
+                (when (< (+ used (length line)) *digest-chars*)
+                  (incf used (length line))
+                  (push line lines))))))
+        (when (> through since)
+          (%journal kernel "digest" "digest/forum" "self" (obj "through" through)))
         (when lines
-          ;; A reflection: it thinks with everything the agent knows (including her own recent acts,
-          ;; which a thought for the fleet could not see), and cannot post; a reply is left as a draft
-          ;; and said by a separate step for that peer (docs/reflect-then-speak.md).
+          ;; A reflection: it thinks with everything the agent knows and cannot post;
+          ;; a reply is left as a draft for the crew review (docs/reflect-then-speak.md).
           (request-thought kernel "reflection"
                            (pai-v3.mind::fleet-digest-prompt (reverse lines))
                            :audience "operator"))))))
@@ -893,7 +888,7 @@ some other way: it is the only thing that binds the two operators."
 ;;; Routes: /fleet/* and /board/*, signed, never by operator session
 
 (defun fleet-path-p (path)
-  (or (uiop:string-prefix-p "/fleet/" path) (uiop:string-prefix-p "/board/" path)))
+  (or (uiop:string-prefix-p "/fleet/" path) (uiop:string-prefix-p "/board/" path) (uiop:string-prefix-p "/forum/" path)))
 
 (defun %verified-peer (kernel body)
   "The peer that signed this request, or NIL."
@@ -930,6 +925,8 @@ some other way: it is the only thing that binds the two operators."
                    ((string= path "/fleet/ping") (reply 200 (obj "agent_id" (fleet-agent-id k))))
                    ((and (eq method :post) (string= path "/board/post"))
                     (reply 200 (accept-board-post k peer (json-parse body))))
+                   ((and (eq method :post) (string= path "/forum/event"))
+                    (reply 200 (accept-forum-event k peer (json-parse body))))
                    ((and (eq method :post) (string= path "/board/react"))
                     (reply 200 (accept-board-reaction k peer (json-parse body))))
                    ((and (eq method :post) (string= path "/fleet/board-notification"))
