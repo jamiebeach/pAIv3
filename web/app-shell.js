@@ -50,11 +50,31 @@
     render();
   }
 
+  // Pages without their own header get the same compact one the terminal has.
+  function ensureHeader() {
+    const existing = document.querySelector('header .btns');
+    if (existing) return existing;
+    if (document.body.dataset.paiHeader === 'none') return null;
+    const header = document.createElement('header');
+    header.id = 'pai-header';
+    const title = document.createElement('h1');
+    title.textContent = 'PAI ' + (document.title || '').toUpperCase();
+    const controls = document.createElement('div');
+    controls.className = 'btns';
+    header.append(title, controls);
+    document.body.prepend(header);
+    return controls;
+  }
+
   function install() {
-    const controls = document.querySelector('header .btns');
+    const controls = ensureHeader();
     if (!controls) return;
     const style = document.createElement('style');
     style.textContent = `
+      #pai-header { position:sticky; top:0; z-index:20; display:flex; justify-content:space-between;
+        align-items:center; padding:calc(6px + env(safe-area-inset-top)) 14px 6px;
+        border-bottom:1px solid var(--border,#223042); background:rgba(11,15,20,.95); }
+      #pai-header h1 { margin:0; font:13px ui-monospace,monospace; color:var(--dim,#8b98a5); }
       #pai-menu-button { background:none; border:1px solid var(--border,#223042);
         color:var(--dim,#8b98a5); border-radius:6px; min-width:38px; min-height:32px;
         font:18px/1 ui-monospace,monospace; cursor:pointer; }

@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Notifications</title>
+<script src="/app-shell.js" defer></script>
 <link rel="manifest" href="/manifest.webmanifest">
 <style>
   :root { color-scheme: dark light; --bg: #101216; --fg: #e6e8ec; --muted: #9aa3b2; --line: #2a2f3a; --accent: #7aa2ff; }
@@ -26,8 +27,6 @@
 </head>
 <body>
 <main>
-  <p><a href="/terminal" style="color:var(--accent)">&larr; Back to the terminal</a></p>
-  <h1>Notifications</h1>
   <p class="muted">Summaries only, with a link into this chat. Nothing sensitive is sent through the push service.</p>
   <div id="status" role="status" aria-live="polite"></div>
   <section id="shadow-review" hidden>
