@@ -162,4 +162,21 @@
       (is (not (pai-v3.mind::tool-available-p (gethash "draft_fleet_message" *tools*) row)) "the old way is no longer offered")
       (is (not (pai-v3.mind::tool-available-p (gethash "read_peer_board" *tools*) row))))))
 
+(deftest a-draft-left-the-old-way-for-a-migrated-thread-is-said-in-the-forum
+  (with-crew (a b)
+    (pai-v3.api::operator-post b "SYNTHETIC old question" :title "SYNTHETIC old thread")
+    (let* ((old (first (first (pai-v3.api::board-threads b))))
+           (parent (first (first (pai-v3.api::board-messages b old))))
+           (reflection (request-thought b "introspection" "SYNTHETIC reflection")))
+      ;; The draft is made the old way, before the boards are brought in.
+      (funcall (pai-v3.mind::tool-run (gethash "draft_fleet_message" pai-v3.mind::*tools*)) b reflection
+               (obj "peer_id" (pai-v3.api::fleet-agent-id a) "text" "SYNTHETIC late answer" "thread_id" old "reply_to" parent))
+      (pai-v3.api::migrate-boards-to-forum b)
+      (append! b "thought.ended" (obj "thought_id" reflection "outcome" "concluded" "summary" "Done"))
+      (pai-v3.api::speak-drafts b)
+      (let* ((review (first (first (sql-rows (kernel-db b) "SELECT speaking_thought_id FROM fleet_drafts WHERE text=?1 LIMIT 1" "SYNTHETIC late answer")))))
+        (funcall pai-v3.mind::*communication-answer* b (thought-row b review)
+                 "{\"decision\":\"send\",\"text\":\"SYNTHETIC late answer\",\"images\":[],\"note\":\"fine\"}")
+        (is (member "SYNTHETIC late answer" (texts a old) :test #'equal) "it reached the forum, and the sister's copy")))))
+
 (run-suite "api-forum")

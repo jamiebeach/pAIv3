@@ -689,11 +689,18 @@ came from, or NIL when it was made here."
               readers (or private (and th (equal "private" (fourth th))))
               draft-id intent title (and th (second th)) reply quiet text (%draft-envelope kernel draft-id)))))
 
+(defun %crew-draft-p (kernel draft)
+  "True when DRAFT is said in the forum: one for the crew, or one left the old
+way for a single sister whose thread now lives in the forum (bead v3-m9m)."
+  (and draft
+       (or (equal "crew" (second draft))
+           (and (third draft) (forum-thread kernel (third draft)) t))))
+
 (let ((task pai-v3.mind::*communication-task*))
   (setf pai-v3.mind::*communication-task*
         (lambda (kernel thought)
           (let ((draft (%review-draft kernel (getf thought :root-id))))
-            (if (and draft (equal "crew" (second draft)))
+            (if (%crew-draft-p kernel draft)
                 (destructuring-bind (id peer thread reply intent) draft
                   (declare (ignore peer))
                   (%crew-speaking-prompt kernel id thread reply intent
@@ -704,7 +711,7 @@ came from, or NIL when it was made here."
   (setf pai-v3.mind::*communication-answer*
         (lambda (kernel thought text)
           (let ((draft (%review-draft kernel (getf thought :root-id))))
-            (if (not (and draft (equal "crew" (second draft))))
+            (if (not (%crew-draft-p kernel draft))
                 (funcall answer kernel thought text)
                 (destructuring-bind (id peer thread reply intent) draft
                   (declare (ignore peer))
