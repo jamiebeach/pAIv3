@@ -101,4 +101,41 @@
       (is (= before (ledger-head k)))
       (is (equal "draft" (seventh (pai-v3.mind::artifact-row k id revision)))))))
 
+;;; A draft left behind (bead v3-3td).
+
+(defun end-thought (k id)
+  (pai-v3.mind::conclude k (thought-row k id) "thought.ended" (obj "outcome" "concluded" "summary" "done") "done"))
+
+(defun follow-ups (k)
+  (sql-rows (kernel-db k) "SELECT id,origin,reason FROM thoughts WHERE reason LIKE ?1 ORDER BY id LIMIT 10"
+            "A document I saved was left unsettled.%"))
+
+(deftest a-thought-that-ends-with-an-undelivered-draft-is-followed-up-once
+  (with-temp-kernel (k)
+    (let* ((thought (request-thought k "noticing" "Synthetic morning brief"))
+           (a (pai-v3.mind::save-document k thought (sample-document "Morning brief"))))
+      (end-thought k thought)
+      (let ((f (follow-ups k)))
+        (is (= 1 (length f)))
+        (is (equal "noticing" (second (first f))) "in the same kind of thought")
+        (is (search (obj-get a "artifact_id") (third (first f))))
+        (is (search "Morning brief" (third (first f))))
+        (end-thought k (first (first f)))
+        (is (= 1 (length (follow-ups k))) "a follow-up never asks for another")))))
+
+(deftest a-settled-or-superseded-draft-needs-no-follow-up
+  (with-temp-kernel (k)
+    (let* ((thought (request-thought k "noticing" "Synthetic brief"))
+           (a (pai-v3.mind::save-document k thought (sample-document)))
+           (id (obj-get a "artifact_id")))
+      (pai-v3.mind::set-artifact-state k thought id (obj-get a "revision") "kept" "For later")
+      (end-thought k thought)
+      (is (null (follow-ups k)) "kept")
+      (let* ((second-thought (request-thought k "noticing" "Synthetic revision"))
+             (b (pai-v3.mind::save-document k second-thought (sample-document "v2") id)))
+        (pai-v3.mind::save-document k second-thought (sample-document "v3") id)
+        (pai-v3.mind::set-artifact-state k second-thought id (1+ (obj-get b "revision")) "delivered" "Here it is.")
+        (end-thought k second-thought)
+        (is (null (follow-ups k)) "an older revision of a delivered document is not left behind")))))
+
 (run-suite "mind-artifacts")

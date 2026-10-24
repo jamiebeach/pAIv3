@@ -17,7 +17,8 @@
   :kind :inline :consumes ("artifact.saved" "artifact.disposition")
   :tables ("CREATE TABLE IF NOT EXISTS artifacts (artifact_id TEXT NOT NULL, revision INTEGER NOT NULL, title TEXT NOT NULL, digest TEXT NOT NULL, thought_id INTEGER NOT NULL, work_id TEXT, state TEXT NOT NULL, note TEXT NOT NULL, at TEXT NOT NULL, PRIMARY KEY(artifact_id,revision))"
            "CREATE INDEX IF NOT EXISTS artifacts_recent_idx ON artifacts(revision DESC)"
-           "CREATE INDEX IF NOT EXISTS artifacts_work_idx ON artifacts(work_id,revision DESC)")
+           "CREATE INDEX IF NOT EXISTS artifacts_work_idx ON artifacts(work_id,revision DESC)"
+           "CREATE INDEX IF NOT EXISTS artifacts_thought_idx ON artifacts(thought_id,state)")
   :reduce (lambda (db e)
             (let ((p (event-payload e)))
               (if (equal (event-type e) "artifact.saved")
@@ -189,3 +190,29 @@
                         (cond ((equal action "keep") "kept") ((equal action "deliver") "delivered")
                               ((equal action "abandon") "abandoned") (t (error "unknown action")))
                         (obj-get args "note" ""))))))))
+
+;;; A draft left behind (bead v3-3td). A thought that spends its allowance
+;;; ends on one last call without tools, so a document it saved cannot be
+;;; delivered then. When a top-level thought ends with a draft it neither
+;;; delivered, kept nor abandoned, a short follow-up thought is asked to settle
+;;; it, once: a follow-up never asks for another.
+
+(defparameter +unsettled-draft-marker+ "A document I saved was left unsettled.")
+
+(defun unsettled-drafts (kernel root-id)
+  "(artifact-id revision title) of each draft saved in the thought ROOT-ID or
+its sub-thoughts and still neither delivered, kept nor abandoned."
+  (sql-rows (kernel-db kernel)
+            "SELECT a.artifact_id,a.revision,a.title FROM thoughts t JOIN artifacts a ON a.thought_id=t.id AND a.state=?2 WHERE t.root_id=?1 AND NOT EXISTS (SELECT 1 FROM artifacts b WHERE b.artifact_id=a.artifact_id AND b.revision>a.revision) ORDER BY a.revision LIMIT 8"
+            root-id "draft"))
+
+(setf *concluded-hook*
+      (lambda (kernel thought)
+        (let ((drafts (unsettled-drafts kernel (getf thought :id))))
+          (when (and drafts (not (search +unsettled-draft-marker+ (or (getf thought :reason) ""))))
+            (request-thought kernel (if (equal "responding" (getf thought :origin)) "noticing" (getf thought :origin))
+                             (format nil "~a My thought ~d ended before I delivered, kept or abandoned ~:[it~;them~]:~%~{~{- \"~a\" (artifact_id ~a, revision ~a)~}~%~}~%~
+Settle each with the document tool now: deliver it if it is ready (with a note introducing it), keep it if it should stay private for now, or abandon it. Finish what was left only if it is quick."
+                                     +unsettled-draft-marker+ (getf thought :id) (cdr drafts)
+                                     (mapcar (lambda (d) (list (third d) (first d) (second d))) drafts))
+                             :audience "operator" :source-event-id (getf thought :id))))))

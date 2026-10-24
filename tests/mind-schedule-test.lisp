@@ -150,4 +150,23 @@
     (is (= (utc 2026 11 2 14 0) (local-to-universal "2026-11-02T09:00" z)) "after DST ends, EST")
     (signals error (local-to-universal "2026-10-20T09:00 EDT" z))))
 
+(deftest a-schedule-made-while-thinking-about-a-peer-is-listed-and-cancellable
+  ;; Bead v3-qac: one made in a thought a peer's post started was kept under
+  ;; the peer's audience, went off, and never showed in the list.
+  (with-temp-kernel (k)
+    (let ((run (pai-v3.mind::tool-run (gethash "schedule" pai-v3.mind::*tools*)))
+          (peer-thought (request-thought k "work" "Specter posted about the brief" :audience "peer:specter"))
+          (own (request-thought k "noticing" "Quiet time")))
+      (at-utc ((utc 2026 10 12 12 0))
+        (is (search "Scheduled" (funcall run k peer-thought (obj "action" "add" "text" "Brief lane" "cron" "0 7 * * *"))))
+        (is (equal "operator" (sql-value (kernel-db k) "SELECT audience FROM scheduled_items LIMIT 1")) "kept as my own")
+        ;; One kept the old way, under a peer's audience, still shows and can be cancelled.
+        (add-schedule k "Old ghost" :cron "0 8 * * *" :audience "peer:specter")
+        (let ((listing (funcall run k own (obj "action" "list"))))
+          (is (search "Brief lane" listing))
+          (is (search "Old ghost" listing))
+          (is (search "for peer:specter" listing))
+          (let ((ghost (sql-value (kernel-db k) "SELECT id FROM scheduled_items WHERE text=?1 LIMIT 1" "Old ghost")))
+            (is (search "Cancelled" (funcall run k own (obj "action" "cancel" "id" ghost))))))))))
+
 (run-suite "mind-schedule")

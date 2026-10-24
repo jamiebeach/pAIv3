@@ -485,11 +485,17 @@ trampoline rebuilds them on the next bounce; recurring is re-queuing."
                    "summary" (subseq text 0 (min 500 (length text))))
               text)))
 
+(defvar *concluded-hook* nil
+  "(lambda (kernel thought)) or NIL: called when a top-level thought ends or
+parks, for work it left unfinished (artifacts.lisp). Its errors are ignored.")
+
 (defun conclude (kernel thought type payload result)
   "End THOUGHT with event TYPE. A sub-call returns RESULT to its parent as
 the parent's tool result, which re-queues the parent."
   (setf (gethash "thought_id" payload) (getf thought :id))
   (append! kernel type payload)
+  (when (and *concluded-hook* (null (getf thought :parent-id)))
+    (ignore-errors (funcall *concluded-hook* kernel thought)))
   (let ((parent (getf thought :parent-id)))
     (when parent
       (%record-text kernel parent "tool_result" result

@@ -315,7 +315,11 @@ recorded) and its delivery appended in one transaction. Returns the count."
                                      "wake" (obj "type" "boolean") "id" (obj "type" "string"))
                    "required" (list "action"))
   :run (lambda (kernel id args)
-         (let ((audience (getf (thought-row kernel id) :audience))
+         ;; A schedule is the agent's own, made while thinking privately: it is
+         ;; kept, listed and fired under the same audience the thought reads as.
+         ;; Keeping the stimulus's audience instead (a peer's) made schedules
+         ;; that went off but never showed in the list (bead v3-qac).
+         (let ((audience (thought-reading-audience (thought-row kernel id)))
                (action (obj-get args "action" "list")))
            (handler-case
                (cond
@@ -332,14 +336,22 @@ recorded) and its delivery appended in one transaction. Returns the count."
                   (cancel-schedule kernel (obj-get args "id" "") "cancelled by me")
                   "Cancelled.")
                  (t
-                  (let ((rows (sql-rows (kernel-db kernel)
-                                        "SELECT id,text,next_at,kind,mode FROM scheduled_items WHERE status='active' AND audience=?1 ORDER BY next_at LIMIT 50"
-                                        (thought-reading-audience (thought-row kernel id)))))
+                  ;; Thinking privately, I see every schedule I hold, including any
+                  ;; kept under another audience before bead v3-qac; otherwise only
+                  ;; that audience's.
+                  (let* ((audience (thought-reading-audience (thought-row kernel id)))
+                         (rows (if (equal audience "operator")
+                                   (sql-rows (kernel-db kernel)
+                                             "SELECT id,text,next_at,kind,mode,audience FROM scheduled_items WHERE status='active' ORDER BY next_at LIMIT 50")
+                                   (sql-rows (kernel-db kernel)
+                                             "SELECT id,text,next_at,kind,mode,audience FROM scheduled_items WHERE status='active' AND audience=?1 ORDER BY next_at LIMIT 50"
+                                             audience))))
                     (if rows
                         (format nil "~{~a~^~%~}"
-                                (mapcar (lambda (r) (format nil "~a ~a~:[~; (repeats)~] [~a]: ~a" (first r)
+                                (mapcar (lambda (r) (format nil "~a ~a~:[~; (repeats)~] [~a~@[, for ~a~]]: ~a" (first r)
                                                             (local-slot (parse-iso8601 (third r)) (%zone kernel nil))
-                                                            (string= "cron" (fourth r)) (fifth r) (second r)))
+                                                            (string= "cron" (fourth r)) (fifth r)
+                                                            (and (not (equal "operator" (sixth r))) (sixth r)) (second r)))
                                         rows))
                         "Nothing is scheduled."))))
              (error (e) (format nil "Not scheduled: ~a" e))))))
