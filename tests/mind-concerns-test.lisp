@@ -272,4 +272,26 @@
                     :origin (obj "principal_type" "operator"))
     (is (equal "grace" (nth-value 1 (quiet-tick k))) "the second no longer jumps the queue")))
 
+(deftest a-thought-waiting-on-calls-cut-off-without-results-carries-on
+  ;; Beads v3-jc2, v3-4xa: the agent stopped while tools ran; the calls were
+  ;; recorded, their results never were, and the thought waited for good.
+  (with-temp-kernel (k)
+    (let* ((cut (request-thought k "introspection" "SYNTHETIC free time" :audience "operator"))
+           (dead (request-thought k "introspection" "SYNTHETIC nothing at all" :audience "operator"))
+           (old (iso8601 (- (now) 7200))))
+      (pai-v3.mind::%record-text k cut "model" "Let me look.")
+      (pai-v3.mind::%record-text k cut "tool_call" "" "tool" "install_software" "call_id" "c-1" "arguments" "{}")
+      (pai-v3.mind::%record-text k cut "tool_call" "" "tool" "brave_search" "call_id" "c-2" "arguments" "{}")
+      (is (= 2 (length (pai-v3.mind::awaiting-p (pai-v3.mind::%replay-messages k cut)))))
+      (dolist (id (list cut dead))
+        (append! k "work.completed" (obj "work_id" (sql-value (kernel-db k) "SELECT id FROM v3_work WHERE handler=?1 AND entity=?2 LIMIT 1" "thought" (princ-to-string id)))))
+      (sql-exec (kernel-db k) "UPDATE thoughts SET status='running',updated_at=?1" old)
+      (pai-v3.mind::%close-orphans k)
+      (is (equal "running" (getf (thought-row k cut) :status)) "revived, not abandoned")
+      (is (null (pai-v3.mind::awaiting-p (pai-v3.mind::%replay-messages k cut))) "each cut-off call has a result")
+      (is (search "Interrupted" (sql-value (kernel-db k) "SELECT text FROM thought_steps WHERE thought_id=?1 AND call_id=?2 AND kind=?3 LIMIT 1" cut "c-1" "tool_result")))
+      (is (work-pending-p k "thought" cut) "and it is queued to carry on")
+      (is (equal "failed" (getf (thought-row k dead) :status)))
+      (is (search "last step none" (getf (thought-row k dead) :outcome)) "an abandoned thought says where it stopped"))))
+
 (run-suite "mind-concerns")

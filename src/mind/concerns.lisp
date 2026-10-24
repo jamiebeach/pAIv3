@@ -496,12 +496,24 @@ replies stranded mid-stream kept it from quiet time for a day)."
       (destructuring-bind (id root updated) row
         (when (> (or (%seconds-since updated) 0) *orphan-seconds*)
           (let ((tree (sql-rows db "SELECT id,updated_at FROM thoughts WHERE root_id=?1 LIMIT 200" root)))
-            (unless (some (lambda (r) (or (work-pending-p kernel "thought" (first r))
-                                          (< (or (%seconds-since (second r)) 0) *orphan-seconds*)))
-                          tree)
+            (unless (or (some (lambda (r) (or (work-pending-p kernel "thought" (first r))
+                                              (< (or (%seconds-since (second r)) 0) *orphan-seconds*)))
+                              tree)
+                        ;; Waiting on calls cut off without a result: answer them and
+                        ;; carry on rather than abandon it (beads v3-jc2, v3-4xa).
+                        (ignore-errors (answer-lost-calls kernel (thought-row kernel id) (%replay-messages kernel id))))
               (append! kernel "thought.failed"
                        (obj "thought_id" id "class" "abandoned"
-                            "reason" (format nil "abandoned: no work left to carry it on since ~a" updated))))))))))
+                            "reason" (format nil "abandoned: no work left to carry it on since ~a~@[; ~a~]"
+                                             updated (ignore-errors (%where-it-stopped kernel id))))))))))))
+
+(defun %where-it-stopped (kernel id)
+  "For an abandoned thought's record: its last step, and any calls it still
+awaited (bead v3-4xa)."
+  (let ((last (sql-row (kernel-db kernel) "SELECT kind,tool FROM thought_steps WHERE thought_id=?1 ORDER BY event_id DESC LIMIT 1" id))
+        (awaited (awaiting-p (%replay-messages kernel id))))
+    (format nil "last step ~:[none~;~:*~a~@[ (~a)~]~]~@[; still awaiting ~{~a~^, ~}~]"
+            (first last) (second last) awaited)))
 
 (defun quiet-tick (kernel)
   "In quiet time, give one thought to the best material there is: a review of

@@ -304,7 +304,9 @@ assistant message; a long tool result shows its first part and how to page."
 
 (defun think (mind messages)
   "The mind. MESSAGES is the argument folded through the recursion."
-  (cond ((awaiting-p messages) (wait mind))
+  (cond ((awaiting-p messages)
+         (unless (answer-lost-calls (mind-kernel mind) (mind-thought mind) messages)
+           (wait mind)))
         ((spent-p mind) (rest-here mind messages))
         (t (let ((reply (consult mind (%with-low-allowance-note mind messages))))
              (if (obj-get reply "tool_calls")
@@ -342,6 +344,37 @@ assistant message; a long tool result shows its first part and how to page."
   "Nothing to do until a sub-call answers; its answer re-queues this thought."
   (declare (ignore mind))
   nil)
+
+(defparameter +lost-result+
+  "Interrupted: this call was recorded but its result never was (the agent stopped or restarted while it ran). It may or may not have taken effect; check before repeating it.")
+
+(defun %lost-calls (kernel thought messages)
+  "Of the calls MESSAGES still await, those no sub-thought is alive to answer,
+as (call-id tool-name). Only a sub-call (ponder) answers later; any other
+call left without a result was cut off and will never get one (beads v3-jc2,
+v3-4xa)."
+  (let ((awaited (awaiting-p messages))
+        (answering (mapcar #'first (sql-rows (kernel-db kernel)
+                                             "SELECT parent_call_id FROM thoughts WHERE root_id=?1 AND parent_id=?2 AND status IN (?3,?4) LIMIT 50"
+                                             (getf thought :root-id) (getf thought :id) "queued" "running"))))
+    (loop for m in messages
+          append (loop for call in (obj-get m "tool_calls")
+                       for id = (obj-get call "id")
+                       when (and (member id awaited :test #'equal) (not (member id answering :test #'equal)))
+                         collect (list id (obj-get (obj-get call "function") "name"))))))
+
+(defun answer-lost-calls (kernel thought messages)
+  "Record a result for each call cut off without one and re-queue THOUGHT.
+Returns T when there were any."
+  (let ((lost (%lost-calls kernel thought messages)))
+    (when lost
+      (dolist (l lost)
+        (%record-text kernel (getf thought :id) "tool_result" +lost-result+
+                      "tool" (second l) "call_id" (first l) "failed" t))
+      (request-work kernel "thought" (getf thought :id) (obj)
+                    :priority (getf (%policy kernel (getf thought :origin)) :priority)
+                    :caused-by (getf thought :id))
+      t)))
 
 (defun %root-model-calls (kernel thought)
   (sql-value (kernel-db kernel) "SELECT SUM(model_calls) FROM thoughts WHERE root_id=?1 LIMIT 1"
