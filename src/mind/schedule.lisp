@@ -342,7 +342,7 @@ recorded) and its delivery appended in one transaction. Returns the count."
                   (let* ((audience (thought-reading-audience (thought-row kernel id)))
                          (rows (if (equal audience "operator")
                                    (sql-rows (kernel-db kernel)
-                                             "SELECT id,text,next_at,kind,mode,audience FROM scheduled_items WHERE status='active' ORDER BY next_at LIMIT 50")
+                                             "SELECT id,text,next_at,kind,mode,audience FROM scheduled_items WHERE status=?1 ORDER BY next_at LIMIT 50" "active")
                                    (sql-rows (kernel-db kernel)
                                              "SELECT id,text,next_at,kind,mode,audience FROM scheduled_items WHERE status='active' AND audience=?1 ORDER BY next_at LIMIT 50"
                                              audience))))
