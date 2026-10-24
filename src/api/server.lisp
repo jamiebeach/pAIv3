@@ -361,6 +361,8 @@ called when the scheduler is idle, at most every IDLE-EVERY seconds (daily
 backups and other housekeeping); its errors never stop the loop. The API
 listens on localhost by default (AUTH-10)."
   (pai-v3.self:restore-self kernel)
+  ;; RANDOM otherwise repeats the same sequence in every process (bead v3-clp.2.1).
+  (setf *random-state* (make-random-state t))
   (let* ((agent (make-agent :kernel kernel :rp-id rp-id :origin origin :sites sites))
          (acceptor (make-instance 'api-acceptor :agent agent :port port :address address
                                                 :access-log-destination nil :message-log-destination nil)))

@@ -10,4 +10,5 @@ Never loaded by the runtime image (engineering spec §4.1)."
     :components ((:file "package")
                  (:file "rebuild")
                  (:file "census")
+                 (:file "repair-memory")
                  (:file "import-v2")))))

@@ -65,7 +65,7 @@ Returns the intention's id."
   (when (>= (length (open-intentions kernel)) *intentions-open-most*)
     (error "I already hold ~d open intentions; settle some first" *intentions-open-most*))
   (destructuring-bind (anchor label) (%resolve-anchor kernel about)
-    (let ((id (format nil "i-~36r" (random (expt 2 48)))))
+    (let ((id (format nil "i-~a" (pai-v3.kernel:base64url-encode (ironclad:random-data 9)))))
       (append! kernel "intention.formed"
                (obj "intention_id" id "anchor" anchor "label" label "text" (string-trim " " text)
                     "until" until "thought_id" thought-id))

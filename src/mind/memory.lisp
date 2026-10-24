@@ -65,7 +65,9 @@
                                 (strength 0.5) topic source-event-id)
   "Form a memory and queue its embedding. Sensitivity defaults to the most
 restrictive class when the caller does not know better."
-  (let ((id (or id (format nil "m-~36r" (random (expt 2 64))))))
+  ;; From the system's random source: Lisp's RANDOM starts from the same
+  ;; state in every process, so its ids repeat after a restart (bead v3-clp.2.1).
+  (let ((id (or id (format nil "m-~a" (base64url-encode (ironclad:random-data 12))))))
     (append! kernel "memory.formed"
              (obj "memory_id" id "kind" kind "content" content "sensitivity" sensitivity
                   "owner" owner "strength" strength "topic" topic "source_event_id" source-event-id))
