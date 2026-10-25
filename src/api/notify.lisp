@@ -27,7 +27,9 @@
   "Push services a subscription may name; the agent never posts to another address.")
 (defparameter +vapid-secret+ "web-push-vapid")
 (defparameter *notify-summary-max* 140)
-(defparameter *notify-messages-per-day* 20 "Most agent messages posted to the terminal in a day.")
+(define-setting "notify.messages_per_day"
+  :type :integer :min 1 :max 500 :default 50 :group "Notifications"
+  :description "Most messages an agent may send the operator unprompted (notify_operator) in any 24 hours.")
 
 (defun %default-policy ()
   (obj "enabled" t
@@ -472,7 +474,7 @@ If nothing feels worth saying right now, let it be: a line on why is enough. Nev
                  ((>= (or (sql-value (kernel-db kernel) "SELECT count(*) FROM notifications WHERE origin=?1 AND at_unix>?2 LIMIT 1"
                                      "agent" (- (unix-now) 86400))
                           0)
-                      *notify-messages-per-day*)
+                      (setting kernel "notify.messages_per_day"))
                   "I have sent enough messages to the operator today; it can wait for the next conversation.")
                  ((and (eq t (setting kernel "outreach.shadow")) (not (equal origin "responding"))
                        (not (member origin (setting kernel "outreach.shadow_exempt") :test #'equal)))
