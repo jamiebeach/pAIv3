@@ -51,6 +51,7 @@ MAX_FRAME_BYTES = 2 * 1024 * 1024
 FRAMES_GONE_SECONDS = 15      # no frames this long while live: the source is lost
 PRESENT_EVERY = 5             # seconds between "still present" for a track
 OBSERVATION_TTL = 15          # how long an observation holds (agents cap it too)
+SNAPSHOT_FRESH = 10            # an agent may look at the last analysed frame this long after it
 LEFT_AFTER = 8                # seconds unseen before a track has left (a moving phone misses often)
 REJOIN_WITHIN = 10            # a person seen again this soon after leaving is the same arrival
 ENTER_HITS = 2                # detections before a track counts as an arrival
@@ -83,6 +84,7 @@ class Source:
         self.last_frame_at = None
         self.tracks = []
         self.recent = None        # a track that just left, held for REJOIN_WITHIN
+        self.last_seen = None     # (epoch, jpeg, monotonic, utc stamp): the last analysed frame, for an agent's look
         self.next_track = 0
         self.wake = threading.Event()
 
@@ -156,6 +158,7 @@ def set_state(source, state, reason):
         source.frame = None
         source.tracks = []
         source.recent = None
+        source.last_seen = None
         source.last_frame_at = None  # loss counts only once frames have arrived
     log(source.id, "->", state, "epoch", source.epoch, "(" + reason + ")")
     threading.Thread(target=broadcast_state, args=(source,), daemon=True).start()
@@ -245,6 +248,8 @@ def watch(source):
         with LOCK:
             if source.epoch != epoch or source.state != "live":
                 continue  # stopped while detecting: the result is dropped
+            if frame is not None:
+                source.last_seen = (epoch, frame[1], at, stamp())
             out = update_tracks(source, epoch, boxes, at) if frame is not None or source.tracks or source.recent else []
         if out:
             send_observations(source, epoch, out)
@@ -307,6 +312,15 @@ class Handler(BaseHTTPRequestHandler):
                 return self.reply(200, set_state(source, "live", "started by the operator"))
             if parts[2] == "stop":
                 return self.reply(200, set_state(source, "disabled", "stopped by the operator"))
+            if parts[2] == "snapshot":
+                # An agent's deliberate look: the last analysed frame, if fresh. Kept nowhere here.
+                with LOCK:
+                    seen = source.last_seen
+                    if source.state != "live" or seen is None or seen[0] != source.epoch or now() - seen[2] > SNAPSHOT_FRESH:
+                        return self.reply(404, {"error": "nothing fresh to look at: the source is off or has sent no frame in the last %d seconds" % SNAPSHOT_FRESH})
+                    import base64
+                    return self.reply(200, {"source_id": source.id, "epoch": seen[0], "seen_at": seen[3],
+                                            "image": "data:image/jpeg;base64," + base64.b64encode(seen[1]).decode()})
             if parts[2] == "lease":
                 with LOCK:
                     if source.state not in ("live", "lost"):

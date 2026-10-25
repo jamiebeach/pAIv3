@@ -150,4 +150,15 @@
         (is (search "started this camera from their phone 2 minutes ago" reason))
         (is (search "an inference you may voice as one, not a recognition" reason))))))
 
+(deftest looking-needs-a-live-source-and-eyes
+  (with-senses (k)
+    (let ((thought (request-thought k "noticing" "Synthetic look")))
+      (is (search "is not on" (pai-v3.api::look-through k thought "webcam-a")))
+      (pai-v3.api::set-sense-state k "webcam-a" "live" "started")
+      (is (search "needs the Eyes service" (pai-v3.api::look-through k thought "webcam-a")))
+      (is (search "no source named" (pai-v3.api::look-through k thought "nowhere")))
+      (seen k 1 "person.entered" "t1")
+      (is (search "senses tool (action look, source_id webcam-a)" (second (first (sense-thoughts k)))) "the arrival says she can look")
+      (is (search "Office webcam" (funcall (pai-v3.mind::tool-run (gethash "senses" pai-v3.mind::*tools*)) k thought (obj "action" "status")))))))
+
 (run-suite "api-perception")
