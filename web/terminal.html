@@ -575,12 +575,21 @@ loadMoreEl.addEventListener('click', async () => {
 });
 
 let es = null;
+let reactionFrame = null;   // held up to five minutes, sent with the next message
 function connectStream() {
   if (es) es.close();
   es = new EventSource('/api/v2/stream?since=' + lastId);
   es.onmessage = (e) => {
     const ev = JSON.parse(e.data);
     updateTranscript(() => { renderEvent(ev, false); pruneDom(); });
+    // A few seconds after a reply arrives, the operator's face as they read it,
+    // held for their next message (it wakes no one and costs nothing until then).
+    if ((ev.type === 'final' || ev.type === 'notice') && window.paiCamera && window.paiCamera.chatting()) {
+      setTimeout(() => {
+        const url = window.paiCamera.chatting() ? window.paiCamera.snapshot() : null;
+        if (url) reactionFrame = { url, at: Date.now() };
+      }, 3000);
+    }
   };
   es.onerror = () => { es.close(); setTimeout(connectStream, 1500); };
 }
@@ -666,7 +675,7 @@ async function drainOutboundQueue() {
       item.echo.status.textContent = 'submitting · pAI will take this after the current cognitive boundary';
     }
     try {
-      const response = await fetch('/api/v2/send', { method: 'POST', headers: {'Content-Type':'application/json', 'X-PAI-Request':'same-origin'}, body: JSON.stringify({message: item.text, images: item.images}) });
+      const response = await fetch('/api/v2/send', { method: 'POST', headers: {'Content-Type':'application/json', 'X-PAI-Request':'same-origin'}, body: JSON.stringify({message: item.text, images: item.images, camera_frame: item.frame || undefined, reaction_frame: item.reaction || undefined}) });
       if (!response.ok) {
         const data = await response.json();
         updateTranscript(() => {
@@ -701,10 +710,14 @@ function send() {
     return;
   }
   const images = pendingImages;
+  // The camera's view as this is sent, when the operator lets her see them in chat.
+  const frame = (window.paiCamera && window.paiCamera.chatting()) ? window.paiCamera.snapshot() : null;
+  const reaction = (frame && reactionFrame && Date.now() - reactionFrame.at < 300000) ? reactionFrame.url : null;
+  reactionFrame = null;
   inputEl.value = ''; autoGrow();
   pendingImages = []; renderPendingImages();
   const echo = renderLocalQueued(text, images, outboundQueue.length + 1);
-  outboundQueue.push({text, images, echo});
+  outboundQueue.push({text, images, echo, frame, reaction});
   drainOutboundQueue();
   inputEl.focus();
 }

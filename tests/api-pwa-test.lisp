@@ -664,4 +664,20 @@
           (is (= 200 status))
           (is (search "attachment;" (gethash "content-disposition" headers))))))))
 
+(deftest camera-frames-come-with-a-chat-message-and-say-what-they-are
+  (with-pwa (k agent)
+    (let ((token (let ((a (make-software-authenticator))) (pwa-register a) (pwa-login a)))
+          (px "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==")
+          (other "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC"))
+      (is (= 200 (pwa-post "/api/v2/send" (obj "message" "not funny" "camera_frame" px "reaction_frame" other) :token token)))
+      (let ((turn (sql-row (kernel-db k) "SELECT event_id FROM working_dialogue WHERE kind=?1 ORDER BY event_id DESC LIMIT 1" "turn")))
+        (let* ((p (event-payload (event-by-id k (first turn)))))
+          (is (search "not funny" (obj-get p "text")))
+          (is (search "a few seconds after your last reply reached me, as I read it, and then as I sent this" (obj-get p "text")))
+          (is (= 2 (length (obj-get p "images"))) "the reaction, then the frame as it was sent")))
+      (is (= 200 (pwa-post "/api/v2/send" (obj "message" "hello" "reaction_frame" other) :token token)))
+      (let ((p (event-payload (event-by-id k (first (sql-row (kernel-db k) "SELECT event_id FROM working_dialogue WHERE kind=?1 ORDER BY event_id DESC LIMIT 1" "turn"))))))
+        (is (null (obj-get p "images")) "a reaction alone, without the camera on as it was sent, is not taken")
+        (is (null (search "My camera" (obj-get p "text"))))))))
+
 (run-suite "api-pwa")

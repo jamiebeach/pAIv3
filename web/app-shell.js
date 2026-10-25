@@ -124,6 +124,9 @@
     register({id:'secrets', label:'Secrets', href:'/secrets', current:path === '/secrets'});
     register({id:'avatars', label:'Avatars', href:'/avatars', current:path === '/avatars'});
     register({id:'senses', label:'Senses', href:'/senses', current:path === '/senses'});
+    const camera = document.createElement('script');
+    camera.src = '/camera.js';
+    document.head.appendChild(camera);
     window.dispatchEvent(new CustomEvent('pai-shell-ready'));
   }
 

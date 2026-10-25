@@ -56,7 +56,12 @@ function drawSources(data) {
       row.append(button('Start', 'primary', async () => { await post('/api/perception/start', { source_id: s.source_id }); say('Started ' + (s.name || s.source_id) + '.'); load(); }));
     }
     if (s.kind === 'phone' && s.state !== 'disabled') {
-      row.append(button(phone.running ? 'Sending from this phone' : 'Use this phone as a camera', 'primary', () => startPhone(s)));
+      row.append(button(cameraRunning() && window.paiCamera.source() === s.source_id ? 'This device is sending' : 'Use this device as a camera', 'primary', async () => {
+        if (!window.paiCamera) { say('The camera is still loading; try again in a moment.'); return; }
+        window.paiCamera.onmessage = say;
+        await window.paiCamera.start(s.source_id, s.name);
+        say('This device is now a camera for ' + (s.name || s.source_id) + '. It keeps sending as you move between pages until you stop it.');
+      }));
     }
     row.append(button('Remove', '', async () => {
       if (!confirm('Remove ' + (s.name || s.source_id) + '? Its key stops working.')) return;
@@ -90,69 +95,10 @@ function drawPresent(data) {
   if (!box.childNodes.length) box.append(el('div', 'Nothing to perceive: no source is configured.', 'muted'));
 }
 
-// A phone as a camera: frames go from this page straight to Eyes under a
-// short-lived lease, about one a second. Nothing is kept on the phone, and
-// the agent never receives the pictures, only what Eyes perceives in them.
-const phone = { running: false, stream: null, timer: null, lease: null, sent: 0, facing: 'environment' };
-
-async function openCamera() {
-  if (phone.stream) phone.stream.getTracks().forEach((t) => t.stop());
-  phone.stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: phone.facing, width: { ideal: 640 } }, audio: false });
-  const video = document.getElementById('phone-video');
-  video.srcObject = phone.stream;
-  video.style.transform = phone.facing === 'user' ? 'scaleX(-1)' : '';
-  await video.play();
-}
-
-async function startPhone(source) {
-  if (phone.running) return;
-  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { say('This browser cannot open the camera here.'); return; }
-  const lease = await post('/api/perception/phone', { source_id: source.source_id });
-  await openCamera();
-  const video = document.getElementById('phone-video');
-  Object.assign(phone, { running: true, lease, sent: 0 });
-  document.getElementById('phone').hidden = false;
-  const canvas = document.createElement('canvas');
-  const every = 1000 / Math.max(1, lease.frames_per_second || 1);
-  phone.timer = setInterval(() => {
-    if (!video.videoWidth) return;
-    const scale = Math.min(1, 640 / video.videoWidth);
-    canvas.width = Math.round(video.videoWidth * scale);
-    canvas.height = Math.round(video.videoHeight * scale);
-    canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
-    canvas.toBlob(async (jpeg) => {
-      if (!jpeg || !phone.running) return;
-      try {
-        const r = await fetch(lease.frames_url, { method: 'POST', body: jpeg,
-          headers: { 'Content-Type': 'image/jpeg', 'Authorization': 'Bearer ' + lease.token } });
-        if (r.status === 401 || r.status === 409) { stopPhone('Eyes ended this camera (stopped, restarted or lease expired).'); return; }
-        phone.sent += 1;
-        document.getElementById('phone-meta').textContent = phone.sent + ' frames sent to Eyes · ' + (source.name || source.source_id);
-      } catch (e) { document.getElementById('phone-meta').textContent = 'Could not reach Eyes: ' + e.message; }
-    }, 'image/jpeg', 0.7);
-  }, every);
-  say('This phone is now a camera for ' + (source.name || source.source_id) + '.');
-}
-
-function stopPhone(why) {
-  if (!phone.running) return;
-  clearInterval(phone.timer);
-  if (phone.stream) phone.stream.getTracks().forEach((t) => t.stop());
-  Object.assign(phone, { running: false, stream: null, timer: null, lease: null });
-  document.getElementById('phone').hidden = true;
-  say(why || 'This phone stopped being a camera.');
-  load();
-}
-
-document.getElementById('phone-stop').onclick = () => stopPhone();
-document.getElementById('phone-flip').onclick = async () => {
-  if (!phone.running) return;
-  phone.facing = phone.facing === 'user' ? 'environment' : 'user';
-  try { await openCamera(); say(phone.facing === 'user' ? 'Using the front camera.' : 'Using the back camera.'); }
-  catch (e) { say('Could not switch camera: ' + e.message); }
-};
-// Leaving the page or locking the phone ends the camera; it never runs unseen.
-document.addEventListener('visibilitychange', () => { if (document.hidden) stopPhone('The camera stopped when this page was hidden.'); });
+// This device as a camera lives in the app shell (camera.js), so it keeps
+// running from page to page with a visible badge; this page only starts it.
+function cameraRunning() { return window.paiCamera && window.paiCamera.running(); }
+window.addEventListener('pai-camera', () => load());
 
 async function load() {
   try {
@@ -164,7 +110,7 @@ async function load() {
 
 document.getElementById('stop-all').onclick = async () => {
   try {
-    stopPhone('Stopped with every sense.');
+    if (cameraRunning()) await window.paiCamera.stop();
     const r = await post('/api/perception/stop', {});
     say('Stopped ' + (r.stopped || []).length + ' source' + ((r.stopped || []).length === 1 ? '' : 's') + '.');
     load();
