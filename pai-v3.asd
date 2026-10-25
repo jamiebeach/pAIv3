@@ -102,6 +102,7 @@
                  (:file "reactions")
                  (:file "forum")
                  (:file "guests")
+                 (:file "perception")
                  (:file "reading")
                  (:file "pwa")))
    (:module "src/recall"

@@ -379,8 +379,25 @@ Returns how the judge went, or NIL when there was none to ask."
           do (incf used tokens) (push (list text tokens) rows))
     (nreverse rows)))
 
+(defvar *present-facets* '()
+  "Functions (lambda (kernel)) returning lines for the present slot beside the
+calendar, such as what the senses perceive now (perception.lisp). Shown only
+to the operator's own thinking.")
+
 (define-slot-source :present (kernel request max)
-  ;; What the operator's calendar holds next.
+  ;; What the operator's calendar holds next, then any other facet of now.
+  (let ((calendar (%calendar-present kernel)))
+   (append
+   calendar
+   (when (equal "operator" (getf request :audience))
+     (loop with used = (reduce #'+ calendar :key #'second)
+           for facet in *present-facets*
+           append (loop for line in (ignore-errors (funcall facet kernel))
+                        for tokens = (estimate-tokens line)
+                        while (<= (incf used tokens) max)
+                        collect (list line tokens)))))))
+
+(defun %calendar-present (kernel)
   (let ((rows (subseq-safe (sort (loop for (account) in (google-accounts kernel)
                                          append (sql-rows (kernel-db kernel) "SELECT summary,start_at,location FROM calendar_events WHERE account=?1 AND start_at>=?2 ORDER BY start_at LIMIT 5"
                                                           account (%iso-now)))
