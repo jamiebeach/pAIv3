@@ -124,4 +124,30 @@
       (is (some (lambda (l) (search "Office webcam" l)) (slot "operator")))
       (is (notany (lambda (l) (search "Office webcam" l)) (slot "external")) "outside content never sees the senses"))))
 
+(deftest eyes-owns-the-epoch-and-it-never-goes-back
+  (with-senses (k)
+    (is (= 5 (pai-v3.api::%eyes-adopt k (obj "source_id" "webcam-a" "epoch" 5 "state" "live" "reason" "started on another agent's page"))))
+    (is (equal "admitted" (seen k 1 "person.entered" "t1" :epoch 5)))
+    (pai-v3.api::%eyes-adopt k (obj "source_id" "webcam-a" "epoch" 4 "state" "disabled"))
+    (is (equal '(5 "live") (subseq (pai-v3.api::sense-source k "webcam-a") 0 2)) "an older epoch from Eyes changes nothing")
+    (pai-v3.api::%eyes-adopt k (obj "source_id" "webcam-a" "epoch" 6 "state" "disabled" "reason" "stopped on another agent's page"))
+    (is (search "off (stopped on another agent's page)" (present k)) "a stop from any page holds here")
+    (is (equal "refused" (seen k 2 "person.present" "t1" :epoch 5)))))
+
+(deftest a-phone-the-operator-just-started-hints-at-who-it-is
+  (with-clock
+    (with-temp-kernel (k)
+      (at-hour 14)
+      (change-setting k "perception.sources"
+                      (list (obj "source_id" "phone" "name" "Sam's phone" "kind" "phone" "notify_owner" t
+                                 "token_sha256" (pai-v3.kernel::sha256-hex *webcam-key*)))
+                      :origin *operator*)
+      (pai-v3.api::set-sense-state k "phone" "live" "started by the operator")
+      (advance 120)
+      (pai-v3.api::admit-percept k "phone" (obj "source_id" "phone" "epoch" 1 "sequence" 1 "kind" "person.entered" "track_id" "1:1"
+                                                "recognition" "not-enabled" "observed_at" (iso8601 (now)) "expires_at" (iso8601 (+ (now) 15))))
+      (let ((reason (second (first (sense-thoughts k)))))
+        (is (search "started this camera from their phone 2 minutes ago" reason))
+        (is (search "an inference you may voice as one, not a recognition" reason))))))
+
 (run-suite "api-perception")

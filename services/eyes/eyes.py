@@ -51,7 +51,8 @@ MAX_FRAME_BYTES = 2 * 1024 * 1024
 FRAMES_GONE_SECONDS = 15      # no frames this long while live: the source is lost
 PRESENT_EVERY = 5             # seconds between "still present" for a track
 OBSERVATION_TTL = 15          # how long an observation holds (agents cap it too)
-LEFT_AFTER = 4                # seconds unseen before a track has left
+LEFT_AFTER = 8                # seconds unseen before a track has left (a moving phone misses often)
+REJOIN_WITHIN = 10            # a person seen again this soon after leaving is the same arrival
 ENTER_HITS = 2                # detections before a track counts as an arrival
 
 LOCK = threading.Lock()
@@ -81,6 +82,7 @@ class Source:
         self.frame = None         # (epoch, jpeg bytes, received monotonic)
         self.last_frame_at = None
         self.tracks = []
+        self.recent = None        # a track that just left, held for REJOIN_WITHIN
         self.next_track = 0
         self.wake = threading.Event()
 
@@ -153,6 +155,7 @@ def set_state(source, state, reason):
         source.leases.clear()
         source.frame = None
         source.tracks = []
+        source.recent = None
         source.last_frame_at = None  # loss counts only once frames have arrived
     log(source.id, "->", state, "epoch", source.epoch, "(" + reason + ")")
     threading.Thread(target=broadcast_state, args=(source,), daemon=True).start()
@@ -174,7 +177,7 @@ def update_tracks(source, epoch, boxes, at):
     out = []
     unmatched = list(range(len(boxes)))
     for track in source.tracks:
-        best, best_iou = None, 0.3
+        best, best_iou = None, 0.15
         for i in unmatched:
             iou = detector.iou(track["box"], boxes[i][:4])
             if iou > best_iou:
@@ -182,21 +185,36 @@ def update_tracks(source, epoch, boxes, at):
         if best is not None:
             unmatched.remove(best)
             track.update(box=boxes[best][:4], score=boxes[best][4], seen=at, hits=track["hits"] + 1)
+    # Someone seen again soon after leaving is the same arrival, not a new one.
+    for i in list(unmatched):
+        if source.tracks or not getattr(source, "recent", None):
+            break
+        if at - source.recent["left_at"] <= REJOIN_WITHIN:
+            track = source.recent
+            track.update(box=boxes[i][:4], score=boxes[i][4], seen=at, hits=ENTER_HITS)
+            source.tracks.append(track)
+            source.recent = None
+            unmatched.remove(i)
     for i in unmatched:
         source.next_track += 1
         source.tracks.append({"id": source.next_track, "box": boxes[i][:4], "score": boxes[i][4],
                               "seen": at, "hits": 1, "announced": False, "said": 0})
     for track in list(source.tracks):
         if at - track["seen"] > LEFT_AFTER:
-            if track["announced"]:
-                out.append(observation(source, epoch, "person.left", track))
             source.tracks.remove(track)
+            if track["announced"]:
+                # Held back briefly: they may only have stepped out of frame.
+                source.recent = dict(track, left_at=at)
         elif not track["announced"] and track["hits"] >= ENTER_HITS:
             track["announced"], track["said"] = True, at
             out.append(observation(source, epoch, "person.entered", track))
         elif track["announced"] and track["seen"] == at and at - track["said"] >= PRESENT_EVERY:
             track["said"] = at
             out.append(observation(source, epoch, "person.present", track))
+    recent = getattr(source, "recent", None)
+    if recent and at - recent["left_at"] > REJOIN_WITHIN:
+        out.append(observation(source, epoch, "person.left", recent))
+        source.recent = None
     return out
 
 
@@ -227,7 +245,7 @@ def watch(source):
         with LOCK:
             if source.epoch != epoch or source.state != "live":
                 continue  # stopped while detecting: the result is dropped
-            out = update_tracks(source, epoch, boxes, at) if frame is not None or source.tracks else []
+            out = update_tracks(source, epoch, boxes, at) if frame is not None or source.tracks or source.recent else []
         if out:
             send_observations(source, epoch, out)
 

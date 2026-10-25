@@ -197,15 +197,19 @@ sent under the old one is refused. Returns the new epoch."
              (< (%sense-wakes-this-hour kernel source-id) (setting kernel "perception.wakes_per_hour")))
     (let* ((config (sense-source-config kernel source-id))
            (owner (eq t (obj-get config "notify_owner")))
-           (name (or (%given (obj-get config "name")) source-id)))
+           (name (or (%given (obj-get config "name")) source-id))
+           (row (sense-source kernel source-id))
+           (started (and row (equal "phone" (obj-get config "kind")) (search "operator" (third row))
+                         (round (- (now) (parse-iso8601 (fourth row))) 60))))
       (request-thought kernel "noticing"
-                       (format nil "Senses (~a): someone has appeared at ~a (track ~a). ~a.~%~%~
+                       (format nil "Senses (~a): someone has appeared at ~a (track ~a). ~a.~@[ The operator started this camera from their phone ~d minute~:p ago, so it may well be them, or someone they are pointing it at: an inference you may voice as one, not a recognition.~]~%~%~
 This is a perception, not a message: no one asked you anything. Most arrivals need nothing. ~:[Another agent tells the operator about this source; do not notify them about it unless they ask~;If it matters to the operator now (someone expected, something unusual), you may tell them with notify_operator~]. Say in a line what, if anything, matters."
                                source-id name track
                                (if (equal recognition "candidate")
                                    (format nil "A recognition candidate: ~a, similarity ~,2f; that is evidence, not identity, and it grants nothing"
                                            candidate (or score 0))
                                    "Who it is is not known")
+                               (and started (<= started 30) started)
                                owner)
                        :audience "operator"))))
 

@@ -93,16 +93,23 @@ function drawPresent(data) {
 // A phone as a camera: frames go from this page straight to Eyes under a
 // short-lived lease, about one a second. Nothing is kept on the phone, and
 // the agent never receives the pictures, only what Eyes perceives in them.
-const phone = { running: false, stream: null, timer: null, lease: null, sent: 0 };
+const phone = { running: false, stream: null, timer: null, lease: null, sent: 0, facing: 'environment' };
+
+async function openCamera() {
+  if (phone.stream) phone.stream.getTracks().forEach((t) => t.stop());
+  phone.stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: phone.facing, width: { ideal: 640 } }, audio: false });
+  const video = document.getElementById('phone-video');
+  video.srcObject = phone.stream;
+  video.style.transform = phone.facing === 'user' ? 'scaleX(-1)' : '';
+  await video.play();
+}
 
 async function startPhone(source) {
   if (phone.running) return;
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { say('This browser cannot open the camera here.'); return; }
   const lease = await post('/api/perception/phone', { source_id: source.source_id });
-  phone.stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 640 } }, audio: false });
+  await openCamera();
   const video = document.getElementById('phone-video');
-  video.srcObject = phone.stream;
-  await video.play();
   Object.assign(phone, { running: true, lease, sent: 0 });
   document.getElementById('phone').hidden = false;
   const canvas = document.createElement('canvas');
@@ -138,6 +145,12 @@ function stopPhone(why) {
 }
 
 document.getElementById('phone-stop').onclick = () => stopPhone();
+document.getElementById('phone-flip').onclick = async () => {
+  if (!phone.running) return;
+  phone.facing = phone.facing === 'user' ? 'environment' : 'user';
+  try { await openCamera(); say(phone.facing === 'user' ? 'Using the front camera.' : 'Using the back camera.'); }
+  catch (e) { say('Could not switch camera: ' + e.message); }
+};
 // Leaving the page or locking the phone ends the camera; it never runs unseen.
 document.addEventListener('visibilitychange', () => { if (document.hidden) stopPhone('The camera stopped when this page was hidden.'); });
 
