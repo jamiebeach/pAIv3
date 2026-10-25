@@ -42,6 +42,12 @@
     <button id="stop-all" class="stop" type="button">Stop all senses</button>
   </div>
   <div id="status" role="status" aria-live="polite"></div>
+  <div id="phone" hidden class="item">
+    <div class="what">This phone is a camera <span class="state live">sending</span></div>
+    <video id="phone-video" playsinline muted style="width:100%;max-width:360px;border-radius:6px;margin-top:6px"></video>
+    <div class="meta" id="phone-meta"></div>
+    <div class="row"><button id="phone-stop" class="stop" type="button">Stop this camera</button></div>
+  </div>
   <div id="sources"></div>
   <h2>Present now</h2>
   <div id="present" class="muted">Loading…</div>
@@ -50,6 +56,11 @@
     <p class="sub">A source is something a perception service watches for me, such as a webcam. Adding one shows its key once, for that service; the source stays off until you start it.</p>
     <label for="source-id">Source id</label><input id="source-id" placeholder="webcam-office" maxlength="40">
     <label for="source-name">Name</label><input id="source-name" placeholder="Office webcam" maxlength="80">
+    <label for="source-kind">Kind</label>
+    <select id="source-kind" style="width:100%;font:inherit;font-size:16px;padding:8px 10px;margin:0 0 8px;background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:6px">
+      <option value="camera">A camera Eyes reads</option>
+      <option value="phone">A phone, used as a camera from this page</option>
+    </select>
     <label class="check"><input id="source-owner" type="checkbox"> This agent may tell you about it unprompted (one agent per source)</label>
     <div class="row"><button id="add" class="primary" type="button">Add source</button></div>
     <div id="new-key"></div>

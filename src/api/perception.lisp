@@ -46,6 +46,13 @@
   :type :integer :min 0 :max 60 :default 4 :group "Senses"
   :description "Most noticing thoughts one source may start in an hour. Past it, arrivals are still present but start no thought.")
 
+(define-setting "perception.eyes_url"
+  :type :string :default "" :group "Senses"
+  :description "The pAI-Eyes service as this agent reaches it (for example http://host.docker.internal:8470). When set, Eyes owns each source's on/off state and epoch: starting or stopping here asks Eyes, and every subscribed agent follows. Its key is the secret named pai-eyes. Empty: sources are this agent's own.")
+(define-setting "perception.eyes_public_url"
+  :type :string :default "" :group "Senses"
+  :description "The pAI-Eyes service as a phone reaches it over HTTPS (a Tailscale address), for using a phone as a camera.")
+
 (defparameter +percept-kinds+ '("person.entered" "person.present" "person.left")
   "What a source may report in this release.")
 (defparameter +recognition-states+ '("unknown" "candidate" "not-enabled"))
@@ -255,6 +262,19 @@ operator disables)."
              (reply 200 (obj "results" (mapcar (lambda (o) (multiple-value-bind (status reason) (admit-percept kernel source o)
                                                               (obj "status" status "reason" reason)))
                                                list))))))
+      ((and (eq method :post) (string= path "/v1/perception/state")
+            (integerp (obj-get (or (ignore-errors (body-json)) (obj)) "epoch")))
+       ;; From Eyes, the authority over the physical source: its state and epoch
+       ;; are taken as they are, as long as the epoch never goes back.
+       (let* ((body (body-json)) (state (obj-get body "state")) (epoch (obj-get body "epoch"))
+              (row (sense-source kernel source)))
+         (cond ((not (member state '("live" "lost" "disabled") :test #'equal)) (reply 400 (obj "error" "state is live, lost or disabled")))
+               ((and row (< epoch (first row))) (reply 409 (obj "error" "that epoch is older than the one held")))
+               (t (let ((was (second row)) (reason (%clip (or (%given (obj-get body "reason")) state) 200)))
+                    (unless (and row (= epoch (first row)) (equal state was))
+                      (append! kernel "receptor.state.changed" (obj "source_id" source "epoch" epoch "state" state "reason" reason)))
+                    (%notice-loss kernel source state was reason)
+                    (reply 200 (sense-lease kernel source)))))))
       ((and (eq method :post) (string= path "/v1/perception/state"))
        (let* ((body (or (ignore-errors (body-json)) (obj))) (state (obj-get body "state")) (row (sense-source kernel source)))
          (cond ((not (member state '("live" "lost") :test #'equal)) (reply 400 (obj "error" "state is live or lost")))
@@ -262,16 +282,46 @@ operator disables)."
                (t (handler-case
                       (let ((was (second row)))
                         (set-sense-state kernel source state (%clip (or (%given (obj-get body "reason")) state) 200))
-                        ;; Loss is one change, noticed once: a recovery is quiet.
-                        (when (and (equal state "lost") (equal was "live")
-                                   (eq t (obj-get (sense-source-config kernel source) "notify_owner")))
-                          (request-thought kernel "noticing"
-                                           (format nil "Senses (~a): I lost this source (~a). Until it is back, I cannot know who is there. Note it; tell the operator only if it matters now."
-                                                   source (%clip (or (%given (obj-get body "reason")) "no reason given") 200))
-                                           :audience "operator"))
+                        (%notice-loss kernel source state was (%clip (or (%given (obj-get body "reason")) "no reason given") 200))
                         (reply 200 (sense-lease kernel source)))
                     (board-error (e) (reply 400 (obj "error" (board-error-reason e)))))))))
       (t (reply 404 (obj "error" "no such route"))))))
+
+;;; Loss is one change, noticed once by the notification owner: a recovery is quiet.
+(defun %notice-loss (kernel source state was reason)
+  (when (and (equal state "lost") (equal was "live")
+             (eq t (obj-get (sense-source-config kernel source) "notify_owner")))
+    (request-thought kernel "noticing"
+                     (format nil "Senses (~a): I lost this source (~a). Until it is back, I cannot know who is there. Note it; tell the operator only if it matters now."
+                             source reason)
+                     :audience "operator")))
+
+;;; Eyes, when configured, owns each source's state
+
+(defun %eyes-p (kernel) (plusp (length (setting kernel "perception.eyes_url"))))
+
+(defun eyes-call (kernel path &optional (body (obj)))
+  "POST BODY to Eyes at PATH with this agent's key. Returns the parsed reply,
+or refuses with the reason Eyes gives."
+  (multiple-value-bind (text status)
+      (http-request :post (format nil "~a~a" (string-right-trim "/" (setting kernel "perception.eyes_url")) path)
+                    :headers (list (cons "Content-Type" "application/json")
+                                   (cons "Authorization" (list :secret "pai-eyes" "Bearer ~a")))
+                    :body (json-encode body) :allow-private t :connect-timeout 3 :read-timeout 10)
+    (let ((parsed (ignore-errors (json-parse text))))
+      (unless (eql status 200)
+        (%board-refuse "Eyes refused: ~a" (or (and (hash-table-p parsed) (obj-get parsed "error")) status)))
+      parsed)))
+
+(defun %eyes-adopt (kernel reply)
+  "Take the state and epoch Eyes answered with, as when Eyes tells us."
+  (let* ((id (obj-get reply "source_id")) (row (sense-source kernel id)))
+    (when (and id (integerp (obj-get reply "epoch")) (sense-source-config kernel id)
+               (or (null row) (> (obj-get reply "epoch") (first row))
+                   (and (= (obj-get reply "epoch") (first row)) (not (equal (obj-get reply "state") (second row))))))
+      (append! kernel "receptor.state.changed" (obj "source_id" id "epoch" (obj-get reply "epoch") "state" (obj-get reply "state")
+                                                     "reason" (or (%given (obj-get reply "reason")) "set through Eyes"))))
+    (obj-get reply "epoch")))
 
 ;;; Routes: the operator
 
@@ -287,6 +337,7 @@ correction}."
             ((and (eq method :get) (string= path "/api/perception/sources"))
              (reply 200 (obj "sources" (mapcar (lambda (r) (let ((lease (sense-lease kernel (obj-get r "source_id"))))
                                                              (setf (gethash "name" lease) (or (%given (obj-get r "name")) :null)
+                                                                   (gethash "kind" lease) (or (%given (obj-get r "kind")) "camera")
                                                                    (gethash "notify_owner" lease) (if (eq t (obj-get r "notify_owner")) t :false))
                                                              lease))
                                                (setting kernel "perception.sources"))
@@ -312,16 +363,32 @@ correction}."
                        (change-setting kernel "perception.sources"
                                        (append rows (list (obj "source_id" id "name" (or (g "name") id)
                                                                "notify_owner" (if (eq t (obj-get body "notify_owner")) t :false)
+                                                               "kind" (if (equal (g "kind") "phone") "phone" "camera")
                                                                "token_sha256" (pai-v3.kernel::sha256-hex key))))
                                        :origin origin :reason (format nil "source ~a added" id))
                        (reply 200 (obj "source_id" id "key" key
                                        "note" "Shown once. The perception service uses it as a bearer token on /v1/perception/ of this agent.")))))))
             ((and (eq method :post) (string= path "/api/perception/start"))
-             (reply 200 (obj "epoch" (set-sense-state kernel (g "source_id") "live" "started by the operator"))))
+             (reply 200 (obj "epoch" (if (%eyes-p kernel)
+                                         (%eyes-adopt kernel (eyes-call kernel (format nil "/sources/~a/start" (g "source_id"))))
+                                         (set-sense-state kernel (g "source_id") "live" "started by the operator")))))
             ((and (eq method :post) (string= path "/api/perception/stop"))
-             (reply 200 (if (g "source_id")
-                            (obj "stopped" (list (g "source_id")) "epoch" (set-sense-state kernel (g "source_id") "disabled" "stopped by the operator"))
-                            (obj "stopped" (stop-all-senses kernel "stopped by the operator")))))
+             ;; A stop holds here first, even if Eyes cannot be reached.
+             (let ((ids (if (g "source_id") (list (g "source_id")) (mapcar (lambda (r) (obj-get r "source_id")) (setting kernel "perception.sources")))))
+               (dolist (id ids) (set-sense-state kernel id "disabled" "stopped by the operator"))
+               (reply 200 (obj "stopped" ids
+                               "eyes" (if (%eyes-p kernel)
+                                          (handler-case (progn (eyes-call kernel (if (g "source_id") (format nil "/sources/~a/stop" (g "source_id")) "/stop-all"))
+                                                               "stop sent to Eyes")
+                                            (error (e) (format nil "stop requested; unconfirmed by Eyes: ~a" (%clip (princ-to-string e) 160))))
+                                          :null)))))
+            ((and (eq method :post) (string= path "/api/perception/phone"))
+             ;; A short-lived lease for this phone to send frames straight to Eyes.
+             (unless (%eyes-p kernel) (%board-refuse "no Eyes service is configured"))
+             (let ((lease (eyes-call kernel (format nil "/sources/~a/lease" (g "source_id")))))
+               (setf (gethash "frames_url" lease)
+                     (format nil "~a/frames?source=~a" (string-right-trim "/" (setting kernel "perception.eyes_public_url")) (g "source_id")))
+               (reply 200 lease)))
             ((and (eq method :post) (string= path "/api/perception/correct"))
              (let ((current (sql-value (kernel-db kernel) "SELECT observation_id FROM sense_present WHERE source_id=?1 AND track_id=?2 LIMIT 1"
                                        (or (g "source_id") "") (or (g "track_id") ""))))
