@@ -99,6 +99,44 @@
            "CREATE INDEX IF NOT EXISTS observed_events_hour ON observed_events(hour,seq)")
   :reduce #'%reduce-observed)
 
+;;; Cost: one row per paid model call for *cost-days-kept* days, so spending
+;;; can be read by day, model and the kind of thought that paid for it.
+
+(defparameter *cost-days-kept* 30)
+
+(define-projection "cost_calls"
+  :kind :inline
+  :consumes ("provider.call.completed")
+  :tables ("CREATE TABLE IF NOT EXISTS cost_calls (event_id INTEGER PRIMARY KEY, day TEXT NOT NULL, profile TEXT NOT NULL, model TEXT NOT NULL, work_id INTEGER, prompt_tokens INTEGER NOT NULL, completion_tokens INTEGER NOT NULL, microusd INTEGER NOT NULL)"
+           "CREATE INDEX IF NOT EXISTS cost_calls_day_idx ON cost_calls(day)")
+  :reduce (lambda (db e)
+            (let ((p (event-payload e)) (day (subseq (event-at e) 0 10)))
+              (sql-exec db "INSERT OR IGNORE INTO cost_calls VALUES(?1,?2,?3,?4,?5,?6,?7,?8)"
+                        (event-id e) day (obj-get p "profile") (obj-get p "model")
+                        (let ((w (obj-get p "work_id"))) (if (integerp w) w nil))
+                        (obj-get p "prompt_tokens") (obj-get p "completion_tokens") (obj-get p "microusd"))
+              (sql-exec db "DELETE FROM cost_calls WHERE day<?1"
+                        (subseq (iso8601 (- (%universal (event-at e)) (* 86400 *cost-days-kept*))) 0 10)))))
+
+(defun spend-report (kernel &key (days 7))
+  "Spending over the last DAYS days: by day and lane, by profile and model,
+by the kind of thought that paid, and the costliest thoughts."
+  (let* ((db (kernel-db kernel))
+         (since (subseq (iso8601 (- (now) (* 86400 days))) 0 10))
+         (usd (lambda (m) (/ (or m 0) 1000000d0))))
+    (flet ((rows (sql &rest args) (apply #'sql-rows db sql args)))
+      (obj "since" since
+           "by_day_lane" (mapcar (lambda (r) (obj "day" (first r) "lane" (second r) "usd" (funcall usd (third r))))
+                                 (rows "SELECT day,lane,microusd FROM v3_spend WHERE day>=?1 ORDER BY day,lane LIMIT 400" since))
+           "by_model" (mapcar (lambda (r) (obj "profile" (first r) "model" (second r) "calls" (third r)
+                                               "prompt_tokens" (fourth r) "completion_tokens" (fifth r) "usd" (funcall usd (sixth r))))
+                              (rows "SELECT profile,model,count(*),sum(prompt_tokens),sum(completion_tokens),sum(microusd) FROM cost_calls WHERE day>=?1 GROUP BY profile,model ORDER BY sum(microusd) DESC LIMIT 40" since))
+           "by_origin" (mapcar (lambda (r) (obj "origin" (or (first r) "not a thought") "calls" (second r) "thoughts" (third r) "usd" (funcall usd (fourth r))))
+                               (rows "SELECT t.origin,count(*),count(DISTINCT t.root_id),sum(c.microusd) FROM cost_calls c LEFT JOIN v3_work w ON w.id=c.work_id AND w.handler=?2 LEFT JOIN thoughts t ON t.id=CAST(w.entity AS INTEGER) WHERE c.day>=?1 GROUP BY t.origin ORDER BY sum(c.microusd) DESC LIMIT 40" since "thought"))
+           "top_thoughts" (mapcar (lambda (r) (obj "thought_id" (first r) "origin" (second r) "calls" (third r) "usd" (funcall usd (fourth r))
+                                                   "reason" (%clip (fifth r) 160)))
+                                  (rows "SELECT t.root_id,t.origin,count(*),sum(c.microusd),r.reason FROM cost_calls c JOIN v3_work w ON w.id=c.work_id AND w.handler=?2 JOIN thoughts t ON t.id=CAST(w.entity AS INTEGER) JOIN thoughts r ON r.id=t.root_id WHERE c.day>=?1 GROUP BY t.root_id ORDER BY sum(c.microusd) DESC LIMIT 15" since "thought"))))))
+
 (define-projection "model_captures"
   :kind :inline
   :consumes ()

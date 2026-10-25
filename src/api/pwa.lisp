@@ -160,6 +160,8 @@ becomes a stimulus (pai-v3.mind:coding-agent-message)."
                   ;; One forum thread in full, as the operator sees it (?id=).
                   ((equal what "forum-thread")
                    (let ((th (forum-thread-json kernel (hunchentoot:get-parameter "id")))) (and th (list th))))
+                  ;; Spending over the last limit days (default 7).
+                  ((equal what "spend") (list (pai-v3.mind::spend-report kernel :days (max 1 (min 30 limit)))))
                   ((equal what "forum")
                    (list (obj "threads" (or (sql-value db "SELECT count(*) FROM forum_threads WHERE status IN (?1,?2) LIMIT 1" "open" "resolved") 0)
                               "posts" (or (sql-value db "SELECT count(*) FROM forum_messages WHERE thread_id IN (SELECT thread_id FROM forum_threads WHERE status IN (?1,?2)) LIMIT 1" "open" "resolved") 0)
