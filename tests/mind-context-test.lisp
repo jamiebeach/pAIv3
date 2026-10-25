@@ -186,4 +186,26 @@
         (is (= 5000 (length (funcall (pai-v3.mind::tool-run (gethash "read_result" pai-v3.mind::*tools*)) k id (obj "call_id" "c0" "part" 0))))
             "read_result still gives the whole of it")))))
 
+(deftest a-thought-thinks-from-the-same-frame-on-every-call
+  ;; Bead v3-okh.16: the same opening messages each call, so a provider can
+  ;; serve the repeated prefix from its cache.
+  (with-temp-kernel (k)
+    (seed-persona k)
+    (let* ((thought (thought-row k (request-thought k "introspection" "SYNTHETIC look into something")))
+           (first-frame (pai-v3.mind::thought-frame k thought "TOOLS"))
+           (assembled (lambda () (sql-value (kernel-db k) "SELECT count(*) FROM pai_events WHERE agent_id=?1 AND event_type=?2 LIMIT 1"
+                                            (kernel-agent-id k) "context.assembled"))))
+      (append! k "turn.received" (obj "channel" "web" "audience" "operator" "speaker" "Sam" "text" "SYNTHETIC something new"
+                                      "origin" (obj "principal_type" "operator")))
+      (is (eq first-frame (pai-v3.mind::thought-frame k thought "TOOLS")) "reused as it was, whatever happened since")
+      (is (= 1 (funcall assembled)) "assembled once")
+      (pai-v3.mind::thought-frame k thought "OTHER TOOLS")
+      (is (= 2 (funcall assembled)) "a changed tool set builds it again")
+      (let ((system (obj-get (first first-frame) "content")))
+        (is (< (search "I do not fabricate" system) (search "TOOLS" system) (search "Private thought" system))
+            "identity, then the tools, then what is particular to this thought"))
+      (let ((now-text (obj-get (second first-frame) "content")))
+        (is (< (search "## About me" now-text :end2 (length now-text)) (or (search "## Now" now-text) most-positive-fixnum))
+            "the clock comes last")))))
+
 (run-suite "mind-context")

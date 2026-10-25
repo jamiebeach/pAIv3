@@ -537,6 +537,41 @@ trampoline rebuilds them on the next bounce; recurring is re-queuing."
                    "summary" (subseq text 0 (min 500 (length text))))
               text)))
 
+;;; A thought's frame: the context it thinks from, built at its first call
+;;; and sent unchanged on every later one (bead v3-okh.16). A provider caches a
+;;; repeated prefix, so a long thought pays full price for its context once;
+;;; and a thought thinks from where it started, plus what it has done. Kept in
+;;; memory within *frame-cache-bytes*; a restart or eviction just rebuilds it.
+
+(defparameter *frame-cache-bytes* (* 32 1024 1024) "Byte budget of the frame cache.")
+(defvar *frames* (make-hash-table :test 'equal) "(kernel . thought id) -> (tools-key bytes last-used messages)")
+(defvar *frames-lock* (bt:make-lock "thought frames"))
+
+(defun %frames-bytes () (loop for v being the hash-values of *frames* sum (second v)))
+
+(defun thought-frame (kernel thought tools-text)
+  "THOUGHT's frame: built once, the same on every call while its tools are."
+  (let ((id (cons kernel (getf thought :id))) (key (sxhash (or tools-text ""))))
+    (or (bt:with-lock-held (*frames-lock*)
+          (let ((held (gethash id *frames*)))
+            (when (and held (eql key (first held)))
+              (setf (third held) (get-universal-time))
+              (fourth held))))
+        (let* ((frame (funcall *assemble-thought-context* kernel thought tools-text))
+               (bytes (reduce #'+ frame :key (lambda (m) (let ((c (obj-get m "content"))) (if (stringp c) (length c) 0))))))
+          (bt:with-lock-held (*frames-lock*)
+            (setf (gethash id *frames*) (list key bytes (get-universal-time) frame))
+            ;; Over budget: the least recently used frames go first.
+            (loop while (and (> (%frames-bytes) *frame-cache-bytes*) (> (hash-table-count *frames*) 1))
+                  do (let ((oldest nil) (at nil))
+                       (maphash (lambda (k v) (when (and (not (equal k id)) (or (null at) (< (third v) at))) (setf oldest k at (third v))))
+                                *frames*)
+                       (if oldest (remhash oldest *frames*) (return)))))
+          frame))))
+
+(defun forget-frame (kernel thought-id)
+  (bt:with-lock-held (*frames-lock*) (remhash (cons kernel thought-id) *frames*)))
+
 (defvar *concluded-hook* nil
   "(lambda (kernel thought)) or NIL: called when a top-level thought ends or
 parks, for work it left unfinished (artifacts.lisp). Its errors are ignored.")
@@ -546,6 +581,7 @@ parks, for work it left unfinished (artifacts.lisp). Its errors are ignored.")
 the parent's tool result, which re-queues the parent."
   (setf (gethash "thought_id" payload) (getf thought :id))
   (append! kernel type payload)
+  (forget-frame kernel (getf thought :id))
   (when (and *concluded-hook* (null (getf thought :parent-id)))
     (ignore-errors (funcall *concluded-hook* kernel thought)))
   (let ((parent (getf thought :parent-id)))
@@ -585,7 +621,7 @@ TOOLS NIL asks for an answer with no tools offered."
          (hand (and tools (if (provider-profile-all-tools profile)
                               tools
                               (tools-in-hand thought tools (%picked-up messages)))))
-         (frame (funcall *assemble-thought-context* kernel thought (tool-index-text tools hand)))
+         (frame (thought-frame kernel thought (tool-index-text tools hand)))
          (spoken (make-string-output-stream))
          (streaming (direct-reply-p thought))
          (all (let ((all (append frame messages)))
