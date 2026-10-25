@@ -168,6 +168,10 @@
     (let ((seen (first (first (funcall (gethash :seen pai-v3.mind::*slot-sources*) k (list :audience "operator") 400)))))
       (is (search "0123456789abcdef0123456789abcdef: a frame I looked at through Office webcam" seen))
       (is (search "I looked through a camera" seen))
-      (is (search "look_at to see it again" seen)))))
+      (is (search "look_at to see it again" seen)))
+    (let ((frames (funcall (pai-v3.mind::tool-run (gethash "senses" pai-v3.mind::*tools*)) k nil (obj "action" "frames"))))
+      (is (search "0123456789abcdef0123456789abcdef: a frame I looked at through Office webcam" frames) "frames are listed however long ago")
+      (advance 7200)
+      (is (search "0123456789abcdef" (funcall (pai-v3.mind::tool-run (gethash "senses" pai-v3.mind::*tools*)) k nil (obj "action" "frames")))))))
 
 (run-suite "api-perception")

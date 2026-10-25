@@ -439,18 +439,26 @@ correction}."
                        (or (%given (obj-get config "name")) source-id) (obj-get reply "seen_at") id))))))
 
 (pai-v3.mind:define-tool "senses"
-  :description "My senses (cameras the operator has set up, through Eyes). status: what each perceives now. look (source_id): take the frame in front of that camera into my view at my next step, as an image; for a moment worth seeing, such as someone who just appeared. A look is deliberate and kept like any image I am shown; I may look a limited number of times an hour."
+  :description "My senses (cameras the operator has set up, through Eyes). status: what each perceives now. look (source_id): take the frame in front of that camera into my view at my next step, as an image; for a moment worth seeing, such as someone who just appeared. frames: the frames I have looked at before, newest first, with their image ids for look_at. A look is deliberate and kept like any image I am shown; I may look a limited number of times an hour."
   :summary "Check my senses, or look through a camera."
   :available :operator-trust
   :parameters (obj "type" "object"
-                   "properties" (obj "action" (obj "type" "string" "enum" (list "status" "look"))
+                   "properties" (obj "action" (obj "type" "string" "enum" (list "status" "look" "frames"))
                                      "source_id" (obj "type" "string"))
                    "required" (list "action"))
   :run (lambda (kernel thought-id args)
          (handler-case
-             (if (equal "look" (obj-get args "action"))
+             (cond
+               ((equal "frames" (obj-get args "action"))
+                (let ((rows (sql-rows (kernel-db kernel) "SELECT s.image_id,s.source,s.at,c.caption FROM seen_images s LEFT JOIN image_captions c ON c.image_id=s.image_id WHERE s.audience=?1 AND s.how=?2 ORDER BY s.at DESC LIMIT 10"
+                                      "operator" "looked")))
+                  (if rows
+                      (format nil "Frames I have looked at, newest first (look_at with the id to see one again):~%~{~{- ~a: ~a~@[, through ~a~], ~a~}~%~}"
+                              (mapcar (lambda (r) (list (first r) (or (fourth r) "a frame") (second r) (third r))) rows))
+                      "I have not looked through any camera yet.")))
+               ((equal "look" (obj-get args "action"))
                  (look-through kernel thought-id (or (%given (obj-get args "source_id"))
-                                                     (obj-get (first (setting kernel "perception.sources")) "source_id") ""))
-                 (format nil "~{~a~^~%~}" (or (sense-present-lines kernel) (list "I have no senses set up."))))
+                                                     (obj-get (first (setting kernel "perception.sources")) "source_id") "")))
+               (t (format nil "~{~a~^~%~}" (or (sense-present-lines kernel) (list "I have no senses set up.")))))
            (board-error (e) (format nil "Not done: ~a" (board-error-reason e)))
            (error (e) (format nil "Not done: ~a" e)))))
