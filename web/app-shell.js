@@ -123,6 +123,7 @@
     register({id:'stats', label:'Stats', href:'/stats', current:path === '/stats'});
     register({id:'secrets', label:'Secrets', href:'/secrets', current:path === '/secrets'});
     register({id:'avatars', label:'Avatars', href:'/avatars', current:path === '/avatars'});
+    register({id:'senses', label:'Senses', href:'/senses', current:path === '/senses'});
     window.dispatchEvent(new CustomEvent('pai-shell-ready'));
   }
 

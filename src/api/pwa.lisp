@@ -200,7 +200,7 @@ assets. Returns the compiler's output."
   '(("/" . "terminal.html") ("/terminal" . "terminal.html") ("/dashboard" . "observability.html")
     ("/graph" . "graph-explorer.html") ("/g" . "graph-explorer.html") ("/affect" . "affect.html")
     ("/notifications" . "notifications.html") ("/settings" . "settings.html")
-    ("/board-view" . "board.html") ("/artifacts" . "artifacts.html") ("/carried" . "carried.html") ("/secrets" . "secrets.html") ("/avatars" . "avatars.html") ("/stats" . "stats.html"))
+    ("/board-view" . "board.html") ("/artifacts" . "artifacts.html") ("/carried" . "carried.html") ("/secrets" . "secrets.html") ("/avatars" . "avatars.html") ("/stats" . "stats.html") ("/senses" . "senses.html"))
   "Pages that need a signed-in operator. /login is open.")
 
 (defun %named (name body)
