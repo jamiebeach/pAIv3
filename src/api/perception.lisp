@@ -182,7 +182,8 @@ sent under the old one is refused. Returns the new epoch."
                       "observed_at" observed "expires_at" until "track_id" track
                       "recognition" recognition "candidate" (s "candidate") "score" (and (realp score) score)
                       "detector" (s "detector") "sensitivity" "operator-only"))
-        (when new (%notice-arrival kernel source-id track recognition (s "candidate") score))
+        (when new (%notice-arrival kernel source-id track recognition (s "candidate") score
+                                   (or (s "observation_id") (format nil "~a/~d/~d" source-id epoch sequence))))
         (values "admitted" (if new "new arrival" "update"))))))
 
 ;;; Attention: an arrival that is new may start one ordinary thought
@@ -192,7 +193,7 @@ sent under the old one is refused. Returns the new epoch."
                  "operator" (iso8601 (- (now) 3600)) (format nil "Senses (~a):%" source-id))
       0))
 
-(defun %notice-arrival (kernel source-id track recognition candidate score)
+(defun %notice-arrival (kernel source-id track recognition candidate score observation-id)
   (when (and (not (%quiet-now-p kernel (notify-policy kernel)))
              (< (%sense-wakes-this-hour kernel source-id) (setting kernel "perception.wakes_per_hour")))
     (let* ((config (sense-source-config kernel source-id))
@@ -203,14 +204,14 @@ sent under the old one is refused. Returns the new epoch."
                          (round (- (now) (parse-iso8601 (fourth row))) 60))))
       (request-thought kernel "noticing"
                        (format nil "Senses (~a): someone has appeared at ~a (track ~a). ~a.~@[ The operator started this camera from their phone ~d minute~:p ago, so it may well be them, or someone they are pointing it at: an inference you may voice as one, not a recognition.~]~%~%~
-This is a perception, not a message: no one asked you anything. If it is worth seeing, you can look with the senses tool (action look, source_id ~a) while it is fresh. Most arrivals need nothing. ~:[Another agent tells the operator about this source; do not notify them about it unless they ask~;If it matters to the operator now (someone expected, something unusual), you may tell them with notify_operator~]. Say in a line what, if anything, matters."
+This is a perception, not a message: no one asked you anything. If it is worth seeing, you can look with the senses tool: action look, source_id ~a, observation_id ~a gives the exact frame of this arrival for two minutes; without observation_id, what is in front of the camera now. Most arrivals need nothing. ~:[Another agent tells the operator about this source; do not notify them about it unless they ask~;If it matters to the operator now (someone expected, something unusual), you may tell them with notify_operator~]. Say in a line what, if anything, matters."
                                source-id name track
                                (if (equal recognition "candidate")
                                    (format nil "A recognition candidate: ~a, similarity ~,2f; that is evidence, not identity, and it grants nothing"
                                            candidate (or score 0))
                                    "Who it is is not known")
                                (and started (<= started 30) started)
-                               source-id owner)
+                               source-id observation-id owner)
                        :audience "operator"))))
 
 ;;; What is present, for the context
@@ -419,15 +420,18 @@ correction}."
                  "Looking through %")
       0))
 
-(defun look-through (kernel thought-id source-id)
-  "Take the frame in front of SOURCE-ID into the thought. Returns what to say."
+(defun look-through (kernel thought-id source-id &optional observation-id)
+  "Take the frame in front of SOURCE-ID into the thought, or with
+OBSERVATION-ID the exact frame of that arrival. Returns what to say."
   (let ((config (sense-source-config kernel source-id)) (row (sense-source kernel source-id)))
     (cond ((null config) (format nil "I have no source named ~a." source-id))
           ((not (and row (equal "live" (second row)))) (format nil "~a is not on, so there is nothing to look at." source-id))
           ((not (%eyes-p kernel)) "Looking needs the Eyes service, and none is configured.")
           ((>= (%looks-this-hour kernel) (setting kernel "perception.looks_per_hour"))
            (format nil "I have looked ~d times this hour, the most I may." (setting kernel "perception.looks_per_hour")))
-          (t (let* ((reply (eyes-call kernel (format nil "/sources/~a/snapshot" source-id)))
+          (t (let* ((reply (if observation-id
+                               (eyes-call kernel (format nil "/sources/~a/arrival" source-id) (obj "observation_id" observation-id))
+                               (eyes-call kernel (format nil "/sources/~a/snapshot" source-id))))
                     (id (pai-v3.mind::store-image kernel (obj-get reply "image"))))
                (append! kernel "image.looked" (obj "image_id" id "thought_id" thought-id))
                ;; Listed with what I have seen lately, so a later thought can look again.
@@ -439,12 +443,12 @@ correction}."
                        (or (%given (obj-get config "name")) source-id) (obj-get reply "seen_at") id))))))
 
 (pai-v3.mind:define-tool "senses"
-  :description "My senses (cameras the operator has set up, through Eyes). status: what each perceives now. look (source_id): take the frame in front of that camera into my view at my next step, as an image; for a moment worth seeing, such as someone who just appeared. frames: the frames I have looked at before, newest first, with their image ids for look_at. A look is deliberate and kept like any image I am shown; I may look a limited number of times an hour."
+  :description "My senses (cameras the operator has set up, through Eyes). status: what each perceives now. look (source_id): take the frame in front of that camera into my view at my next step, as an image; with observation_id (from an arrival), the exact frame of that arrival, kept for two minutes. frames: the frames I have looked at before, newest first, with their image ids for look_at. A look is deliberate and kept like any image I am shown; I may look a limited number of times an hour."
   :summary "Check my senses, or look through a camera."
   :available :operator-trust
   :parameters (obj "type" "object"
                    "properties" (obj "action" (obj "type" "string" "enum" (list "status" "look" "frames"))
-                                     "source_id" (obj "type" "string"))
+                                     "source_id" (obj "type" "string") "observation_id" (obj "type" "string"))
                    "required" (list "action"))
   :run (lambda (kernel thought-id args)
          (handler-case
@@ -458,7 +462,8 @@ correction}."
                       "I have not looked through any camera yet.")))
                ((equal "look" (obj-get args "action"))
                  (look-through kernel thought-id (or (%given (obj-get args "source_id"))
-                                                     (obj-get (first (setting kernel "perception.sources")) "source_id") "")))
+                                                     (obj-get (first (setting kernel "perception.sources")) "source_id") "")
+                               (let ((o (%given (obj-get args "observation_id")))) (and (stringp o) (plusp (length o)) o))))
                (t (format nil "~{~a~^~%~}" (or (sense-present-lines kernel) (list "I have no senses set up.")))))
            (board-error (e) (format nil "Not done: ~a" (board-error-reason e)))
            (error (e) (format nil "Not done: ~a" e)))))

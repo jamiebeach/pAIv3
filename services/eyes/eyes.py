@@ -51,6 +51,8 @@ MAX_FRAME_BYTES = 2 * 1024 * 1024
 FRAMES_GONE_SECONDS = 15      # no frames this long while live: the source is lost
 PRESENT_EVERY = 5             # seconds between "still present" for a track
 OBSERVATION_TTL = 15          # how long an observation holds (agents cap it too)
+ARRIVAL_FRAMES_KEPT = 120      # seconds Eyes keeps the frame behind an arrival, for an agent to fetch
+ARRIVAL_FRAMES_MOST = 10       # and at most this many per source
 SNAPSHOT_FRESH = 10            # an agent may look at the last analysed frame this long after it
 LEFT_AFTER = 8                # seconds unseen before a track has left (a moving phone misses often)
 REJOIN_WITHIN = 10            # a person seen again this soon after leaving is the same arrival
@@ -85,6 +87,7 @@ class Source:
         self.tracks = []
         self.recent = None        # a track that just left, held for REJOIN_WITHIN
         self.last_seen = None     # (epoch, jpeg, monotonic, utc stamp): the last analysed frame, for an agent's look
+        self.arrival_frames = {}  # observation_id -> (jpeg, monotonic, utc stamp): the frame behind each arrival
         self.next_track = 0
         self.wake = threading.Event()
 
@@ -159,6 +162,7 @@ def set_state(source, state, reason):
         source.tracks = []
         source.recent = None
         source.last_seen = None
+        source.arrival_frames = {}
         source.last_frame_at = None  # loss counts only once frames have arrived
     log(source.id, "->", state, "epoch", source.epoch, "(" + reason + ")")
     threading.Thread(target=broadcast_state, args=(source,), daemon=True).start()
@@ -170,6 +174,7 @@ def set_state(source, state, reason):
 def observation(source, epoch, kind, track):
     source.sequence += 1
     return {"source_id": source.id, "epoch": epoch, "sequence": source.sequence, "kind": kind,
+            "observation_id": "%s/%d/%d" % (source.id, epoch, source.sequence),
             "track_id": "%d:%d" % (epoch, track["id"]), "recognition": "not-enabled",
             "score": round(float(track["score"]), 3), "detector": detector.MODEL_ID,
             "observed_at": stamp(), "expires_at": stamp(OBSERVATION_TTL)}
@@ -248,9 +253,17 @@ def watch(source):
         with LOCK:
             if source.epoch != epoch or source.state != "live":
                 continue  # stopped while detecting: the result is dropped
+            out = update_tracks(source, epoch, boxes, at) if frame is not None or source.tracks or source.recent else []
             if frame is not None:
                 source.last_seen = (epoch, frame[1], at, stamp())
-            out = update_tracks(source, epoch, boxes, at) if frame is not None or source.tracks or source.recent else []
+                # The exact frame behind each arrival, kept briefly for an agent to fetch by its id.
+                for o in out:
+                    if o["kind"] == "person.entered":
+                        source.arrival_frames[o["observation_id"]] = (frame[1], at, o["observed_at"])
+                for old in [k for k, v in source.arrival_frames.items() if at - v[1] > ARRIVAL_FRAMES_KEPT]:
+                    del source.arrival_frames[old]
+                while len(source.arrival_frames) > ARRIVAL_FRAMES_MOST:
+                    del source.arrival_frames[next(iter(source.arrival_frames))]
         if out:
             send_observations(source, epoch, out)
 
@@ -301,8 +314,7 @@ class Handler(BaseHTTPRequestHandler):
         if not agent_authorized(self.headers.get("Authorization")):
             return self.reply(401, {"error": "an agent key is needed"})
         length = int(self.headers.get("Content-Length") or 0)
-        if length:
-            self.rfile.read(min(length, 65536))
+        self._body = self.rfile.read(min(length, 65536)) if length else b""
         if path == "/stop-all":
             return self.reply(200, {"stopped": [set_state(s, "disabled", "stopped by the operator")["source_id"] for s in SOURCES.values()]})
         parts = path.strip("/").split("/")
@@ -312,6 +324,19 @@ class Handler(BaseHTTPRequestHandler):
                 return self.reply(200, set_state(source, "live", "started by the operator"))
             if parts[2] == "stop":
                 return self.reply(200, set_state(source, "disabled", "stopped by the operator"))
+            if parts[2] == "arrival":
+                # The frame behind one arrival, by its observation id, while Eyes still keeps it.
+                try:
+                    body = json.loads(self._body or b"{}")
+                except ValueError:
+                    body = {}
+                with LOCK:
+                    kept = source.arrival_frames.get(str(body.get("observation_id", "")))
+                if kept is None:
+                    return self.reply(404, {"error": "that arrival's frame is no longer kept (Eyes keeps one for %d seconds); look now instead" % ARRIVAL_FRAMES_KEPT})
+                import base64
+                return self.reply(200, {"source_id": source.id, "observation_id": body["observation_id"], "seen_at": kept[2],
+                                        "image": "data:image/jpeg;base64," + base64.b64encode(kept[0]).decode()})
             if parts[2] == "snapshot":
                 # An agent's deliberate look: the last analysed frame, if fresh. Kept nowhere here.
                 with LOCK:

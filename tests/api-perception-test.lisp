@@ -158,7 +158,7 @@
       (is (search "needs the Eyes service" (pai-v3.api::look-through k thought "webcam-a")))
       (is (search "no source named" (pai-v3.api::look-through k thought "nowhere")))
       (seen k 1 "person.entered" "t1")
-      (is (search "senses tool (action look, source_id webcam-a)" (second (first (sense-thoughts k)))) "the arrival says she can look")
+      (is (search "action look, source_id webcam-a, observation_id webcam-a/" (second (first (sense-thoughts k)))) "the arrival says she can look at its exact frame")
       (is (search "Office webcam" (funcall (pai-v3.mind::tool-run (gethash "senses" pai-v3.mind::*tools*)) k thought (obj "action" "status")))))))
 
 (deftest a-frame-looked-at-is-listed-to-look-at-again
