@@ -104,8 +104,31 @@ render audited content safe for every audience. Unreviewed sources default to op
             (sql-rows (kernel-db kernel)
                       "SELECT reason,outcome,status,updated_at FROM thoughts WHERE audience=?1 AND id<>?2 ORDER BY id DESC LIMIT 40"
                       (getf request :audience) (or (getf request :thought-id) 0)))
-        for text = (format nil "[~a UTC] ~a -> ~a~@[: ~a~]" (subseq at 0 16) reason status outcome)
+        for text = (%activity-line reason outcome status at)
         collect (list text (estimate-tokens text))))
+
+(defparameter +activity-kinds+
+  '(("Check ONE proposed post" . "Reviewed a draft before it was sent")
+    ("Free time." . "Free time")
+    ("Quiet time, with nothing in hand" . "Quiet time, letting my mind wander")
+    ("Quiet time, after a conversation" . "Looked back over a conversation")
+    ("Quiet time: what has been posted in the crew forum" . "Caught up on the crew forum"))
+  "Thoughts whose prompt is standing wording: named, not quoted (bead v3-okh.16).")
+
+(defun %first-part (text n)
+  "TEXT on one line, up to its first sentence end, at most N characters."
+  (let* ((line (substitute #\Space #\Newline (string-trim '(#\Space #\Newline) (or text ""))))
+         (stop (search ". " line))
+         (end (min n (length line) (if (and stop (>= stop 40)) (1+ stop) (length line)))))
+    (if (< end (length line)) (format nil "~a…" (subseq line 0 end)) line)))
+
+(defun %activity-line (reason outcome status at)
+  "One compact line for a recent thought: what it was about and how it ended.
+The full prompt of each thought used to be quoted here: a third of every context."
+  (let ((kind (cdr (find-if (lambda (k) (eql 0 (search (car k) (or reason "")))) +activity-kinds+))))
+    (format nil "[~a UTC] ~a -> ~a~@[: ~a~]" (subseq at 0 16)
+            (or kind (%first-part reason 240)) status
+            (and outcome (plusp (length outcome)) (%first-part outcome 400)))))
 
 ;;; Assembly
 

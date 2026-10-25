@@ -157,4 +157,33 @@
            (is (null (funcall (gethash :synthetic-unreviewed pai-v3.mind::*slot-sources*) k (list :audience "peer:beta") 10))))
       (remhash :synthetic-unreviewed pai-v3.mind::*slot-sources*))))
 
+(deftest recent-activity-is-one-compact-line-per-thought
+  ;; Bead v3-okh.16: each row used to quote the thought's whole prompt.
+  (let ((review (pai-v3.mind::%activity-line
+                 (format nil "Check ONE proposed post for the crew forum. This is a light crew review...~%~a" (make-string 2000 :initial-element #\x))
+                 "sent" "ended" "2026-10-25T20:37:00Z"))
+        (long (pai-v3.mind::%activity-line
+               (format nil "Quiet time. You are looking into one of your concerns (c-1, curiosity): why the brief is late.~%~a" (make-string 3000 :initial-element #\y))
+               (make-string 3000 :initial-element #\z) "ended" "2026-10-25T20:37:00Z")))
+    (is (search "Reviewed a draft before it was sent -> ended: sent" review))
+    (is (< (length review) 120))
+    (is (< (length long) 700) "a long prompt and outcome become one bounded line")
+    (is (search "Quiet time. You are looking into one of your concerns" long))))
+
+(deftest older-long-tool-results-are-shortened-in-the-replay
+  (with-temp-kernel (k)
+    (let ((id (request-thought k "introspection" "SYNTHETIC reading")))
+      (dotimes (i 6)
+        (pai-v3.mind::%record-text k id "tool_call" "" "tool" "source" "call_id" (format nil "c~d" i) "arguments" "{}")
+        (pai-v3.mind::%record-text k id "tool_result" (make-string 5000 :initial-element (code-char (+ 97 i))) "tool" "source" "call_id" (format nil "c~d" i)))
+      (let* ((results (remove-if-not (lambda (m) (equal "tool" (obj-get m "role"))) (pai-v3.mind::%replay-messages k id))))
+        (is (= 6 (length results)))
+        (is (search "shortened here to save space" (obj-get (first results) "content")))
+        (is (search "call_id c0 and part 0" (obj-get (first results) "content")))
+        (is (< (length (obj-get (second results) "content")) 1500))
+        (is (= 5000 (length (obj-get (third results) "content"))) "the newest four stay whole")
+        (is (= 5000 (length (obj-get (sixth results) "content"))))
+        (is (= 5000 (length (funcall (pai-v3.mind::tool-run (gethash "read_result" pai-v3.mind::*tools*)) k id (obj "call_id" "c0" "part" 0))))
+            "read_result still gives the whole of it")))))
+
 (run-suite "mind-context")

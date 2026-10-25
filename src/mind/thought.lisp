@@ -296,7 +296,26 @@ assistant message; a long tool result shows its first part and how to page."
                                     (format nil "~a~%[The result continues. Call read_result with call_id ~a and part 1 or later to read more.]"
                                             (obj-get shown "content") call-id))))))))
       (flush))
-    (nreverse messages)))
+    (%shorten-older-results (nreverse messages))))
+
+(defparameter *full-results-kept* 4
+  "The newest tool results a replay shows whole; older long ones show their start.")
+(defparameter *older-result-chars* 1200)
+
+(defun %shorten-older-results (messages)
+  "Every call re-sends the whole thought, so a long result read many steps ago
+is paid for again on each one (bead v3-okh.16). Past the newest few, a long
+result shows its beginning and how to read it whole again."
+  (let ((kept 0))
+    (dolist (m (reverse messages) messages)
+      (when (equal "tool" (obj-get m "role"))
+        (let ((content (obj-get m "content")))
+          (if (< kept *full-results-kept*)
+              (incf kept)
+              (when (and (stringp content) (> (length content) (+ *older-result-chars* 200)))
+                (setf (gethash "content" m)
+                      (format nil "~a~%[An earlier result, shortened here to save space (~d characters in all). Call read_result with call_id ~a and part 0 to read it whole again.]"
+                              (subseq content 0 *older-result-chars*) (length content) (obj-get m "tool_call_id"))))))))))
 
 ;;; The mind
 
