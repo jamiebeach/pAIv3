@@ -132,6 +132,10 @@ The full prompt of each thought used to be quoted here: a third of every context
 
 ;;; Assembly
 
+(defvar *context-cull* nil
+  "(lambda (kernel source request rows)) -> rows, or NIL: leaves out optional
+rows judged unrelated to the thought (cull.lisp).")
+
 (defun %fill (kernel source request max)
   "Rows that fit MAX tokens, and a status string."
   (let ((fn (gethash source *slot-sources*)))
@@ -143,7 +147,8 @@ The full prompt of each thought used to be quoted here: a third of every context
               ;; A row is (text tokens), or plain text whose tokens are
               ;; estimated here: a source returning bare lines once kept
               ;; three slots out of every context, marked unavailable.
-              (loop for row in (funcall fn kernel request max)
+              (loop for row in (let ((rows (funcall fn kernel request max)))
+                                 (if *context-cull* (funcall *context-cull* kernel source request rows) rows))
                     for (text tokens) = (if (stringp row) (list row (estimate-tokens row)) row)
                     while (<= (+ used tokens) max)
                     do (incf used tokens) (push text kept))
