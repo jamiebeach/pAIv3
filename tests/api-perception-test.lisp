@@ -105,7 +105,8 @@
   (with-senses (k :owner nil)
     (pai-v3.api::set-sense-state k "webcam-a" "live" "started")
     (seen k 1 "person.entered" "t1")
-    (is (search "Another agent tells the operator about this source" (second (first (sense-thoughts k)))))))
+    (is (search "Another agent tells the operator about this source" (second (first (sense-thoughts k)))))
+    (is (null (search "trying this sense out" (second (first (sense-thoughts k))))) "only the owner gets the cue")))
 
 (deftest a-lost-source-is-one-change-and-says-it-cannot-know
   (with-senses (k)
@@ -148,7 +149,9 @@
                                                 "recognition" "not-enabled" "observed_at" (iso8601 (now)) "expires_at" (iso8601 (+ (now) 15))))
       (let ((reason (second (first (sense-thoughts k)))))
         (is (search "started this camera from their phone 2 minutes ago" reason))
-        (is (search "an inference you may voice as one, not a recognition" reason))))))
+        (is (search "an inference you may voice as one, not a recognition" reason))
+        (is (search "is probably there and trying this sense out right now" reason) "the owner is told a word would likely be welcome")
+        (is (search "It is your call" reason))))))
 
 (deftest looking-needs-a-live-source-and-eyes
   (with-senses (k)
