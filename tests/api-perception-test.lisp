@@ -161,4 +161,13 @@
       (is (search "senses tool (action look, source_id webcam-a)" (second (first (sense-thoughts k)))) "the arrival says she can look")
       (is (search "Office webcam" (funcall (pai-v3.mind::tool-run (gethash "senses" pai-v3.mind::*tools*)) k thought (obj "action" "status")))))))
 
+(deftest a-frame-looked-at-is-listed-to-look-at-again
+  (with-senses (k)
+    (append! k "image.seen" (obj "image_id" "0123456789abcdef0123456789abcdef" "audience" "operator" "how" "looked"
+                                 "from" "Office webcam" "caption" "a frame I looked at through Office webcam, seen at 2026-10-12T14:00:00Z"))
+    (let ((seen (first (first (funcall (gethash :seen pai-v3.mind::*slot-sources*) k (list :audience "operator") 400)))))
+      (is (search "0123456789abcdef0123456789abcdef: a frame I looked at through Office webcam" seen))
+      (is (search "I looked through a camera" seen))
+      (is (search "look_at to see it again" seen)))))
+
 (run-suite "api-perception")

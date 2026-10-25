@@ -127,8 +127,9 @@ answers, and those it asked to look at again."
                                 collect (format nil "- ~a: ~a (~a~@[ by ~a~], ~a). look_at to see it again."
                                                 id (or (image-caption kernel id) "not yet described")
                                                 (cond ((equal how "made") "I made it") ((equal how "sent") "sent")
+                                                      ((equal how "looked") "I looked through a camera")
                                                       (t "posted"))
-                                                (and (not (equal how "made")) source)
+                                                (and (not (member how '("made" "looked") :test #'equal)) source)
                                                 (or (ignore-errors (local-stamp kernel at)) at))))))
         (list (list text (estimate-tokens text)))))))
 
