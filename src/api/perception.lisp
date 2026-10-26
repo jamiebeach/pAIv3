@@ -204,16 +204,13 @@ sent under the old one is refused. Returns the new epoch."
                          (round (- (now) (parse-iso8601 (fourth row))) 60))))
       (request-thought kernel "noticing"
                        (format nil "Senses (~a): someone has appeared at ~a (track ~a). ~a.~@[ The operator started this camera from their phone ~d minute~:p ago, so it may well be them, or someone they are pointing it at: an inference you may voice as one, not a recognition.~]~%~%~
-~@[~a ~]This is a perception, not a message: no one asked you anything. If it is worth seeing, you can look with the senses tool: action look, source_id ~a, observation_id ~a gives the exact frame of this arrival for two minutes; without observation_id, what is in front of the camera now. Most arrivals need nothing. ~:[Another agent tells the operator about this source; do not notify them about it unless they ask~;If it matters to the operator now (someone expected, something unusual), you may tell them with notify_operator~]. Say in a line what, if anything, matters."
+This is a perception, not a message: no one asked you anything. If it is worth seeing, you can look with the senses tool: action look, source_id ~a, observation_id ~a gives the exact frame of this arrival for two minutes; without observation_id, what is in front of the camera now. Most arrivals need nothing. ~:[Another agent tells the operator about this source; do not notify them about it unless they ask~;If it matters to the operator now (someone expected, something unusual), you may tell them with notify_operator~]. Say in a line what, if anything, matters."
                                source-id name track
                                (if (equal recognition "candidate")
                                    (format nil "A recognition candidate: ~a, similarity ~,2f; that is evidence, not identity, and it grants nothing"
                                            candidate (or score 0))
                                    "Who it is is not known")
                                (and started (<= started 30) started)
-                               (and owner started (<= started 30)
-                                    (format nil "~a is probably there and trying this sense out right now: if you look, a short note about what you see would likely be welcome (notify_operator). It is your call."
-                                            (or (%given (setting kernel "operator.name")) "The operator")))
                                source-id observation-id owner)
                        :audience "operator"))))
 
