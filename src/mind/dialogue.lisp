@@ -11,8 +11,9 @@
            ("speaker" :string)         ; display name of the verified principal
            ("text" :string)
            ("origin" :object)          ; verified origin attestation (spec §16.5)
-           ("images" :array :optional)
-           ("semantic_affect" :boolean :optional)) ; ids of images kept in the blob store
+           ("images" :array :optional)          ; ids of images kept in the blob store
+           ("camera_images" :array :optional)   ; the operator's camera with this turn: seen, not shown in the chat
+           ("semantic_affect" :boolean :optional))
   ;; A pasted document or a long answer is kept whole (bead v3-ggn).
   :max-bytes 131072)
 
@@ -78,14 +79,15 @@
 (defvar *received-turn-hook* nil
   "Registered post-recording seam for inbound message perception; never paid HTTP here.")
 
-(defun receive-turn (kernel &key channel audience speaker text origin images)
+(defun receive-turn (kernel &key channel audience speaker text origin images camera-images)
   "Record a verified inbound turn. ORIGIN is the attestation from the
 channel adapter; it is stored, never inferred from TEXT."
   (let* ((semantic (and (eq t (setting kernel "affect.appraisal.enabled"))
                         (equal audience "operator") (equal "operator" (obj-get origin "principal_type"))))
          (event (append! kernel "turn.received"
                          (obj "channel" channel "audience" audience "speaker" speaker "text" text
-                              "origin" (or origin (obj)) "images" images "semantic_affect" (and semantic t)))))
+                              "origin" (or origin (obj)) "images" images "camera_images" camera-images
+                              "semantic_affect" (and semantic t)))))
     (when (and semantic *received-turn-hook*) (funcall *received-turn-hook* kernel event))
     event))
 

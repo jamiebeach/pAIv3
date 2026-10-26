@@ -39,20 +39,20 @@
 
   function drawBadge() {
     if (cam.badge) cam.badge.remove();
-    const style = 'position:fixed;z-index:95;right:calc(10px + env(safe-area-inset-right));bottom:calc(10px + env(safe-area-inset-bottom));' +
-      'background:var(--panel,#161a21);color:var(--text,var(--fg,#e6e8ec));border:1px solid #55d6a0;border-radius:10px;padding:6px;' +
-      'font:12px system-ui,sans-serif;box-shadow:0 8px 24px rgba(0,0,0,.4);width:150px';
+    const style = 'position:fixed;z-index:95;right:calc(56px + env(safe-area-inset-right));top:calc(6px + env(safe-area-inset-top));' +
+      'background:var(--panel,#161a21);color:var(--text,var(--fg,#e6e8ec));border:1px solid #55d6a0;border-radius:8px;padding:4px;' +
+      'font:11px system-ui,sans-serif;box-shadow:0 6px 18px rgba(0,0,0,.35);width:92px';
     const badge = el('div', { id: 'pai-camera-badge', style, role: 'status' });
     cam.video.setAttribute('style', 'width:100%;border-radius:6px;display:block;' + (cam.facing === 'user' ? 'transform:scaleX(-1);' : ''));
     const head = el('div', { style: 'display:flex;align-items:center;gap:6px;margin:4px 0' });
-    head.append(el('span', { style: 'color:#55d6a0' }, '●'), el('span', {}, 'camera on'));
+    head.append(el('span', { style: 'color:#55d6a0' }, '●'), el('span', {}, 'camera'));
     const meta = el('div', { id: 'pai-camera-meta', style: 'color:var(--dim,var(--muted,#9aa3b2));font-size:11px;margin-bottom:4px' },
                     (cam.name || cam.source) + ' · ' + cam.sent + ' frames');
-    const chat = el('label', { style: 'display:flex;gap:4px;align-items:center;font-size:11px;margin-bottom:4px', title: 'Attach a frame to each chat message' });
+    const chat = el('label', { style: 'display:flex;gap:4px;align-items:center;font-size:11px;margin-bottom:4px', title: 'Send the camera with each chat message' });
     const box = el('input', { type: 'checkbox' });
     box.checked = cam.chat;
     box.onchange = () => { cam.chat = box.checked; save(); announce(); };
-    chat.append(box, el('span', {}, 'she sees me in chat'));
+    chat.append(box, el('span', {}, 'with chat'));
     const row = el('div', { style: 'display:flex;gap:4px' });
     const btn = 'flex:1;font:inherit;font-size:11px;padding:3px 4px;border-radius:6px;cursor:pointer;background:transparent;color:inherit;border:1px solid var(--line,var(--border,#2a2f3a))';
     const flip = el('button', { type: 'button', style: btn, title: 'Switch camera' }, 'flip');

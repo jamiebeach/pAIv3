@@ -777,13 +777,9 @@ localhost), the URL to send it to; passkeys only work at the agent's origin."
                                        ;; And as they read the last reply, a few seconds after it arrived.
                                        (reaction (let ((f (%given (obj-get b "reaction_frame"))))
                                                    (and frame (stringp f) (ignore-errors (pai-v3.mind::store-image k f)))))
-                                       (text (if frame
-                                                 (format nil "~a~%~%[My camera: ~:[the frame attached last shows me as I sent this~;the last two frames attached show me a few seconds after your last reply reached me, as I read it, and then as I sent this~]. It is what you can see of me, not a message.]"
-                                                         (if (zerop (length text)) "(a look at me)" text) reaction)
-                                                 text))
-                                       (images (append images (and reaction (list reaction)) (and frame (list frame))))
                                        (turn (receive-turn k :channel "web" :audience "operator" :speaker (setting k "operator.name")
                                                              :text (if (zerop (length text)) "(an image)" text) :images images
+                                                             :camera-images (append (and reaction (list reaction)) (and frame (list frame)))
                                                              :origin (progn (setf (gethash "channel" origin) "web") origin)))
                                        (thought (request-thought k "responding" "The operator spoke."
                                                                  :channel "web" :source-event-id (event-id turn))))

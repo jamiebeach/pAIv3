@@ -62,7 +62,9 @@ peer's board message or notification."
          (event (and source (ignore-errors (event-by-id kernel source))))
          (p (and event (event-payload event))))
     (and event
-         (let ((ids (cond ((member (event-type event) '("turn.received" "fleet.board.posted") :test #'string=)
+         (let ((ids (cond ((string= (event-type event) "turn.received")
+                           (append (obj-get p "images") (obj-get p "camera_images")))
+                          ((string= (event-type event) "fleet.board.posted")
                            (obj-get p "images"))
                           ((string= (event-type event) "fleet.op") (obj-get (obj-get p "body") "images")))))
            (and (listp ids) (remove-if-not #'stringp ids))))))
