@@ -1,0 +1,17 @@
+# pAI relay hub (bead v3-fy1). Deploy from this folder:
+#   npx wrangler login
+#   npx wrangler d1 create pai-relay        # paste the database_id it prints below
+#   npx wrangler d1 execute pai-relay --remote --file schema.sql
+#   npx wrangler deploy
+# Clients (one row each; keep only the SHA-256 of each token):
+#   npx wrangler d1 execute pai-relay --remote --command \
+#     "INSERT INTO clients (id, token_hash, role) VALUES ('bridge', '<sha256 hex>', 'bridge'), ('muse', '<sha256 hex>', 'agent')"
+# Revoke: UPDATE clients SET revoked = 1 WHERE id = 'muse'
+name = "pai-relay"
+main = "worker.js"
+compatibility_date = "2026-10-01"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "pai-relay"
+database_id = "REPLACE_WITH_THE_ID_FROM_d1_create"
