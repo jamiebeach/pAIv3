@@ -278,4 +278,32 @@
       (pai-v3.api::revoke-guest a "Codex" *operator*)
       (is (= 404 (guest-call port key :get "/v1/guest/forum/threads")) "no guests left: no route"))))
 
+(deftest a-relayed-thread-is-marked-for-the-whole-crew-and-cleared-as-easily
+  ;; Bead v3-fy1: a guest thread whose copies leave the household says so wherever it is read or written to.
+  (with-crew (a b)
+    (let ((open (obj-get (pai-v3.api::forum-post a :title "SYNTHETIC weather" :text "SYNTHETIC sunny"
+                                                    :author-id "operator" :author-name "Sam" :access "guests") "thread_id"))
+          (crew (obj-get (pai-v3.api::forum-post a :title "SYNTHETIC crew" :text "SYNTHETIC inside"
+                                                    :author-id "operator" :author-name "Sam") "thread_id")))
+      (is (handler-case (progn (pai-v3.api::forum-set-thread a open (pai-v3.api::fleet-agent-id a) "Beta" :relayed t) nil)
+            (pai-v3.api::board-error () t)) "an agent cannot mark it")
+      (is (handler-case (progn (pai-v3.api::forum-set-thread a crew "operator" "Sam" :relayed t) nil)
+            (pai-v3.api::board-error () t)) "only a guest thread can be relayed")
+      (pai-v3.api::forum-set-thread a open "operator" "Sam" :relayed t)
+      (is (pai-v3.api::thread-relayed-p b open) "the mark reaches the rest of the crew")
+      (is (search "RELAYED outside the household" (pai-v3.api::forum-text b open)) "reading the thread shows it")
+      (is (search "RELAYED outside the household" (pai-v3.api::forum-text b nil)) "and the list of threads")
+      (is (eq t (obj-get (pai-v3.api::forum-thread-json b open :member "guest:muse") "relayed")) "the guest API says so")
+      (is (search "Hold THIS post to that" (pai-v3.api::%crew-speaking-prompt b "d-x" open nil "answer" "SYNTHETIC"))
+          "the review of a post to it judges the post as held outside")
+      (is (null (search "RELAYED" (pai-v3.api::%crew-speaking-prompt b "d-y" crew nil "answer" "SYNTHETIC"))))
+      (pai-v3.api::forum-set-thread a open "operator" "Sam" :relayed :false)
+      (is (not (pai-v3.api::thread-relayed-p b open)) "cleared as easily, for everyone")
+      ;; A relayed guest's own thread is marked from the start.
+      (change-setting a "forum.relay_guests" (list "Muse") :origin *operator*)
+      (let ((pai-v3.mind::*decision-profile* (guest-judge 0)))
+        (let ((mine (obj-get (pai-v3.api::guest-post a "guest:muse" "Muse" :title "SYNTHETIC from Muse" :text "SYNTHETIC hi") "thread_id")))
+          (is (pai-v3.api::thread-relayed-p a mine))
+          (is (pai-v3.api::thread-relayed-p b mine) "everywhere"))))))
+
 (run-suite "api-forum")

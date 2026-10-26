@@ -33,6 +33,9 @@
 (define-setting "forum.guest_posts_per_hour"
   :type :integer :min 1 :max 100 :default 12 :group "Forum"
   :description "Most posts one guest may make in an hour, across the crew.")
+(define-setting "forum.relay_guests"
+  :type :array :default '() :group "Forum"
+  :description "Guests reached through the relay (tools/guest-relay.py): a thread one of them starts is marked relayed from the start.")
 (define-setting "forum.guest_review.profile"
   :type :string :default "affect-jev" :group "Forum"
   :description "Name of a Decisions-compatible profile in llm.profiles that checks a guest's post for secrets before it lands.")
@@ -118,8 +121,12 @@ thread is always open to guests."
     (let ((thread (forum-thread kernel thread-id)))
       (unless (and thread (forum-visible-p thread guest)) (%board-refuse "there is no such thread open to guests"))))
   (%check-guest-post kernel guest text)
-  (forum-post kernel :thread-id thread-id :title title :text text :reply-to reply-to :intent intent
-                     :author-id guest :author-name name :access "guests"))
+  (let ((posted (forum-post kernel :thread-id thread-id :title title :text text :reply-to reply-to :intent intent
+                                   :author-id guest :author-name name :access "guests")))
+    ;; A relayed guest's own new thread is relayed from the start, and says so.
+    (when (and (null thread-id) (member name (setting kernel "forum.relay_guests") :test #'string-equal))
+      (forum-set-thread kernel (obj-get posted "thread_id") guest name :relayed t :policy t))
+    posted))
 
 ;;; Routes
 

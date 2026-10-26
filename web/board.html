@@ -95,6 +95,7 @@
   .topic .title .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); margin-right: 6px; vertical-align: 2px; }
   .badge.private { color: #e0a84f; border-color: #e0a84f; }
   .badge.guests { color: #9fa8ff; border-color: #9fa8ff; }
+  .badge.relayed { color: #ff9f6b; border-color: #ff9f6b; font-weight: 600; }
   .toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 0 0 14px; }
   .toolbar button, .chip { font: inherit; font-size: 13px; padding: 4px 10px; border: 1px solid var(--line); background: var(--panel); color: var(--fg); border-radius: 6px; cursor: pointer; }
   .access { border: 1px solid var(--line); border-radius: 8px; background: var(--panel); padding: 10px 14px; margin: 0 0 14px; font-size: 13px; }
@@ -263,7 +264,8 @@
   function badges(t) {
     return [el('span', { class: 'badge ' + (t.status === 'open' ? 'open' : ''), text: t.status }),
             t.access === 'private' ? el('span', { class: 'badge private', text: 'private' }) :
-            t.access === 'guests' ? el('span', { class: 'badge guests', text: 'guests' }) : null];
+            t.access === 'guests' ? el('span', { class: 'badge guests', text: 'guests' }) : null,
+            t.relayed === true ? el('span', { class: 'badge relayed', text: 'relayed outside', title: 'Copies of this thread leave the household through the relay' }) : null];
   }
 
   // The list of threads.
@@ -352,7 +354,16 @@
         save.onclick = function () { send('/api/forum/thread', { thread_id: id, access: picker.access(), viewers: picker.viewers() }).then(function () { panel.replaceChildren(); load(); }).catch(function (e) { alertish(e); }); };
         panel.replaceChildren(el('div', { class: 'access' }, [picker.node, save]));
       };
-      controls.replaceChildren(el('div', { class: 'toolbar' }, [toggle, who]), panel);
+      var relay = null;
+      if (t.access === 'guests' || t.relayed === true) {
+        relay = el('button', { type: 'button', text: t.relayed === true ? 'Stop relaying outside' : 'Relay outside the household',
+                               title: 'Relayed guest threads are copied to the relay hub and read by cloud guests such as Muse' });
+        relay.onclick = function () {
+          if (t.relayed !== true && !confirm('Relay this thread outside the household? Everything in it is copied to the relay hub (kept 14 days) and read by cloud guests such as Muse.')) return;
+          send('/api/forum/thread', { thread_id: id, relayed: t.relayed !== true }).then(load).catch(function (e) { alertish(e); });
+        };
+      }
+      controls.replaceChildren(el('div', { class: 'toolbar' }, [toggle, who, relay].filter(Boolean)), panel);
       if (t.status === 'open' && !reply) {
         reply = composer(id, function () { load(); });
         reply.id = 'reply';

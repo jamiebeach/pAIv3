@@ -28,8 +28,8 @@ def ok(cond, what):
 
 
 # A fake forum: two guest threads, one relayed; posts as "Muse".
-FORUM = {"threads": {"t-relayed": {"title": "SYNTHETIC relayed", "messages": []},
-                     "t-other": {"title": "SYNTHETIC not relayed", "messages": []}}, "refuse_next": None}
+FORUM = {"threads": {"t-relayed": {"title": "SYNTHETIC relayed", "messages": [], "relayed": True},
+                     "t-other": {"title": "SYNTHETIC not relayed", "messages": [], "relayed": False}}, "refuse_next": None}
 
 
 def add_post(tid, author, text, ts):
@@ -53,7 +53,8 @@ class Forum(BaseHTTPRequestHandler):
             return self.reply(401, {"error": "a guest key is needed"})
         if self.path == "/v1/guest/forum/threads":
             return self.reply(200, {"threads": [{"thread_id": k, "title": t["title"], "posts": len(t["messages"]),
-                                                 "last_at": max([m["timestamp"] for m in t["messages"]] or [0])}
+                                                 "last_at": max([m["timestamp"] for m in t["messages"]] or [0]),
+                                                 "relayed": t["relayed"]}
                                                 for k, t in FORUM["threads"].items()]})
         tid = self.path.split("id=")[-1]
         t = FORUM["threads"].get(tid)
@@ -68,7 +69,7 @@ class Forum(BaseHTTPRequestHandler):
         tid = body.get("thread_id")
         if not tid:
             tid = "t-new-" + str(uuid.uuid4())[:8]
-            FORUM["threads"][tid] = {"title": body["title"], "messages": []}
+            FORUM["threads"][tid] = {"title": body["title"], "messages": [], "relayed": True}  # forum.relay_guests
         add_post(tid, "Muse", body["text"], int(time.time()))
         self.reply(200, {"thread_id": tid, "msg_id": FORUM["threads"][tid]["messages"][-1]["msg_id"]})
 
@@ -84,7 +85,7 @@ tmp = tempfile.mkdtemp()
 open(os.path.join(tmp, "bridge.token"), "w").write("bridge-token")
 open(os.path.join(tmp, "muse.key"), "w").write("muse-guest-key")
 config = {"hub_url": HUB, "bridge_token_file": os.path.join(tmp, "bridge.token"), "guest_key_file": os.path.join(tmp, "muse.key"),
-          "forum_url": "http://127.0.0.1:%d" % forum.server_address[1], "threads": ["t-relayed"],
+          "forum_url": "http://127.0.0.1:%d" % forum.server_address[1],
           "state_file": os.path.join(tmp, "state.json")}
 
 
@@ -123,7 +124,12 @@ try:
     relay.cycle()
     ok(len(FORUM["threads"]["t-other"]["messages"]) == 1, "a message for a thread that is not relayed is not posted")
     new = [k for k in FORUM["threads"] if k.startswith("t-new-")]
-    ok(len(new) == 1 and new[0] in relay.state["started"], "a thread Muse starts is created and relayed")
+    relay.cycle()
+    ok(len(new) == 1 and new[0] in relay.state["relayed"], "a thread Muse starts is created and relayed")
+    FORUM["threads"]["t-relayed"]["relayed"] = False
+    relay.cycle()
+    ok("t-relayed" not in relay.state["relayed"], "clearing the mark stops the relay")
+    FORUM["threads"]["t-relayed"]["relayed"] = True
 
     # The forum is busy: the message waits, and goes when it can.
     FORUM["refuse_next"] = (400, "at most 12 posts an hour")

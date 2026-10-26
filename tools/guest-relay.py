@@ -9,9 +9,11 @@ Runs on the LAN and only ever calls out:
     to the forum with the guest's own key, so it appears as that guest, under
     the forum's guest caps and secrets check.
 
-Which threads are relayed is an explicit choice: those listed in the config,
-plus any thread the guest starts. Their content leaves the LAN (the hub keeps
-it for 14 days; the cloud agent reads it).
+Only threads marked relayed are relayed: the operator marks a guest thread
+on the forum page (and clears it as easily), and a thread a relayed guest
+starts is marked from the start (setting forum.relay_guests). The mark is the
+thread's own, so the crew see it where they read and write. Relayed content
+leaves the LAN (the hub keeps it for 14 days; the cloud agent reads it).
 
   python tools/guest-relay.py CONFIG [--once]
 
@@ -20,7 +22,6 @@ CONFIG (JSON, kept in private/):
    "bridge_token_file": "private/relay-bridge.token",
    "forum_url": "http://localhost:8092",
    "guest_key_file": "private/muse.key",
-   "threads": ["<thread id>", ...],
    "poll_seconds": 15,
    "state_file": "private/relay-state.json"}
 Only the standard library is used.
@@ -67,7 +68,7 @@ class Relay:
             self.state = json.load(open(self.state_file, encoding="utf-8"))
         except (OSError, ValueError):
             self.state = {}
-        for k, v in (("seen", {}), ("last_at", {}), ("started", []), ("posted", []), ("inbox_cursor", 0)):
+        for k, v in (("seen", {}), ("last_at", {}), ("relayed", []), ("posted", []), ("inbox_cursor", 0)):
             self.state.setdefault(k, v)
 
     def save(self):
@@ -76,7 +77,8 @@ class Relay:
         os.replace(tmp, self.state_file)  # never a half-written cursor
 
     def relayed(self, thread_id):
-        return thread_id in self.c.get("threads", []) or thread_id in self.state["started"]
+        """As the forum marked it when last read (refreshed every cycle)."""
+        return thread_id in self.state["relayed"]
 
     def forum(self, path, body=None):
         return call(self.c["forum_url"], "/v1/guest/forum/" + path, self.guest_key, body)
@@ -90,6 +92,7 @@ class Relay:
         if status != 200:
             log("forum threads unavailable:", status, index.get("error"))
             return
+        self.state["relayed"] = [t["thread_id"] for t in index.get("threads", []) if t.get("relayed") is True]
         for t in index.get("threads", []):
             tid = t["thread_id"]
             if not self.relayed(tid) or t.get("last_at", 0) <= self.state["last_at"].get(tid, 0):
@@ -135,8 +138,6 @@ class Relay:
                         log("forum not taking posts now (", status, error, "); trying again next cycle")
                         return
                     if status == 200:
-                        if not m.get("thread_id"):
-                            self.state["started"].append(reply["thread_id"])
                         log("posted", m["id"], "from", m["from_client"], "in", reply.get("thread_id"))
                     else:
                         log("forum refused message", m["id"], ":", status, error)  # e.g. a secret in it: not retried
