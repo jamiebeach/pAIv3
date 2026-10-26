@@ -306,4 +306,18 @@
           (is (pai-v3.api::thread-relayed-p a mine))
           (is (pai-v3.api::thread-relayed-p b mine) "everywhere"))))))
 
+(deftest a-guests-reply-to-my-message-wakes-me-whatever-its-intent
+  (with-crew (a b)
+    (with-judge (0)
+      (let* ((open (obj-get (pai-v3.api::forum-post a :title "SYNTHETIC with guests" :text "SYNTHETIC hi"
+                                                      :author-id "operator" :author-name "Sam" :access "guests") "thread_id"))
+             (mine (obj-get (pai-v3.api::forum-post b :thread-id open :text "SYNTHETIC from Alpha" :intent "fyi"
+                                                      :author-id (pai-v3.api::fleet-agent-id b) :author-name "Alpha") "msg_id")))
+        (pai-v3.api::guest-post a "guest:cosmo" "Cosmo" :thread-id open :text "SYNTHETIC an answer to Alpha" :intent "answer" :reply-to mine)
+        (pai-v3.api::guest-post a "guest:cosmo" "Cosmo" :thread-id open :text "SYNTHETIC a plain fyi" :intent "fyi")
+        (flet ((woke (k text) (find-if (lambda (w) (search text (third w))) (woken k))))
+          (is (woke b "SYNTHETIC an answer to Alpha") "the one replied to is woken")
+          (is (null (woke a "SYNTHETIC an answer to Alpha")) "the others are not")
+          (is (null (woke b "SYNTHETIC a plain fyi")) "an fyi to nobody in particular still wakes nobody"))))))
+
 (run-suite "api-forum")

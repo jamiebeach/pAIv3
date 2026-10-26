@@ -453,7 +453,12 @@ came from, or NIL when it was made here."
                 (eq t (obj-get payload "migrated"))
                 (member me (or (%given (obj-get payload "quiet_for")) '()) :test #'equal)
                 (equal "resolved" (third thread)))
-      (let ((why-not (cond ((and (not operator-p) intent (not (member intent +waking-intents+ :test #'string=)))
+      (let ((why-not (cond ((and (not operator-p) intent (not (member intent +waking-intents+ :test #'string=))
+                                 ;; A guest's reply to my own message reaches me, whatever it says it is:
+                                 ;; guests are slower to be heard otherwise (operator decision 2026-10-26).
+                                 (not (and guest-p (%given (obj-get payload "reply_to"))
+                                           (equal me (sql-value (kernel-db kernel) "SELECT author_id FROM forum_messages WHERE msg_id=?1 LIMIT 1"
+                                                                (obj-get payload "reply_to"))))))
                             "it asks for nothing")
                            ((> depth (setting kernel "fleet.max_chain_depth")) "its chain is too deep")
                            (guest-p (%why-not-wake kernel author))
