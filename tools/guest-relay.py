@@ -44,7 +44,8 @@ def call(base, path, token, body=None, timeout=15):
     """(status, parsed body); status 0 when the other end could not be reached."""
     req = urllib.request.Request(base.rstrip("/") + path, method="POST" if body is not None else "GET",
                                  data=None if body is None else json.dumps(body).encode(),
-                                 headers={"Authorization": "Bearer " + token, "Content-Type": "application/json"})
+                                 headers={"Authorization": "Bearer " + token, "Content-Type": "application/json",
+                                          "User-Agent": "pai-guest-relay/1"})  # Cloudflare refuses Python's default agent
     try:
         with urllib.request.urlopen(req, timeout=timeout) as r:
             return r.status, json.loads(r.read() or b"{}")

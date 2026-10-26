@@ -14,4 +14,4 @@ compatibility_date = "2026-10-01"
 [[d1_databases]]
 binding = "DB"
 database_name = "pai-relay"
-database_id = "REPLACE_WITH_THE_ID_FROM_d1_create"
+database_id = "50626342-268b-460b-87ca-a7cedd98775c"
