@@ -160,6 +160,18 @@ becomes a stimulus (pai-v3.mind:coding-agent-message)."
                   ;; One forum thread in full, as the operator sees it (?id=).
                   ((equal what "forum-thread")
                    (let ((th (forum-thread-json kernel (hunchentoot:get-parameter "id")))) (and th (list th))))
+                  ;; Tool use over the last limit days: calls per day and tool, what
+                  ;; kind of thought made them, and the queries searched most.
+                  ((equal what "tool-use")
+                   (let ((since (iso8601 (- (now) (* 86400 (max 1 (min 30 limit)))))))
+                     (list (obj "by_day" (mapcar (lambda (r) (obj "day" (first r) "tool" (second r) "calls" (third r)))
+                                                 (rows "SELECT substr(t.created_at,1,10),s.tool,count(*) FROM thought_steps s JOIN thoughts t ON t.id=s.thought_id WHERE s.kind=?1 AND t.created_at>=?2 GROUP BY 1,2 ORDER BY 1,3 DESC LIMIT 400" "tool_call" since))
+                                "searches_by_origin" (mapcar (lambda (r) (obj "origin" (first r) "audience" (second r) "calls" (third r) "thoughts" (fourth r)))
+                                                             (rows "SELECT t.origin,t.audience,count(*),count(DISTINCT t.id) FROM thought_steps s JOIN thoughts t ON t.id=s.thought_id WHERE s.kind=?1 AND s.tool=?2 AND t.created_at>=?3 GROUP BY 1,2 ORDER BY 3 DESC LIMIT 40" "tool_call" "brave_search" since))
+                                "busiest_thoughts" (mapcar (lambda (r) (obj "thought_id" (first r) "origin" (second r) "reason" (clip (third r) 160) "searches" (fourth r)))
+                                                           (rows "SELECT t.id,t.origin,t.reason,count(*) FROM thought_steps s JOIN thoughts t ON t.id=s.thought_id WHERE s.kind=?1 AND s.tool=?2 AND t.created_at>=?3 GROUP BY 1 ORDER BY 4 DESC LIMIT 15" "tool_call" "brave_search" since))
+                                "repeated_queries" (mapcar (lambda (r) (obj "arguments" (clip (first r) 160) "times" (second r)))
+                                                           (rows "SELECT s.arguments,count(*) FROM thought_steps s JOIN thoughts t ON t.id=s.thought_id WHERE s.kind=?1 AND s.tool=?2 AND t.created_at>=?3 GROUP BY 1 HAVING count(*)>1 ORDER BY 2 DESC LIMIT 20" "tool_call" "brave_search" since))))))
                   ;; Spending over the last limit days (default 7).
                   ((equal what "spend") (list (pai-v3.mind::spend-report kernel :days (max 1 (min 30 limit)))))
                   ((equal what "forum")
