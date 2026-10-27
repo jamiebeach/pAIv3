@@ -160,18 +160,49 @@ becomes a stimulus (pai-v3.mind:coding-agent-message)."
                   ;; One forum thread in full, as the operator sees it (?id=).
                   ((equal what "forum-thread")
                    (let ((th (forum-thread-json kernel (hunchentoot:get-parameter "id")))) (and th (list th))))
+                  ;; What sleep wrote of the agent's close ones and its reality (v3-dwk).
+                  ((equal what "close")
+                   (let ((close (mapcar (lambda (tally) (list (uiop:symbol-call '#:pai-v3.recall '#:close-anchor kernel tally) tally))
+                                        (pai-v3.mind:close-ones kernel))))
+                     (list (obj "impressions"
+                                (loop for anchor in (cons "self" (mapcar #'first close))
+                                      for r = (sql-row db "SELECT anchor,settled,revision,revised_at FROM impressions WHERE anchor=?1 LIMIT 1" anchor)
+                                      collect (if r (obj "anchor" (first r) "settled" (second r) "revision" (third r) "revised_at" (fourth r))
+                                                  (obj "anchor" anchor "settled" :null)))
+                                "close_ones" (mapcar (lambda (pair) (obj "who" (getf (second pair) :who) "name" (getf (second pair) :name)
+                                                                         "messages" (getf (second pair) :messages) "anchor" (first pair)))
+                                                     close)
+                                "last_run" (loop for back from 0 below 7
+                                                 for day = (subseq (iso8601 (- (now) (* back 86400))) 0 10)
+                                                 for r = (sql-row db "SELECT result,at FROM consolidation_runs WHERE day=?1 AND task=?2 LIMIT 1" day "impressions")
+                                                 when r return (obj "day" day "at" (second r) "result" (ignore-errors (json-parse (first r))))
+                                                 finally (return :null))))))
                   ;; Tool use over the last limit days: calls per day and tool, what
-                  ;; kind of thought made them, and the queries searched most.
+                  ;; kind of thought made them, and the queries searched most. Steps
+                  ;; are read from the first thought of the window on, by id.
                   ((equal what "tool-use")
-                   (let ((since (iso8601 (- (now) (* 86400 (max 1 (min 30 limit)))))))
-                     (list (obj "by_day" (mapcar (lambda (r) (obj "day" (first r) "tool" (second r) "calls" (third r)))
-                                                 (rows "SELECT substr(t.created_at,1,10),s.tool,count(*) FROM thought_steps s JOIN thoughts t ON t.id=s.thought_id WHERE s.kind=?1 AND t.created_at>=?2 GROUP BY 1,2 ORDER BY 1,3 DESC LIMIT 400" "tool_call" since))
+                   (let* ((days (max 1 (min 30 limit)))
+                          (since (iso8601 (- (now) (* 86400 days))))
+                          (first-id (let ((lo (or (sql-value db "SELECT id FROM thoughts WHERE id>=?1 ORDER BY id LIMIT 1" 0) 0))
+                                          (hi (or (sql-value db "SELECT id FROM thoughts WHERE id>=?1 ORDER BY id DESC LIMIT 1" 0) 0)))
+                                      ;; The first thought created at or after SINCE: ids grow with time.
+                                      (loop while (< lo hi)
+                                            do (let* ((mid (floor (+ lo hi) 2))
+                                                      (row (sql-row db "SELECT id,created_at FROM thoughts WHERE id>=?1 ORDER BY id LIMIT 1" mid)))
+                                                 (if (and row (string< (second row) since)) (setf lo (1+ (first row))) (setf hi (if row (first row) mid)))))
+                                      lo))
+                          (hour (* 3600 (floor (- (unix-now) (* 86400 days)) 3600))))
+                     (list (obj "brave_last" (let ((id (first (latest-event-ids kernel "web.searched" 1))))
+                                               (if id (let ((e (event-by-id kernel id))) (obj "at" (event-at e) "search" (event-payload e))) :null))
+                                "by_day" (mapcar (lambda (r) (obj "day" (subseq (iso8601 (+ (* 86400 (first r)) (encode-universal-time 0 0 0 1 1 1970 0))) 0 10)
+                                                                  "tool" (second r) "calls" (third r)))
+                                                 (rows "SELECT hour/86400,name,sum(count) FROM activity_names WHERE hour>=?1 AND kind=?2 GROUP BY 1,2 ORDER BY 1,3 DESC LIMIT 400" hour "tool"))
                                 "searches_by_origin" (mapcar (lambda (r) (obj "origin" (first r) "audience" (second r) "calls" (third r) "thoughts" (fourth r)))
-                                                             (rows "SELECT t.origin,t.audience,count(*),count(DISTINCT t.id) FROM thought_steps s JOIN thoughts t ON t.id=s.thought_id WHERE s.kind=?1 AND s.tool=?2 AND t.created_at>=?3 GROUP BY 1,2 ORDER BY 3 DESC LIMIT 40" "tool_call" "brave_search" since))
+                                                             (rows "SELECT t.origin,t.audience,count(*),count(DISTINCT t.id) FROM thought_steps s JOIN thoughts t ON t.id=s.thought_id WHERE s.event_id>=?1 AND s.kind=?2 AND s.tool=?3 GROUP BY 1,2 ORDER BY 3 DESC LIMIT 40" first-id "tool_call" "brave_search"))
                                 "busiest_thoughts" (mapcar (lambda (r) (obj "thought_id" (first r) "origin" (second r) "reason" (clip (third r) 160) "searches" (fourth r)))
-                                                           (rows "SELECT t.id,t.origin,t.reason,count(*) FROM thought_steps s JOIN thoughts t ON t.id=s.thought_id WHERE s.kind=?1 AND s.tool=?2 AND t.created_at>=?3 GROUP BY 1 ORDER BY 4 DESC LIMIT 15" "tool_call" "brave_search" since))
+                                                           (rows "SELECT t.id,t.origin,t.reason,count(*) FROM thought_steps s JOIN thoughts t ON t.id=s.thought_id WHERE s.event_id>=?1 AND s.kind=?2 AND s.tool=?3 GROUP BY 1 ORDER BY 4 DESC LIMIT 15" first-id "tool_call" "brave_search"))
                                 "repeated_queries" (mapcar (lambda (r) (obj "arguments" (clip (first r) 160) "times" (second r)))
-                                                           (rows "SELECT s.arguments,count(*) FROM thought_steps s JOIN thoughts t ON t.id=s.thought_id WHERE s.kind=?1 AND s.tool=?2 AND t.created_at>=?3 GROUP BY 1 HAVING count(*)>1 ORDER BY 2 DESC LIMIT 20" "tool_call" "brave_search" since))))))
+                                                           (rows "SELECT s.arguments,count(*) FROM thought_steps s WHERE s.event_id>=?1 AND s.kind=?2 AND s.tool=?3 GROUP BY 1 HAVING count(*)>1 ORDER BY 2 DESC LIMIT 20" first-id "tool_call" "brave_search"))))))
                   ;; Spending over the last limit days (default 7).
                   ((equal what "spend") (list (pai-v3.mind::spend-report kernel :days (max 1 (min 30 limit)))))
                   ((equal what "forum")

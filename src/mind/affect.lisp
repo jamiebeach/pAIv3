@@ -340,8 +340,9 @@ third of drive name -> target for drives that have one."
   (cond ((> (- future value) 0.00001d0) "rising")
         ((< (- future value) -0.00001d0) "settling") (t "steady")))
 
-(defun render-affect (kernel &key (include-targets t))
-  "Numbers plus deterministic meaning and passive one-minute direction."
+(defun render-affect (kernel &key (include-targets t) (numbers t))
+  "Numbers plus deterministic meaning and passive one-minute direction;
+without NUMBERS, the meaning and direction alone (for prose written from it)."
   (let* ((at (now)) (db (kernel-db kernel))
          (md (%affect-dials db "affect.modulators")) (dd (%affect-dials db "affect.drives"))
          (spoke (second (%affect-row db "anchor" "operator_spoke"))))
@@ -351,13 +352,13 @@ third of drive name -> target for drives that have one."
                         (let ((future (modulator-drift (cdr p) 60 (car p) md)))
                           (when (and spoke (equal "social_need" (car p)))
                             (setf future (max future (social-saturation (- (+ at 60) spoke) md))))
-                          (format nil "~a=~,2f (~a; ~a)" (car p) (cdr p) (%affect-meaning (car p) (cdr p))
+                          (format nil "~a~:[~*~;=~,2f~] (~a; ~a)" (car p) numbers (cdr p) (%affect-meaning (car p) (cdr p))
                                   (%affect-trend (cdr p) future))))
                       (%sorted-pairs modulators))
               (mapcar (lambda (p)
                         (let ((target (and include-targets (gethash (car p) targets))))
-                          (format nil "~a=~,2f~@[ (about ~a)~] (~a unmet desire; ~a)"
-                                  (car p) (cdr p) (and target (subseq target 0 (min 80 (length target))))
+                          (format nil "~a~:[~*~;=~,2f~]~@[ (about ~a)~] (~a unmet desire; ~a)"
+                                  (car p) numbers (cdr p) (and target (subseq target 0 (min 80 (length target))))
                                   (%level-word (cdr p))
                                   (%affect-trend (cdr p) (drive-drift (cdr p) 60 (car p) dd)))))
                       (%sorted-pairs drives))))))

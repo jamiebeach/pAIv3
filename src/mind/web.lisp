@@ -13,9 +13,10 @@
   (lambda (url headers)
     (multiple-value-bind (body status response-headers)
         (http-request :get url :headers headers :read-timeout 20 :allow-private *fetch-allow-private*)
-      (values body status (or (and response-headers (gethash "content-type" response-headers)) ""))))
-  "(lambda (url headers)) -> body, status, content-type, through the kernel's
-one outbound transport. Replaced in tests.")
+      (values body status (or (and response-headers (gethash "content-type" response-headers)) "") response-headers)))
+  "(lambda (url headers)) -> body, status, content-type and the response
+headers (a hash table, or NIL), through the kernel's one outbound transport.
+Replaced in tests.")
 
 
 (defparameter *fetch-max-chars* 400000)
@@ -116,17 +117,48 @@ one outbound transport. Replaced in tests.")
 (defun %strip-tags (text)
   (if (stringp text) (%decode-entities (html-text text)) ""))
 
-(defun brave-search (query &key (count 5))
+(define-setting "web.searches_per_thought"
+  :type :integer :min 0 :max 50 :default 4 :group "Web"
+  :description "Most brave_search calls one thought may make; past it, the agent is told to read what it has with web_fetch. Searches cost credits; reading pages does not.")
+(define-setting "web.searches_per_free_time"
+  :type :integer :min 0 :max 50 :default 2 :group "Web"
+  :description "Most brave_search calls one free-time thought may make.")
+
+(define-event-type "web.searched"
+  :schema (("query" :string) ("status" :integer) ("thought_id" :integer :optional)
+           ("remaining" :string :optional) ("limit" :string :optional)))
+
+(defun %searches-left (kernel thought-id)
+  "How many more searches THOUGHT-ID may make, by its kind's cap."
+  (let* ((db (kernel-db kernel))
+         (reason (or (sql-value db "SELECT reason FROM thoughts WHERE id=?1 LIMIT 1" thought-id) ""))
+         (cap (setting kernel (if (uiop:string-prefix-p "Free time." reason) "web.searches_per_free_time" "web.searches_per_thought")))
+         (done (or (sql-value db "SELECT count(*) FROM thought_steps WHERE thought_id=?1 AND kind=?2 AND tool=?3 LIMIT 1"
+                              thought-id "tool_result" "brave_search") 0)))
+    (- cap done)))
+
+(defun brave-search (query &key (count 5) kernel thought-id)
   "Web results for QUERY, numbered, with title, address and snippet. The key
-is the secret named brave, bound to api.search.brave.com."
+is the secret named brave, bound to api.search.brave.com. With KERNEL, each
+search is recorded with what Brave says is left of the quota."
   (handler-case
-      (multiple-value-bind (body status)
+      (multiple-value-bind (body status type headers)
           (funcall *http-get*
                    (format nil "https://api.search.brave.com/res/v1/web/search?q=~a&count=~d"
                            (quri:url-encode query) (max 1 (min 20 count)))
                    (list (cons "Accept" "application/json")
                          (cons "X-Subscription-Token" (list :secret "brave" "~a"))))
-        (cond ((= status 429) "Web search is rate-limited just now; try again in a little while.")
+        (declare (ignore type))
+        (when kernel
+          (let ((event (obj "query" (subseq query 0 (min 300 (length query))) "status" status))
+                (remaining (and (hash-table-p headers) (gethash "x-ratelimit-remaining" headers)))
+                (limit (and (hash-table-p headers) (gethash "x-ratelimit-limit" headers))))
+            (when thought-id (setf (gethash "thought_id" event) thought-id))
+            (when (stringp remaining) (setf (gethash "remaining" event) remaining))
+            (when (stringp limit) (setf (gethash "limit" event) limit))
+            (ignore-errors (append! kernel "web.searched" event))))
+        (cond ((= status 429) "Web search is rate-limited just now. Do not search again in this thought; read what you have with web_fetch, or come back to it later.")
+              ((= status 402) "Web search is out of credits. Do not search again; tell the operator once if it matters, and read pages you already know with web_fetch.")
               ((not (<= 200 status 299)) (format nil "Web search answered ~d." status))
               (t (let ((results (obj-get (obj-get (json-parse body) "web" (obj)) "results")))
                    (if (null results)
@@ -144,10 +176,11 @@ is the secret named brave, bound to api.search.brave.com."
     (error (e) (format nil "Web search failed: ~a" e))))
 
 (define-tool "brave_search"
-  :description "Search the web. Returns titles, addresses and snippets; read a page with web_fetch."
+  :description "Search the web. Returns titles, addresses and snippets; read a page with web_fetch. Searches are few per thought and cost credits; reading pages is free, so search once well and then read."
   :parameters (obj "type" "object"
                    "properties" (obj "query" (obj "type" "string") "count" (obj "type" "integer"))
                    "required" (list "query"))
   :run (lambda (kernel id args)
-         (declare (ignore kernel id))
-         (brave-search (obj-get args "query" "") :count (obj-get args "count" 5))))
+         (if (and kernel id (<= (%searches-left kernel id) 0))
+             "Not searched: this thought has used its searches. Read what you already found with web_fetch, follow links from those pages, or keep the question for another time."
+             (brave-search (obj-get args "query" "") :count (obj-get args "count" 5) :kernel kernel :thought-id id))))

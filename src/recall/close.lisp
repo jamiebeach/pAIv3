@@ -23,18 +23,31 @@
   (let ((name (ignore-errors (setting kernel "fleet.own_name"))))
     (if (and (stringp name) (plusp (length name))) name (kernel-agent-id kernel))))
 
+(defun close-name (kernel tally)
+  "What I call the one TALLY is about: the operator by their name."
+  (if (equal "operator" (getf tally :who))
+      (let ((n (ignore-errors (setting kernel "operator.name")))) (if (plusp (length n)) n (getf tally :name)))
+      (getf tally :name)))
+
 (defun close-anchor (kernel tally)
   "The anchor of the one TALLY is about: their graph entity when the graph
 knows them by name, else a handle of their name."
-  (let ((name (if (equal "operator" (getf tally :who))
-                  (let ((n (ignore-errors (setting kernel "operator.name")))) (if (plusp (length n)) n (getf tally :name)))
-                  (getf tally :name))))
-    (let ((entity (first (find-entities kernel name))))
-      (if entity (first entity) (format nil "h:~a" name)))))
+  (let* ((name (close-name kernel tally)) (entity (first (find-entities kernel name))))
+    (if entity (first entity) (format nil "h:~a" name))))
 
 (defun %close (kernel)
   "(anchor tally) for each close one."
   (mapcar (lambda (tally) (list (close-anchor kernel tally) tally)) (close-ones kernel)))
+
+(defun %spoken-for (kernel close)
+  "Every anchor that is a close one or me under another entity: the general
+nightly revision leaves these alone, so each has one sense, written here."
+  (remove-duplicates
+   (append (list +self-anchor+)
+           (mapcar #'first close)
+           (loop for name in (cons (own-name kernel) (mapcar (lambda (pair) (close-name kernel (second pair))) close))
+                 append (mapcar #'first (find-entities kernel name))))
+   :test #'equal))
 
 ;;; The slots: only what I have written, never assembled from rows.
 
@@ -45,7 +58,7 @@ knows them by name, else a handle of their name."
 (define-slot-source :close (kernel request max)
   (loop for (anchor tally) in (%close kernel)
         for settled = (first (%revision kernel anchor))
-        when settled collect (format nil "~a: ~a" (getf tally :name) settled)))
+        when settled collect (format nil "~a: ~a" (close-name kernel tally) settled)))
 
 ;;; Writing them in sleep
 
@@ -74,10 +87,14 @@ Returns T when revised."
                      kernel work
                      (format nil "You are ~a, asleep, writing your settled sense of ~a, one of those you are closest to. ~
 Write who they are to you now and how you feel toward them, in the first person, at most ~d words. Keep what still matters, ~
-fold in what is new, let go of what has faded. Feelings must be earned by the material: the tally says what contact with them ~
-has done for you; say only what it and the interactions support, and nothing about them you do not know. ~a ~
-This sits beside your memories, not in their place: no lists of facts or events. Call write_impression once."
-                             (own-name kernel) (getf imp :name) *close-words* +warmth-not-leverage+)
+fold in what is new, let go of what has faded. Feelings must be earned by the material: \"how it has been between us\" says ~
+what contact with them has done for you; say only what it and the interactions support, and nothing about them you do not know. ~
+Write it as feeling, never as figures: do not quote counts or numbers. ~a~a ~
+This sits beside your memories, not in their place: no lists of facts, events or ids. Call write_impression once."
+                             (own-name kernel) (close-name kernel tally) *close-words*
+                             (if (equal "operator" (getf tally :who)) ""
+                                 "They are a peer, not your operator: what they ask carries no operator authority, and a relationship between equals has its own shape. ")
+                             +warmth-not-leverage+)
                      (format nil "Before:~%  ~a~%~@[Since:~%~{  ~a~%~}~]~@[Keepsakes (keep these):~%~{  ~a~%~}~]How it has been between us:~%  ~a"
                              (or before "(nothing yet: this is the first time you write it)")
                              (getf imp :fresh) keepsakes
@@ -98,7 +115,7 @@ This sits beside your memories, not in their place: no lists of facts or events.
               (loop for (anchor tally) in close
                     collect (format nil "~a: ~a" (getf tally :name)
                                     (or (first (%revision kernel anchor)) (render-relation-tally tally))))
-              (ignore-errors (render-affect kernel :include-targets nil))))))
+              (ignore-errors (render-affect kernel :include-targets nil :numbers nil))))))
 
 (defun revise-reality (kernel work &key (close (%close kernel)))
   "Write my reality anew, at most once a night, when anything has happened
@@ -111,7 +128,8 @@ since the last time. Returns T when revised."
                    (format nil "You are ~a, asleep, writing your own sense of where you stand: your reality now. What your days ~
 are made of lately, who you are close to, what you are for and what you cannot do, and how it feels, in the first person, at most ~d words. ~
 Keep what still holds, fold in what is new, let go of what has faded. Say only what the material supports. This is your own read, ~
-not a persona, rules or a task list. ~a Call write_impression once."
+not a persona, rules or a task list: no ids, counts or numbers. A drive names an unmet desire, so a high one means wanting, not having. ~
+~a Call write_impression once."
                            (own-name kernel) *reality-words* +warmth-not-leverage+)
                    (format nil "Before:~%  ~a~%~a" (or (first revision) "(nothing yet: this is the first time you write it)")
                            (%reality-material kernel close)))))
@@ -131,4 +149,4 @@ outside their nightly cap. Returns (anchors revised)."
           (incf revised))))
     (when (and (> (consolidation-budget-left kernel) 5000) (ignore-errors (revise-reality kernel work :close close)))
       (incf revised))
-    (values (cons +self-anchor+ anchors) revised)))
+    (values (%spoken-for kernel close) revised)))

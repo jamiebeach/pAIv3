@@ -322,6 +322,9 @@ deliver it if so. Returns the decision."
 
 (pushnew 'notify-periodic *periodic-hooks*)
 
+;; Free time waits out the operator's quiet hours (concerns.lisp).
+(setf pai-v3.mind::*quiet-hours-p* (lambda (kernel) (%quiet-now-p kernel (notify-policy kernel))))
+
 ;;; Reaching out: the connection drive rises while the operator is quiet. Past
 ;;; a threshold, outside quiet hours and within a daily cap, it starts a
 ;;; thought of its own that may reach out, or let it be. Off unless enabled.
