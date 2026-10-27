@@ -1,6 +1,8 @@
 (defpackage #:pai-v3.mind
   (:use #:cl #:pai-v3.kernel)
   (:export
+   ;; relations
+   #:relation-tally #:render-relation-tally #:close-ones #:*relation-days*
    ;; tokens
    #:estimate-tokens #:*chars-per-token*
    ;; dialogue

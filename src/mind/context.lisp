@@ -51,6 +51,8 @@ render audited content safe for every audience. Unreviewed sources default to op
   ;; Slowest-changing first, so consecutive thoughts share as long a prefix as
   ;; possible; what changes from minute to minute (time, mood, now) last.
   :slots ((:myself    :max 120   :source :myself    :title "About me, lately")
+          (:reality   :max 200   :source :reality   :title "Where I stand")
+          (:close     :max 500   :source :close     :title "Those I am close to")
           (:summary   :max 3000  :source :summary   :title "Earlier, in summary")
           (:conclusions :max 1200 :source :conclusions :title "What I have concluded lately (newer than the summary)")
           (:carried   :max 700   :source :carried   :title "Things I am carrying for the operator")
@@ -69,6 +71,8 @@ render audited content safe for every audience. Unreviewed sources default to op
 
 (define-context-profile "private-cognition"
   :slots ((:myself    :max 120   :source :myself    :title "About me, lately")
+          (:reality   :max 200   :source :reality   :title "Where I stand")
+          (:close     :max 500   :source :close     :title "Those I am close to")
           (:summary   :max 2000  :source :summary   :title "Earlier, in summary")
           (:conclusions :max 800 :source :conclusions :title "What I have concluded lately (newer than the summary)")
           (:carried   :max 700   :source :carried   :title "Things I am carrying for the operator")

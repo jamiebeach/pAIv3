@@ -34,6 +34,7 @@
                  (:file "open-items")
                  (:file "affect")
                  (:file "appraisal")
+                 (:file "relations")
                  (:file "injection")
                  (:file "schedule")
                  (:file "summary")
@@ -112,7 +113,8 @@
                  (:file "impressions")
                  (:file "recall")
                  (:file "intentions")
-                 (:file "sleep")))
+                 (:file "sleep")
+                 (:file "close")))
    (:module "src/cli"
     :serial t
     :components ((:file "main")))))

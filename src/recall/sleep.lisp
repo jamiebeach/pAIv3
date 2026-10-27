@@ -65,9 +65,12 @@ Say only what the material supports; a story stays a story. Call write_impressio
           t)))))
 
 (define-consolidation "impressions" (kernel work)
+  ;; Close ones and my reality first, outside the cap (close.lisp); their
+  ;; impressions are written only there, with what they need.
+  (multiple-value-bind (close close-revised) (revise-close-and-reality kernel work)
   (let ((looked 0) (revised 0))
-    (dolist (anchor (recently-recalled kernel))
+    (dolist (anchor (set-difference (recently-recalled kernel) close :test #'equal))
       (when (and (< revised *revisions-per-night*) (> (consolidation-budget-left kernel) 5000))
         (incf looked)
         (when (ignore-errors (revise-in-sleep kernel anchor work)) (incf revised))))
-    (obj "looked" looked "revised" revised)))
+    (obj "looked" looked "revised" revised "close" (length close) "close_revised" close-revised))))
