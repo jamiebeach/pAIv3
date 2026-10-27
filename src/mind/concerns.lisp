@@ -58,12 +58,8 @@
   :type :boolean :default t :group "Quiet thinking"
   :description "After the operator goes quiet, review the new conversation for things worth looking into.")
 (define-setting "quiet.free_time_minutes"
-  :type :integer :min 0 :max 10080 :default 240 :group "Quiet thinking"
-  :description "About this often, quiet time gives the agent free time of its own: following an interest in the world, searching, reading, learning or making, never its own code or failures. Taken ahead of concerns and work, but not in the operator's quiet hours; 0 never.")
-
-(defvar *quiet-hours-p* nil
-  "(lambda (kernel)) -> true in the operator's quiet hours, or NIL when no
-layer knows them (notify.lisp sets it). Free time waits them out.")
+  :type :integer :min 0 :max 10080 :default 120 :group "Quiet thinking"
+  :description "About this often, quiet time gives the agent free time of its own: following an interest in the world, searching, reading, learning or making, never its own code or failures. Taken ahead of concerns and work; 0 never.")
 (define-setting "quiet.repairs_per_day"
   :type :integer :min 0 :max 100 :default 4 :group "Quiet thinking"
   :description "Most failures looked at at once in a day; past it, repair concerns wait their turn with the others.")
@@ -431,7 +427,7 @@ once, ahead of the operator's grace period: its evidence is freshest now."
   "Free time, about every quiet.free_time_minutes: the agent's own, for the
 world rather than itself, even with concerns and work open."
   (let ((minutes (setting kernel "quiet.free_time_minutes")))
-    (when (and (plusp minutes) (not (and *quiet-hours-p* (ignore-errors (funcall *quiet-hours-p* kernel)))))
+    (when (plusp minutes)
       (let ((last (second (%quiet-mark kernel "free"))))
         (when (or (null last) (>= (%seconds-since last) (* 60 minutes)))
           (let* ((seeds (%rumination-seeds kernel))
