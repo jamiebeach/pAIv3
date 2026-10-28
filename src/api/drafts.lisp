@@ -15,12 +15,15 @@
            ("thread_id" :string :optional) ("reply_to" :string :optional) ("why" :string :optional)))
 (define-event-type "fleet.draft.settled"
   :schema (("draft_id" :string) ("fate" :string) ("note" :string :optional)))
+(define-event-type "fleet.draft.retried"
+  :schema (("draft_id" :string) ("note" :string :optional)))
 
 (define-projection "fleet_drafts"
   :kind :inline
-  :consumes ("fleet.draft.made" "fleet.draft.settled"
+  :version 2
+  :consumes ("fleet.draft.made" "fleet.draft.settled" "fleet.draft.retried"
              "thought.requested" "thought.ended" "thought.failed" "thought.parked")
-  :tables ("CREATE TABLE IF NOT EXISTS fleet_drafts (draft_id TEXT PRIMARY KEY, thought_id INTEGER NOT NULL, peer_id TEXT NOT NULL, thread_id TEXT, reply_to TEXT, intent TEXT NOT NULL, text TEXT NOT NULL, why TEXT, state TEXT NOT NULL DEFAULT 'open', fate TEXT, note TEXT, created_at TEXT NOT NULL, source_event_id INTEGER NOT NULL UNIQUE, speaking_thought_id INTEGER)"
+  :tables ("CREATE TABLE IF NOT EXISTS fleet_drafts (draft_id TEXT PRIMARY KEY, thought_id INTEGER NOT NULL, peer_id TEXT NOT NULL, thread_id TEXT, reply_to TEXT, intent TEXT NOT NULL, text TEXT NOT NULL, why TEXT, state TEXT NOT NULL DEFAULT 'open', fate TEXT, note TEXT, created_at TEXT NOT NULL, source_event_id INTEGER NOT NULL UNIQUE, speaking_thought_id INTEGER, retries INTEGER NOT NULL DEFAULT 0)"
            "CREATE INDEX IF NOT EXISTS fleet_drafts_state_idx ON fleet_drafts(state,created_at)"
            "CREATE INDEX IF NOT EXISTS fleet_drafts_thought_idx ON fleet_drafts(thought_id)"
            "CREATE INDEX IF NOT EXISTS fleet_drafts_speaking_idx ON fleet_drafts(speaking_thought_id)")
@@ -43,6 +46,10 @@
            (sql-exec db "UPDATE fleet_drafts SET state='ready' WHERE thought_id=?1 AND state='open'" (f "thought_id"))
            (sql-exec db "UPDATE fleet_drafts SET state='unresolved',note='Speaking thought ended without settling the draft' WHERE speaking_thought_id=?1 AND state='speaking'"
                      (f "thought_id")))
+          ((string= type "fleet.draft.retried")
+           ;; Back to ready: the next speak-drafts gives it a new speaking thought.
+           (sql-exec db "UPDATE fleet_drafts SET state='ready',speaking_thought_id=NULL,retries=retries+1,note=?2 WHERE draft_id=?1 AND state='unresolved'"
+                     (f "draft_id") (f "note")))
           (t
            (sql-exec db "UPDATE fleet_drafts SET state='settled',fate=?2,note=?3 WHERE draft_id=?1" (f "draft_id") (f "fate") (f "note"))))))))
 
@@ -309,9 +316,30 @@
                             "note" (let ((note (obj-get result "note")))
                                      (and (stringp note) (subseq note 0 (min 300 (length note)))))))))))))
 
+(defparameter *draft-retry-hours* 6
+  "An unresolved draft younger than this is given one more speaking thought.")
+(defparameter *draft-abandon-hours* 24
+  "An unresolved draft older than this is settled as dropped (beads v3-zjq, v3-pgv).")
+
+(defun %unresolved-drafts (kernel)
+  "Unresolved drafts get one more speaking thought while fresh (a publish that
+aborted because the route moved, or a speaking thought that ended without
+settling); after that, and once stale, they are settled as dropped, so none
+is stranded for good."
+  (let ((db (kernel-db kernel)) (now (now)))
+    (loop for (id retries created) in (sql-rows db "SELECT draft_id,retries,created_at FROM fleet_drafts WHERE state=?1 ORDER BY created_at LIMIT 20" "unresolved")
+          for hours = (/ (- now (or (ignore-errors (parse-iso8601 created)) now)) 3600)
+          do (cond ((and (zerop retries) (< hours *draft-retry-hours*))
+                    (append! kernel "fleet.draft.retried" (obj "draft_id" id "note" "retried once: it was left unresolved")))
+                   ((or (plusp retries) (>= hours *draft-abandon-hours*))
+                    (append! kernel "fleet.draft.settled"
+                             (obj "draft_id" id "fate" "dropped"
+                                  "note" (if (plusp retries) "dropped: still unresolved after a retry" "dropped: unresolved past a day"))))))))
+
 (defun speak-drafts (kernel)
   "Dispatch ready drafts and resume interrupted scheduling through the one work queue."
   (bt:with-recursive-lock-held ((pai-v3.kernel::kernel-lock kernel))
+    (%unresolved-drafts kernel)
     (let ((n 0) (db (kernel-db kernel)))
       (loop for (draft-id thought-id peer-id thread reply intent text source)
               in (sql-rows db

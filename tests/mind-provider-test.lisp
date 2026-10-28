@@ -132,7 +132,14 @@
                                             (declare (ignore args))
                                             (error "connection refused")))))
         (is (eq :transient (class-of-call (fake 200 nil :chunks (list partial died)) t))
-            "mid-stream provider error")))))
+            "mid-stream provider error")
+        ;; Bead v3-efb: a host not found just now is the network, not configuration.
+        (is (eq :transient (class-of-call (lambda (&rest args) (declare (ignore args))
+                                            (error 'egress-refused :transient t :reason "openrouter.ai could not be found."))))
+            "a failed lookup is retried")
+        (is (eq :source (class-of-call (lambda (&rest args) (declare (ignore args))
+                                         (error 'egress-refused :reason "no secret named openrouter"))))
+            "a refusal by rule is not")))))
 
 (deftest mid-stream-failure-keeps-what-was-received
   (with-temp-kernel (k)

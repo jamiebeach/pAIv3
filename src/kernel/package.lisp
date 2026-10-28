@@ -2,7 +2,7 @@
   (:use #:cl)
   (:export
    ;; sqlite
-   #:http-request #:check-outbound-url #:egress-refused #:egress-reason #:*egress-guard*
+   #:http-request #:check-outbound-url #:egress-refused #:egress-reason #:egress-transient-p #:*egress-guard*
    #:db-open #:db-close #:db-rekey #:db-backup #:store-locked #:sql-exec #:sql-rows #:sql-row #:sql-last-insert-rowid #:sql-value
    #:with-transaction #:with-savepoint #:sqlite-error #:sqlite-error-code
    #:*connection-hooks* #:db-handle

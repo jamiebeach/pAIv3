@@ -19,7 +19,10 @@
 ;;;   ("Authorization" . (:secret "openrouter" "Bearer ~a"))
 
 (define-condition egress-refused (error)
-  ((reason :initarg :reason :reader egress-reason))
+  ((reason :initarg :reason :reader egress-reason)
+   ;; A host that could not be looked up may be found a moment later (a DNS
+   ;; or network blip): refused for now, not refused by rule (bead v3-efb).
+   (transient :initarg :transient :initform nil :reader egress-transient-p))
   (:report (lambda (c s) (write-string (egress-reason c) s))))
 
 (defun %refuse (fmt &rest args) (error 'egress-refused :reason (apply #'format nil fmt args)))
@@ -55,7 +58,7 @@ Installed by the trust module; signals EGRESS-REFUSED.")
         (%refuse "~a is on a private network; only the public web is reachable." host))
       (let ((addresses (handler-case
                            (sb-bsd-sockets:host-ent-addresses (sb-bsd-sockets:get-host-by-name host))
-                         (error () (%refuse "~a could not be found." host)))))
+                         (error () (error 'egress-refused :transient t :reason (format nil "~a could not be found." host))))))
         (when (some #'%private-octets-p addresses)
           (%refuse "~a is on a private network; only the public web is reachable." host))))
     (string-downcase host)))

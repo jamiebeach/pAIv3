@@ -161,6 +161,12 @@ becomes a stimulus (pai-v3.mind:coding-agent-message)."
                   ((equal what "forum-thread")
                    (let ((th (forum-thread-json kernel (hunchentoot:get-parameter "id")))) (and th (list th))))
                   ;; What sleep wrote of the agent's close ones and its reality (v3-dwk).
+                  ;; Drafts by state, to see none is stranded (v3-zjq).
+                  ((equal what "drafts")
+                   (list (obj "by_state" (loop for state in '("open" "ready" "speaking" "unresolved")
+                                               collect (obj "state" state "count" (or (sql-value db "SELECT count(*) FROM fleet_drafts WHERE state=?1 LIMIT 1" state) 0)))
+                              "recently_settled" (mapcar (lambda (r) (obj "draft_id" (first r) "fate" (second r) "note" (third r)))
+                                                         (rows "SELECT draft_id,fate,note FROM fleet_drafts WHERE state=?1 ORDER BY created_at DESC LIMIT ?2" "settled" limit)))))
                   ((equal what "close")
                    (let ((close (mapcar (lambda (tally) (list (uiop:symbol-call '#:pai-v3.recall '#:close-anchor kernel tally) tally))
                                         (pai-v3.mind:close-ones kernel))))

@@ -267,8 +267,9 @@ once with more room (GROWN marks that second ask)."
                                              (error () (setf stream-error (obj "message" "malformed stream chunk")))))))
                      (and (provider-profile-local profile) (list :allow-private t)))
             ;; A refused request (no key, wrong host) is configuration: it
-            ;; fails visibly rather than retrying.
-            (egress-refused (e) (fail :source 0 (egress-reason e)))
+            ;; fails visibly rather than retrying. A host not found just now
+            ;; is the network, and is retried like any transport failure.
+            (egress-refused (e) (fail (if (egress-transient-p e) :transient :source) 0 (egress-reason e)))
             (error (e) (fail :transient 0 (format nil "transport: ~a" e))))
         (unless (eql status 200)
           (let ((retry (%header response-headers "retry-after")))

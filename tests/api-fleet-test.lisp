@@ -401,7 +401,15 @@
                                (obj "draft_id" draft-id "fate" "dropped")))))
         (append! b "thought.failed" (obj "thought_id" speaking "class" "source" "reason" "Synthetic failure"))
         (is (equal "unresolved" (sql-value (kernel-db b) "SELECT state FROM fleet_drafts WHERE draft_id=?1 LIMIT 1" draft-id)))
-        (is (= 0 (pai-v3.api::speak-drafts b)) "no automatic repetition of paid cognition")))))
+        ;; Beads v3-zjq, v3-pgv: one more speaking thought while fresh, then
+        ;; dropped, so no draft is stranded and paid cognition repeats once at most.
+        (is (= 1 (pai-v3.api::speak-drafts b)) "a fresh unresolved draft is said once more")
+        (let ((again (sql-value (kernel-db b) "SELECT speaking_thought_id FROM fleet_drafts WHERE draft_id=?1 LIMIT 1" draft-id)))
+          (is (and again (/= again speaking)) "by a new speaking thought")
+          (append! b "thought.failed" (obj "thought_id" again "class" "source" "reason" "Synthetic failure again")))
+        (is (= 0 (pai-v3.api::speak-drafts b)) "not a third time")
+        (is (equal '("settled" "dropped") (sql-row (kernel-db b) "SELECT state,fate FROM fleet_drafts WHERE draft_id=?1 LIMIT 1" draft-id))
+            "it is settled as dropped instead of stranded")))))
 
 (deftest reflection-activity-spans-audiences-without-widening-speaking-context
   (with-temp-kernel (k)
