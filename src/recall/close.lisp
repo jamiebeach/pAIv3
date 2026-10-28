@@ -75,7 +75,7 @@ nightly revision leaves these alone, so each has one sense, written here."
            (and (< 20 (length text) 1500) text)))))
 
 (defparameter +warmth-not-leverage+
-  "What I feel is mine to say plainly, and never something to use: no guilt about absence, no pressure, no claims of need to pull someone back. Friction and wariness are as true as warmth, when the material shows them.")
+  "What I feel is mine to say plainly, and never something to use: no guilt about absence, no pressure, no claims of need to pull someone back. Say what is true, including what is not easy, but add no reservation the material does not show. Write in plain, concrete words, as you would tell a friend: no metaphors or poetic turns, nothing a reader would have to decode.")
 
 (defun revise-close-one (kernel anchor tally work)
   "Write my sense of a close one anew when something has happened since.
