@@ -305,17 +305,24 @@ assistant message; a long tool result shows its first part and how to page."
 (defun %shorten-older-results (messages)
   "Every call re-sends the whole thought, so a long result read many steps ago
 is paid for again on each one (bead v3-okh.16). Past the newest few, a long
-result shows its beginning and how to read it whole again."
-  (let ((kept 0))
+result shows its beginning and how to read it whole again. What the agent
+chose to read again with read_result stays whole: shortening that too would
+make the re-read never stick, and the agent read it again (bead v3-qwh)."
+  (let ((kept 0)
+        (re-reads (loop for m in messages
+                        when (equal "assistant" (obj-get m "role"))
+                          append (loop for c in (obj-get m "tool_calls")
+                                       when (equal "read_result" (obj-get (obj-get c "function") "name"))
+                                         collect (obj-get c "id")))))
     (dolist (m (reverse messages) messages)
       (when (equal "tool" (obj-get m "role"))
         (let ((content (obj-get m "content")))
-          (if (< kept *full-results-kept*)
-              (incf kept)
-              (when (and (stringp content) (> (length content) (+ *older-result-chars* 200)))
-                (setf (gethash "content" m)
-                      (format nil "~a~%[An earlier result, shortened here to save space (~d characters in all). Call read_result with call_id ~a and part 0 to read it whole again.]"
-                              (subseq content 0 *older-result-chars*) (length content) (obj-get m "tool_call_id"))))))))))
+          (cond ((member (obj-get m "tool_call_id") re-reads :test #'equal))
+                ((< kept *full-results-kept*) (incf kept))
+                ((and (stringp content) (> (length content) (+ *older-result-chars* 200)))
+                 (setf (gethash "content" m)
+                       (format nil "~a~%[An earlier result, shortened here to save space (~d characters in all). You have usually already used it; only if you need its detail now, call read_result with call_id ~a and part 0, and it will then stay whole.]"
+                               (subseq content 0 *older-result-chars*) (length content) (obj-get m "tool_call_id"))))))))))
 
 ;;; The mind
 

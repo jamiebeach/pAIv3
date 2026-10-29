@@ -184,7 +184,18 @@
         (is (= 5000 (length (obj-get (third results) "content"))) "the newest four stay whole")
         (is (= 5000 (length (obj-get (sixth results) "content"))))
         (is (= 5000 (length (funcall (pai-v3.mind::tool-run (gethash "read_result" pai-v3.mind::*tools*)) k id (obj "call_id" "c0" "part" 0))))
-            "read_result still gives the whole of it")))))
+            "read_result still gives the whole of it"))
+      ;; Bead v3-qwh: a re-read stays whole however many results follow it.
+      (pai-v3.mind::%record-text k id "tool_call" "" "tool" "read_result" "call_id" "r0" "arguments" "{\"call_id\":\"c0\",\"part\":0}")
+      (pai-v3.mind::%record-text k id "tool_result" (make-string 5000 :initial-element #\a) "tool" "read_result" "call_id" "r0")
+      (dotimes (i 5)
+        (pai-v3.mind::%record-text k id "tool_call" "" "tool" "source" "call_id" (format nil "d~d" i) "arguments" "{}")
+        (pai-v3.mind::%record-text k id "tool_result" (make-string 5000 :initial-element #\q) "tool" "source" "call_id" (format nil "d~d" i)))
+      (let* ((messages (pai-v3.mind::%replay-messages k id))
+             (re-read (find "r0" messages :key (lambda (m) (obj-get m "tool_call_id")) :test #'equal))
+             (other (find "d0" messages :key (lambda (m) (obj-get m "tool_call_id")) :test #'equal)))
+        (is (= 5000 (length (obj-get re-read "content"))) "what was read again stays whole")
+        (is (search "usually already used it" (obj-get other "content")) "others are still shortened, and say so honestly")))))
 
 (deftest a-thought-thinks-from-the-same-frame-on-every-call
   ;; Bead v3-okh.16: the same opening messages each call, so a provider can
