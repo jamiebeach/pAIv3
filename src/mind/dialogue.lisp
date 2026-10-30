@@ -43,6 +43,16 @@
           speaker text))
 
 (defun %reduce-dialogue (db event)
+  ;; What the operator says on the crew forum is said to me too (bead v3-hej):
+  ;; it joins our conversation, marked as from the forum.
+  (when (string= (event-type event) "forum.posted")
+    (let ((p (event-payload event)))
+      (when (and (equal "operator" (obj-get p "author_id")) (not (eq t (obj-get p "migrated"))))
+        (let ((rendered (format nil "[~a forum] ~a: ~a" (%clock-label (event-at event)) (obj-get p "author_name")
+                                (let ((text (obj-get p "text"))) (if (> (length text) 2000) (concatenate 'string (subseq text 0 2000) "...") text)))))
+          (sql-exec db "INSERT INTO working_dialogue(event_id,audience,channel,speaker,kind,rendered,tokens,at,reply_to) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9)"
+                    (event-id event) "operator" "forum" (obj-get p "author_name") "turn" rendered (estimate-tokens rendered) (event-at event) nil))))
+    (return-from %reduce-dialogue nil))
   (let* ((p (event-payload event))
          (type (event-type event))
          (speaker (cond ((string= type "turn.received") (obj-get p "speaker"))
@@ -61,7 +71,8 @@
 
 (define-projection "working_dialogue"
   :kind :inline
-  :consumes ("turn.received" "reply.delivered" "notice.posted")
+  :version 2
+  :consumes ("turn.received" "reply.delivered" "notice.posted" "forum.posted")
   :tables ("CREATE TABLE IF NOT EXISTS working_dialogue (event_id INTEGER PRIMARY KEY, audience TEXT NOT NULL, channel TEXT NOT NULL, speaker TEXT NOT NULL, kind TEXT NOT NULL, rendered TEXT NOT NULL, tokens INTEGER NOT NULL, at TEXT NOT NULL, reply_to INTEGER)"
            "CREATE INDEX IF NOT EXISTS working_dialogue_audience_idx ON working_dialogue(audience,event_id)")
   :entity (lambda (e) (obj-get (event-payload e) "audience"))

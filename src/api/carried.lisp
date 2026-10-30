@@ -11,8 +11,7 @@
 ;;; hold due items back; they are looked at once the hours end.
 
 (defun %consideration-prompt (kernel item)
-  (declare (ignore kernel))
-  (pai-v3.mind::carried-consideration-prompt item))
+  (pai-v3.mind::carried-consideration-prompt item kernel))
 
 (defun consider-carried (kernel)
   "Look at items whose time has come. Returns how many were taken up."

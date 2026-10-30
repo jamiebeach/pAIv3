@@ -121,7 +121,14 @@ did, more than once) even with the clock slot saying otherwise."
          (text (format nil "It is ~a, ~a, in ~a (~a UTC). Conversation times are in this zone; other times say UTC."
                        (nth weekday '("Sunday" "Monday" "Tuesday" "Wednesday" "Thursday" "Friday" "Saturday"))
                        (local-slot (now) zone) name (subseq (local-slot (now) local-time:+utc-zone+) 11))))
-    (list (list text (estimate-tokens text)))))
+    (list (list (format nil "~a~%Coming days: ~{~a~^ / ~}" text
+                        (loop for d from 1 to 8
+                              collect (destructuring-bind (mi h day mo y wd) (%local (+ (now) (* d 86400)) zone)
+                                        (declare (ignore mi h y))
+                                        (format nil "~:[~;tomorrow ~]~a ~a ~d"
+                                                (= d 1) (nth wd '("Sun" "Mon" "Tue" "Wed" "Thu" "Fri" "Sat"))
+                                                (nth (1- mo) '("Jan" "Feb" "Mar" "Apr" "May" "Jun" "Jul" "Aug" "Sep" "Oct" "Nov" "Dec")) day))))
+                (+ 40 (estimate-tokens text))))))
 
 (defun local-to-universal (text zone)
   "Universal time of local wall time TEXT (YYYY-MM-DDTHH:MM[:SS], or with a
@@ -262,8 +269,42 @@ recorded) and its delivery appended in one transaction. Returns the count."
                                    :text (format nil "Reminder ~a (~a) failed to go off and will retry in an hour: ~a"
                                                  id (subseq text 0 (min 60 (length text))) why))))))))))
 
+(defun operator-said-since (kernel since &key (most 6))
+  "What the operator has said, in chat or on the forum, since ISO time SINCE:
+newest last, in their time, at most MOST lines."
+  (let ((rows (sql-rows (kernel-db kernel)
+                        "SELECT rendered,at FROM working_dialogue WHERE audience=?1 AND event_id>?2 AND kind=?3 ORDER BY event_id DESC LIMIT ?4"
+                        "operator" 0 "turn" 40)))
+    (reverse (loop for (text at) in rows
+                   for n from 1 to most
+                   while (string>= at since)
+                   collect (let ((line (localize-dialogue kernel text)))
+                             (if (> (length line) 400) (concatenate 'string (subseq line 0 400) "...") line))))))
+
+(defun premise-check (kernel created &key (what "This"))
+  "When CREATED (ISO) was, what the operator has said since, and the rule:
+a stored reminder or carried item states what was true when it was written,
+and only the conversation since can say whether it still holds (beads v3-hej,
+v3-hej.1)."
+  (let ((said (ignore-errors (operator-said-since kernel created))))
+    (format nil "~a was set ~a.~:[ The operator has not said anything since.~;~%What the operator has said since:~%~{  ~a~^~%~}~]~%~
+Before acting on it, check whether anything since changes it: a plan that changed, a day that moved, something already done or ~
+called off. If so, revise it, move it to a real date, or cancel or close it, rather than repeat it."
+            what (or (ignore-errors (local-stamp kernel created)) created) said said)))
+
+(defparameter *recheck-notify-after-hours* 6
+  "A one-off notify reminder set at least this long ago, after which the
+operator has spoken, is checked by a thought before it is sent.")
+
 (defun %fire-schedule (kernel id kind text mode audience cron timezone wake next-at)
-  (progn
+  (let ((created (sql-value (kernel-db kernel) "SELECT created_at FROM scheduled_items WHERE id=?1 LIMIT 1" id)))
+    ;; A one-off message written hours ago may rest on a plan that has since
+    ;; changed: when the operator has spoken since, a thought checks it first.
+    (when (and created (string= mode "notify") (string= kind "once") (equal audience "operator")
+               (>= (- (now) (parse-iso8601 created)) (* 3600 *recheck-notify-after-hours*))
+               (ignore-errors (operator-said-since kernel created :most 1)))
+      (setf mode "context" wake 1
+            text (format nil "This reminder was to be sent to the operator as written: \"~a\". Send it with notify_operator (topic reminder) only if it still holds; otherwise send what is true now, or nothing." text)))
         (let* ((zone (%zone kernel timezone))
                (scheduled (parse-iso8601 next-at))
                (slot (local-slot scheduled zone))
@@ -280,7 +321,8 @@ recorded) and its delivery appended in one transaction. Returns the count."
             ;; A reminder going off is something noticed; the claim above
             ;; already holds, so a crash here loses the thought, never repeats it.
             (when (eql wake 1)
-              (request-thought kernel "noticing" (format nil "It is ~a: ~a" slot text)
+              (request-thought kernel "noticing" (format nil "It is ~a: ~a~@[~%~%~a~]" slot text
+                                                         (and created (ignore-errors (premise-check kernel created :what "This reminder"))))
                                :audience audience :source-event-id (event-id fired)))))))
 
 ;;; The Coming up slot: what has just gone off (context mode), then what is next.
@@ -306,7 +348,7 @@ recorded) and its delivery appended in one transaction. Returns the count."
 ;;; The agent's tool
 
 (define-tool "schedule"
-  :description "Set, list or cancel reminders in the operator's time zone. action: add (text, and one of at: a local time like 2026-10-12T09:30, in: seconds from now, cron: five fields minute hour day month weekday; mode: notify sends the text as is, context keeps it in mind for my next turn; wake: also start a thought then; when omitted, context reminders wake and notify ones do not), list, or cancel (id)."
+  :description "Set, list or cancel reminders in the operator's time zone. Write any day in the text as a date with its weekday (Fri 2026-11-06), never a bare weekday, today or tomorrow: the text is read again later, when those words mean another day. action: add (text, and one of at: a local time like 2026-10-12T09:30, in: seconds from now, cron: five fields minute hour day month weekday; mode: notify sends the text as is, context keeps it in mind for my next turn; wake: also start a thought then; when omitted, context reminders wake and notify ones do not), list, or cancel (id)."
   :parameters (obj "type" "object"
                    "properties" (obj "action" (obj "type" "string" "enum" (list "add" "list" "cancel"))
                                      "text" (obj "type" "string") "at" (obj "type" "string")

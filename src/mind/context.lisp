@@ -67,7 +67,7 @@ render audited content safe for every audience. Unreviewed sources default to op
           (:stream    :max 600   :source :stream    :title "What I noticed between thoughts")
           (:restricted :max 200  :source :restricted :title "Not for this audience")
           (:state     :max 300   :source :state     :title "How I am")
-          (:clock     :max 80    :source :clock     :title "Now")))
+          (:clock     :max 160   :source :clock     :title "Now")))
 
 (define-context-profile "private-cognition"
   :slots ((:myself    :max 120   :source :myself    :title "About me, lately")
@@ -85,10 +85,10 @@ render audited content safe for every audience. Unreviewed sources default to op
           (:present   :max 300   :source :present   :title "The operator's day")
           (:stream    :max 600   :source :stream    :title "What I noticed between thoughts")
           (:state     :max 300   :source :state     :title "How I am")
-          (:clock     :max 80    :source :clock     :title "Now")))
+          (:clock     :max 160   :source :clock     :title "Now")))
 
 (define-context-profile "communication-review"
-  :slots ((:clock :max 80 :source :clock :title "Now")))
+  :slots ((:clock :max 160 :source :clock :title "Now")))
 ;; A candidate is the input to this review, not an invitation to retrieve or
 ;; reinterpret private tasks. Grants, route and images are in its explicit prompt.
 
