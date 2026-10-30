@@ -270,16 +270,23 @@ recorded) and its delivery appended in one transaction. Returns the count."
                                                  id (subseq text 0 (min 60 (length text))) why))))))))))
 
 (defun operator-said-since (kernel since &key (most 6))
-  "What the operator has said, in chat or on the forum, since ISO time SINCE:
-newest last, in their time, at most MOST lines."
-  (let ((rows (sql-rows (kernel-db kernel)
-                        "SELECT rendered,at FROM working_dialogue WHERE audience=?1 AND event_id>?2 AND kind=?3 ORDER BY event_id DESC LIMIT ?4"
-                        "operator" 0 "turn" 40)))
-    (reverse (loop for (text at) in rows
-                   for n from 1 to most
-                   while (string>= at since)
-                   collect (let ((line (localize-dialogue kernel text)))
-                             (if (> (length line) 400) (concatenate 'string (subseq line 0 400) "...") line))))))
+  "What the operator has said, in chat or on the crew forum, since ISO time
+SINCE: newest last, in their time, at most MOST lines."
+  (flet ((clip (line) (if (> (length line) 400) (concatenate 'string (subseq line 0 400) "...") line)))
+    (let* ((since-u (parse-iso8601 since))
+           (chat (loop for (text at) in (sql-rows (kernel-db kernel)
+                                                  "SELECT rendered,at FROM working_dialogue WHERE audience=?1 AND event_id>?2 AND kind=?3 ORDER BY event_id DESC LIMIT ?4"
+                                                  "operator" 0 "turn" 40)
+                       while (string>= at since)
+                       collect (cons (parse-iso8601 at) (clip (localize-dialogue kernel text)))))
+           ;; The forum is the api layer's; until it is loaded there is none.
+           (forum (ignore-errors
+                   (loop for (name text ts) in (sql-rows (kernel-db kernel)
+                                                         "SELECT author_name,text,ts FROM forum_messages WHERE author_id=?1 AND ts>=?2 ORDER BY ts DESC LIMIT ?3"
+                                                         "operator" (- since-u (encode-universal-time 0 0 0 1 1 1970 0)) most)
+                         for at = (+ ts (encode-universal-time 0 0 0 1 1 1970 0))
+                         collect (cons at (clip (format nil "[~a forum] ~a: ~a" (local-stamp kernel (iso8601 at)) name text)))))))
+      (mapcar #'cdr (last (sort (append chat forum) #'< :key #'car) most)))))
 
 (defun premise-check (kernel created &key (what "This"))
   "When CREATED (ISO) was, what the operator has said since, and the rule:

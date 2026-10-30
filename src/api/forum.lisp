@@ -863,3 +863,31 @@ way for a single peer whose thread now lives in the forum (bead v3-m9m)."
           (t (reply 404 (obj "error" "no such route")))))
     (board-error (e) (reply 400 (obj "error" (board-error-reason e))))
     (error (e) (reply 500 (obj "error" (princ-to-string e))))))
+
+;;; The forum in the operator's context: what the operator says on the forum
+;;; is said to me too, and what they answered matters as much as the answer
+;;; (bead v3-hej, operator request 2026-10-30). Each thread the operator posted
+;;; in lately, its latest posts from everyone, newest thread first. Kept out
+;;; of the chat transcript, which is the operator's conversation with me.
+
+(defparameter *forum-context-hours* 48 "How far back an operator post brings its thread into context.")
+(defparameter *forum-context-threads* 3)
+(defparameter *forum-context-posts* 5)
+
+(define-slot-source :forum (kernel request max)
+  (when (equal "operator" (getf request :audience))
+    (let ((since (- (unix-now) (* 3600 *forum-context-hours*))))
+      (loop for (thread-id) in (sql-rows (kernel-db kernel)
+                                         "SELECT thread_id,max(ts) FROM forum_messages WHERE author_id=?1 AND ts>=?2 GROUP BY thread_id ORDER BY 2 DESC LIMIT ?3"
+                                         "operator" since *forum-context-threads*)
+            for thread = (forum-thread kernel thread-id)
+            for posts = (reverse (sql-rows (kernel-db kernel)
+                                           "SELECT author_name,text,ts FROM forum_messages WHERE thread_id=?1 ORDER BY ts DESC LIMIT ?2"
+                                           thread-id *forum-context-posts*))
+            when posts
+              collect (format nil "\"~a\" (thread ~a):~{~%  ~a~}" (if thread (second thread) "a thread") thread-id
+                              (loop for (name text ts) in posts
+                                    collect (format nil "[~a] ~a: ~a"
+                                                    (or (ignore-errors (pai-v3.mind:local-stamp kernel (iso8601 (+ ts (encode-universal-time 0 0 0 1 1 1970 0))))) "")
+                                                    name (let ((one (substitute #\Space #\Newline (string-trim '(#\Space #\Newline) text))))
+                                                           (if (> (length one) 280) (concatenate 'string (subseq one 0 280) "...") one)))))))))

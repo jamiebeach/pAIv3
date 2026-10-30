@@ -15,20 +15,30 @@
   (receive-turn k :channel "web" :audience "operator" :speaker "Jamie" :text text
                   :origin (obj "principal_type" "operator")))
 
-(defun operator-posts (k text)
-  (append! k "forum.posted" (obj "msg_id" (format nil "m-~a" (random 1000000)) "thread_id" "t1"
-                                 "author_id" "operator" "author_name" "Jamie" "text" text "ts" 1)))
+(defun forum-ts () (- (now) (encode-universal-time 0 0 0 1 1 1970 0)))
 
-(deftest the-operators-forum-posts-are-said-to-me-too
+(defun operator-posts (k text)
+  (append! k "forum.posted" (obj "msg_id" (format nil "m-~a" (random 1000000)) "thread_id" "t1" "title" "Evening plans"
+                                 "author_id" "operator" "author_name" "Jamie" "text" text "ts" (forum-ts))))
+
+(deftest the-operators-forum-threads-are-in-context-but-not-in-the-chat
   (with-temp-kernel (k)
     (operator-says k "Heading out")
+    (append! k "forum.posted" (obj "msg_id" "m-peer" "thread_id" "t1" "title" "Evening plans" "author_id" "angel-id"
+                                   "author_name" "Angel" "text" "Good luck at pickleball tonight!" "ts" (forum-ts)))
     (operator-posts k "Stuck in traffic, no pickleball tonight")
-    (append! k "forum.posted" (obj "msg_id" "m-peer" "thread_id" "t1" "author_id" "angel-id"
-                                   "author_name" "Angel" "text" "a peer post" "ts" 2))
-    (let ((lines (mapcar #'dialogue-row-text (recent-dialogue k "operator"))))
-      (is (find-if (lambda (l) (search "forum] Jamie: Stuck in traffic, no pickleball tonight" l)) lines)
-          "the operator's forum post is in our conversation, marked as from the forum")
-      (is (not (find-if (lambda (l) (search "a peer post" l)) lines)) "a peer's post is not"))))
+    (append! k "forum.posted" (obj "msg_id" "m-other" "thread_id" "t2" "title" "Peers only" "author_id" "aria-id"
+                                   "author_name" "Aria" "text" "a thread the operator is not in" "ts" (forum-ts)))
+    (is (not (find-if (lambda (r) (search "no pickleball" (dialogue-row-text r))) (recent-dialogue k "operator")))
+        "the chat transcript is the conversation with me, not the forum")
+    (let ((forum (format nil "~{~a~%~}" (funcall (gethash :forum pai-v3.mind::*slot-sources*) k '(:audience "operator") 900))))
+      (is (search "Evening plans" forum) "a thread the operator posted in is in context")
+      (is (search "Angel: Good luck at pickleball tonight!" forum) "with what they were answering")
+      (is (search "Jamie: Stuck in traffic, no pickleball tonight" forum))
+      (is (< (search "Angel:" forum) (search "Jamie:" forum)) "in the order it was said")
+      (is (not (search "not in" forum)) "threads the operator is not in stay out"))
+    (is (null (funcall (gethash :forum pai-v3.mind::*slot-sources*) k '(:audience "peer:angel") 900))
+        "and only for the operator")))
 
 (deftest a-carried-item-that-comes-up-is-checked-against-what-was-said-since
   (with-temp-kernel (k)
