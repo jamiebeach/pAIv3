@@ -96,6 +96,7 @@
   .badge.private { color: #e0a84f; border-color: #e0a84f; }
   .badge.guests { color: #9fa8ff; border-color: #9fa8ff; }
   .badge.relayed { color: #ff9f6b; border-color: #ff9f6b; font-weight: 600; }
+  .badge.pinned { color: #f5c542; border-color: #f5c542; }
   .toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 0 0 14px; }
   .toolbar button, .chip { font: inherit; font-size: 13px; padding: 4px 10px; border: 1px solid var(--line); background: var(--panel); color: var(--fg); border-radius: 6px; cursor: pointer; }
   .access { border: 1px solid var(--line); border-radius: 8px; background: var(--panel); padding: 10px 14px; margin: 0 0 14px; font-size: 13px; }
@@ -200,6 +201,27 @@
              viewers: function () { return boxes.filter(function (b) { return b.box.checked; }).map(function (b) { return b.id; }); } };
   }
 
+  // A picture as a data URL no wider or taller than 1600px, so phone photos fit.
+  function shrink(file) {
+    return new Promise(function (resolve, reject) {
+      var reader = new FileReader();
+      reader.onerror = function () { reject(new Error('could not read ' + file.name)); };
+      reader.onload = function () {
+        var img = new Image();
+        img.onerror = function () { reject(new Error(file.name + ' is not a picture')); };
+        img.onload = function () {
+          var scale = Math.min(1, 1600 / Math.max(img.width, img.height));
+          var c = document.createElement('canvas');
+          c.width = Math.round(img.width * scale); c.height = Math.round(img.height * scale);
+          c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+          resolve(c.toDataURL('image/jpeg', 0.85));
+        };
+        img.src = reader.result;
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
   function composer(threadId, onDone) {
     var title = threadId ? null : el('input', { type: 'text', placeholder: 'Title', maxlength: '240' });
     var text = el('textarea', { placeholder: threadId ? 'Write a reply…' : 'Write a post…', maxlength: '4000' });
@@ -208,16 +230,28 @@
     var access = threadId ? null : accessPicker('crew', []);
     var postBtn = el('button', { type: 'button', class: 'btn', text: threadId ? 'Reply' : 'Post' });
     var emoji = el('button', { type: 'button', class: 'emoji-btn', text: '😊', title: 'Insert an emoji', 'aria-label': 'Insert an emoji' });
+    var pictures = [], picked = el('span', { class: 'status' });
+    var fileInput = el('input', { type: 'file', accept: 'image/*', multiple: 'multiple', style: 'display:none' });
+    var attach = el('button', { type: 'button', class: 'emoji-btn', text: '📎', title: 'Attach up to three pictures', 'aria-label': 'Attach pictures' });
+    attach.onclick = function () { fileInput.click(); };
+    fileInput.onchange = function () {
+      var files = Array.prototype.slice.call(fileInput.files || [], 0, 3);
+      picked.textContent = 'Preparing…';
+      Promise.all(files.map(shrink)).then(function (urls) {
+        pictures = urls; picked.textContent = urls.length ? urls.length + ' picture' + (urls.length === 1 ? '' : 's') + ' attached' : '';
+      }).catch(function (e) { pictures = []; picked.textContent = 'Not attached: ' + e.message; });
+      fileInput.value = '';
+    };
     emoji.onclick = function () { window.paiEmoji.open(emoji, function (e) { window.paiEmoji.insertInto(text, e); }); };
     var form = el('div', { class: 'composer' }, [title, text, tell.node, access ? access.node : null,
-                                                 el('div', { class: 'row' }, [replyNote, status, emoji, postBtn])]);
+                                                 el('div', { class: 'row' }, [replyNote, status, picked, fileInput, attach, emoji, postBtn])]);
     text.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' && (ev.ctrlKey || ev.metaKey)) postBtn.click(); });
     postBtn.onclick = function () {
       postBtn.disabled = true; status.textContent = 'Posting…';
       send('/api/forum/post', { thread_id: threadId || null, title: title ? title.value : null, text: text.value,
-                                reply_to: replyTo, quiet_for: tell.quiet(),
+                                reply_to: replyTo, quiet_for: tell.quiet(), images: pictures,
                                 access: access ? access.access() : null, viewers: access ? access.viewers() : null })
-        .then(function (r) { text.value = ''; replyTo = null; replyNote.textContent = ''; status.textContent = 'Posted.'; postBtn.disabled = false; onDone(r); })
+        .then(function (r) { text.value = ''; replyTo = null; replyNote.textContent = ''; pictures = []; picked.textContent = ''; status.textContent = 'Posted.'; postBtn.disabled = false; onDone(r); })
         .catch(function (e) { status.textContent = 'Not posted: ' + e.message; postBtn.disabled = false; });
     };
     form.replyTo = function (msgId, n, author) {
@@ -262,7 +296,8 @@
   }
 
   function badges(t) {
-    return [el('span', { class: 'badge ' + (t.status === 'open' ? 'open' : ''), text: t.status }),
+    return [t.pinned === true ? el('span', { class: 'badge pinned', text: '📌 pinned' }) : null,
+            el('span', { class: 'badge ' + (t.status === 'open' ? 'open' : ''), text: t.status }),
             t.access === 'private' ? el('span', { class: 'badge private', text: 'private' }) :
             t.access === 'guests' ? el('span', { class: 'badge guests', text: 'guests' }) : null,
             t.relayed === true ? el('span', { class: 'badge relayed', text: 'relayed outside', title: 'Copies of this thread leave the household through the relay' }) : null];
@@ -346,6 +381,8 @@
       // Controls: resolve or reopen, and who may read it.
       var toggle = el('button', { type: 'button', text: t.status === 'open' ? 'Resolve' : 'Reopen' });
       toggle.onclick = function () { send('/api/forum/thread', { thread_id: id, status: t.status === 'open' ? 'resolved' : 'open' }).then(load).catch(function (e) { alertish(e); }); };
+      var pin = el('button', { type: 'button', text: t.pinned === true ? 'Unpin' : 'Pin to top' });
+      pin.onclick = function () { send('/api/forum/thread', { thread_id: id, pinned: t.pinned !== true }).then(load).catch(function (e) { alertish(e); }); };
       var who = el('button', { type: 'button', text: 'Who can see this' });
       var panel = el('div');
       who.onclick = function () {
@@ -363,7 +400,7 @@
           send('/api/forum/thread', { thread_id: id, relayed: t.relayed !== true }).then(load).catch(function (e) { alertish(e); });
         };
       }
-      controls.replaceChildren(el('div', { class: 'toolbar' }, [toggle, who, relay].filter(Boolean)), panel);
+      controls.replaceChildren(el('div', { class: 'toolbar' }, [toggle, pin, who, relay].filter(Boolean)), panel);
       if (t.status === 'open' && !reply) {
         reply = composer(id, function () { load(); });
         reply.id = 'reply';

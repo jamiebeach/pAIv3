@@ -77,6 +77,31 @@
       (pai-v3.api::forum-set-thread b thread (pai-v3.api::fleet-agent-id b) "Alpha" :status "resolved")
       (is (equal "resolved" (obj-get (pai-v3.api::forum-thread-json a thread) "status")) "any crew member may resolve it"))))
 
+(deftest a-pinned-thread-stays-on-top-for-everyone
+  (with-crew (a b)
+    (let ((journal (obj-get (pai-v3.api::forum-post a :title "SYNTHETIC journal" :text "SYNTHETIC week zero" :intent "fyi"
+                                                      :author-id "operator" :author-name "Sam")
+                            "thread_id")))
+      (pai-v3.api::forum-post a :title "SYNTHETIC newer" :text "SYNTHETIC later" :intent "fyi" :author-id "operator" :author-name "Sam")
+      (is (not (equal journal (obj-get (first (pai-v3.api::forum-index-json a)) "thread_id"))) "unpinned, the newest is first")
+      (pai-v3.api::forum-set-thread a journal "operator" "Sam" :pinned t)
+      (is (equal journal (obj-get (first (pai-v3.api::forum-index-json a)) "thread_id")) "pinned, it is first")
+      (is (eq t (obj-get (first (pai-v3.api::forum-index-json b)) "pinned")) "for the sister too")
+      (pai-v3.api::forum-set-thread b journal (pai-v3.api::fleet-agent-id b) "Alpha" :pinned :false)
+      (is (eq :false (obj-get (pai-v3.api::forum-thread-json a journal) "pinned")) "anyone in the crew may unpin it"))))
+
+(deftest the-operator-can-post-pictures
+  (with-crew (a b)
+    (let* ((png "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==")
+           (id (pai-v3.mind::store-image a png))
+           (thread (obj-get (pai-v3.api::forum-post a :title "SYNTHETIC pics" :text "SYNTHETIC look" :intent "fyi"
+                                                     :images (list id) :author-id "operator" :author-name "Sam")
+                            "thread_id")))
+      (is (equal (list id) (obj-get (first (obj-get (pai-v3.api::forum-thread-json a thread) "messages")) "images"))
+          "the post carries the picture")
+      (is (= 1 (length (obj-get (first (obj-get (pai-v3.api::forum-thread-json b thread) "messages")) "images")))
+          "and it reaches the sister"))))
+
 (deftest a-private-thread-reaches-only-its-viewers-and-opening-it-sends-its-history
   (with-crew (a b)
     (let* ((me (pai-v3.api::fleet-agent-id a))

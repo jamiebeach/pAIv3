@@ -33,7 +33,8 @@
   :schema (("thread_id" :string) ("by_id" :string) ("by_name" :string) ("ts" :integer)
            ("status" :string :optional) ("access" :string :optional) ("viewers" :array :optional)
            ("title" :string :optional) ("change_id" :string :optional)
-           ("relayed" :boolean :optional)))                  ; copies go outside the household (guests.lisp)
+           ("relayed" :boolean :optional)                    ; copies go outside the household (guests.lisp)
+           ("pinned" :boolean :optional)))                   ; kept at the top of the list
 
 (defun %forum-self (db)
   (sql-value db "SELECT agent_id FROM fleet_identity WHERE k=?1 LIMIT 1" "self"))
@@ -94,6 +95,24 @@
 ;;; through the relay (tools/guest-relay.py, bead v3-fy1). The mark is the
 ;;; thread's own, shared by the crew, shown wherever the thread is read or
 ;;; written to, and removed as easily as it is set.
+
+;;; Pinned threads stay at the top of the forum, for everyone (operator
+;;; request 2026-10-30: the crew journal). Its own small projection, like
+;;; the relayed mark, so pinning needs no rebuild of the forum.
+
+(define-projection "forum_pins"
+  :kind :inline
+  :consumes ("forum.thread.set")
+  :tables ("CREATE TABLE IF NOT EXISTS forum_pins (thread_id TEXT PRIMARY KEY, pinned INTEGER NOT NULL, by_name TEXT NOT NULL, at INTEGER NOT NULL)")
+  :reduce (lambda (db e)
+            (let ((p (event-payload e)))
+              (multiple-value-bind (v found) (gethash "pinned" p)
+                (when found
+                  (sql-exec db "INSERT INTO forum_pins(thread_id,pinned,by_name,at) VALUES(?1,?2,?3,?4) ON CONFLICT(thread_id) DO UPDATE SET pinned=excluded.pinned,by_name=excluded.by_name,at=excluded.at WHERE excluded.at>=forum_pins.at"
+                            (obj-get p "thread_id") (if (eq v t) 1 0) (or (obj-get p "by_name") "") (or (obj-get p "ts") 0)))))))
+
+(defun thread-pinned-p (kernel thread-id)
+  (eql 1 (sql-value (kernel-db kernel) "SELECT pinned FROM forum_pins WHERE thread_id=?1 LIMIT 1" thread-id)))
 
 (defparameter +relayed-note+
   "This thread is RELAYED outside the household: Muse (Meta) and any relayed guest read it, and a copy is kept outside the operator's network. Whatever is said here should be fine for a third party to hold for good.")
@@ -330,7 +349,7 @@ crew member who may see it. Returns an object saying what was done."
       (%forum-send kernel "forum.reacted"
                    (obj "msg_id" msg "thread_id" thread-id "emoji" emoji "by_id" by "by_name" name "on" t "ts" ts) peers))))
 
-(defun forum-set-thread (kernel thread-id by-id by-name &key status access viewers title (relayed nil relayed-p) policy)
+(defun forum-set-thread (kernel thread-id by-id by-name &key status access viewers title (relayed nil relayed-p) (pinned nil pinned-p) policy)
   "Change THREAD-ID: STATUS open or resolved, ACCESS crew or private (with
 VIEWERS), or its TITLE. Anyone who can see the thread may. RELAYED (t or
 :false) marks a guest thread whose copies leave the household; only the
@@ -353,6 +372,7 @@ operator sets it, or POLICY for a guest's own thread. Returns the row."
       (when status (setf (gethash "status" payload) status))
       (when title (setf (gethash "title" payload) (string-trim " " title)))
       (when relayed-p (setf (gethash "relayed" payload) (if (eq relayed t) t :false)))
+      (when pinned-p (setf (gethash "pinned" payload) (if (eq pinned t) t :false)))
       (when access (setf (gethash "access" payload) access (gethash "viewers" payload) clean))
       (%forum-apply kernel "forum.thread.set" payload)
       (let* ((after (%thread-recipients kernel (forum-thread kernel thread-id)))
@@ -524,13 +544,15 @@ came from, or NIL when it was made here."
            "viewers" (mapcar (lambda (v) (obj "id" v "name" (%member-name kernel v))) (fifth th))
            "created_by" (seventh th) "created_at" (eighth th) "last_at" (ninth th)
            "relayed" (if (thread-relayed-p kernel (first th)) t :false)
+           "pinned" (if (thread-pinned-p kernel (first th)) t :false)
            "messages" (mapcar (lambda (r) (%forum-message-json kernel r))
                               (sql-rows (kernel-db kernel)
                                         "SELECT msg_id,author_id,author_name,text,intent,reply_to,ts,images,quiet_for,via FROM forum_messages WHERE thread_id=?1 ORDER BY ts,event_id LIMIT 2000"
                                         thread-id))))))
 
 (defun forum-index-json (kernel &key (member "operator"))
-  (mapcar (lambda (th)
+  (stable-sort
+   (mapcar (lambda (th)
             (let ((last (sql-row (kernel-db kernel)
                                  "SELECT author_name,text,ts FROM forum_messages WHERE thread_id=?1 ORDER BY ts DESC LIMIT 1" (first th)))
                   (count (sql-value (kernel-db kernel) "SELECT count(*) FROM forum_messages WHERE thread_id=?1 LIMIT 1" (first th))))
@@ -538,9 +560,11 @@ came from, or NIL when it was made here."
                    "viewers" (mapcar (lambda (v) (%member-name kernel v)) (fifth th))
                    "created_by" (seventh th) "last_at" (ninth th) "posts" (or count 0)
                    "relayed" (if (thread-relayed-p kernel (first th)) t :false)
+                   "pinned" (if (thread-pinned-p kernel (first th)) t :false)
                    "last_author" (if last (first last) :null)
                    "preview" (if last (let ((s (second last))) (subseq s 0 (min 160 (length s)))) :null))))
-          (forum-threads kernel :member member)))
+          (forum-threads kernel :member member))
+   #'> :key (lambda (o) (if (eq t (obj-get o "pinned")) 1 0))))
 
 ;;; Bringing the old boards in, once
 
@@ -638,14 +662,15 @@ came from, or NIL when it was made here."
                                             :on (not (eq t (obj-get args "remove")))))))))
 
 (define-tool "set_forum_thread"
-  :description "Change a crew forum thread: status open or resolved (a resolved thread wakes nobody); access crew (everyone), private with viewers (names of agents; the operator always sees it), or guests (the crew and guests from outside it, such as coding agents); or a new title."
+  :description "Change a crew forum thread: status open or resolved (a resolved thread wakes nobody); access crew (everyone), private with viewers (names of agents; the operator always sees it), or guests (the crew and guests from outside it, such as coding agents); a new title; or pinned (true keeps it at the top of the forum for everyone, false unpins)."
   :summary "Resolve, reopen, retitle or set who sees a forum thread."
   :parameters (obj "type" "object"
                    "properties" (obj "thread_id" (obj "type" "string")
                                      "status" (obj "type" "string" "enum" (list "open" "resolved"))
                                      "access" (obj "type" "string" "enum" +forum-access+)
                                      "viewers" (obj "type" "array" "items" (obj "type" "string"))
-                                     "title" (obj "type" "string"))
+                                     "title" (obj "type" "string")
+                                     "pinned" (obj "type" "boolean"))
                    "required" (list "thread_id"))
   :available :operator-and-peers
   :run (lambda (kernel id args)
@@ -655,11 +680,16 @@ came from, or NIL when it was made here."
                                                    :status (%given (obj-get args "status")) :access (%given (obj-get args "access"))
                                                    :viewers (let ((v (%given (obj-get args "viewers")))) (if (listp v) v '()))
                                                    :title (%given (obj-get args "title")))))
-                         (format nil "~a is now ~a and ~a." (second th) (third th)
+                         (multiple-value-bind (v found) (gethash "pinned" args)
+                           (when found
+                             (forum-set-thread kernel (first th) (fleet-agent-id kernel) (fleet-own-name kernel)
+                                               :pinned (if (eq v t) t :false))))
+                         (format nil "~a is now ~a and ~a~:[~;, pinned~]." (second th) (third th)
                                  (cond ((equal "private" (fourth th))
                                         (format nil "private to ~{~a~^, ~}" (mapcar (lambda (v) (%member-name kernel v)) (fifth th))))
                                        ((equal "guests" (fourth th)) "open to the crew and guests")
-                                       (t "open to the crew"))))))))
+                                       (t "open to the crew"))
+                                 (thread-pinned-p kernel (first th))))))))
 
 ;;; Speaking in the forum: a draft, then the crew review (docs/reflect-then-speak.md).
 ;;; A private thought leaves a draft for "crew"; when it is over, a review
@@ -842,6 +872,15 @@ way for a single peer whose thread now lives in the forum (bead v3-m9m)."
              (flet ((g (key) (%given (obj-get body key))))
                (reply 200 (forum-post kernel :thread-id (g "thread_id") :title (g "title") :text (g "text")
                                              :reply-to (g "reply_to") :intent (g "intent")
+                                             ;; Pictures the operator attached, as data URLs: kept, then carried by id.
+                                             :images (let ((v (g "images")))
+                                                       (when (and (listp v) (> (length v) +board-images-most+))
+                                                         (%board-refuse "a post carries at most ~d images" +board-images-most+))
+                                                       (and (listp v)
+                                                            (mapcar (lambda (u)
+                                                                      (handler-case (pai-v3.mind::store-image kernel u)
+                                                                        (error (e) (%board-refuse "~a" e))))
+                                                                    (remove-if-not #'stringp v))))
                                              :author-id "operator" :author-name (setting kernel "operator.name")
                                              :quiet-for (let ((v (g "quiet_for"))) (if (listp v) v '()))
                                              :access (or (g "access") "crew")
@@ -859,6 +898,9 @@ way for a single peer whose thread now lives in the forum (bead v3-m9m)."
                                         :title (%given (obj-get body "title"))
                                         :relayed (multiple-value-bind (v found) (gethash "relayed" body) (if found (if (eq v t) t :false) nil))
                                         :policy nil)))
+                  (when (nth-value 1 (gethash "pinned" body))
+                    (forum-set-thread kernel (obj-get body "thread_id" "") "operator" (setting kernel "operator.name")
+                                      :pinned (if (eq t (gethash "pinned" body)) t :false)))
              (reply 200 (forum-thread-json kernel (first th)))))
           (t (reply 404 (obj "error" "no such route")))))
     (board-error (e) (reply 400 (obj "error" (board-error-reason e))))
