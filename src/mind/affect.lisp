@@ -216,6 +216,19 @@ is the point.")
                              (%dial dials name "max" +modulator-defaults+))
                      at-iso))))
 
+(defparameter *peer-connection-relief* 0.35d0
+  "Share of the connection drive a crewmate's post relieves; the operator's
+own contact relieves the drive's full satisfaction_drop.")
+
+(defun %note-contact (db at-iso)
+  "Someone was in touch: the moment social need is measured from."
+  (sql-exec db "INSERT INTO affect_now(kind,name,value,as_of) VALUES('anchor','contact',0,?1) ON CONFLICT(kind,name) DO UPDATE SET as_of=max(affect_now.as_of,excluded.as_of)"
+            at-iso))
+
+(defun %relieve-drive (db name fraction at at-iso)
+  (%affect-write db "drive" name (* (%affect-current db "drive" name at) (- 1 fraction))
+                 at-iso :target nil :satisfied t))
+
 (defun %reduce-affect (db e)
   (let* ((p (event-payload e)) (type (event-type e))
          (at-iso (event-at e)) (at (parse-iso8601 at-iso)))
@@ -253,7 +266,28 @@ is the point.")
         ((string= type "drive.satisfied")
          (when (drive (obj-get p "drive"))
            (%satisfy-drive db (obj-get p "drive") at at-iso)))
+        ((string= type "fleet.identity")
+         ;; Who I am on the forum, so my own posts are not company.
+         (sql-exec db "INSERT INTO affect_dials(name,value_json) VALUES('fleet_self',?1) ON CONFLICT(name) DO UPDATE SET value_json=excluded.value_json"
+                   (json-encode (obj-get p "agent_id"))))
+        ((string= type "forum.posted")
+         ;; The crew is company too (operator request 2026-10-31): another's
+         ;; post relieves the connection drive, a crewmate's less than the
+         ;; operator's, and counts as contact for social need.
+         (let ((author (obj-get p "author_id"))
+               (me (let ((j (sql-value db "SELECT value_json FROM affect_dials WHERE name='fleet_self' LIMIT 1")))
+                     (and j (json-parse j)))))
+           (unless (or (eq t (obj-get p "migrated")) (not (stringp author)) (equal author me))
+             (%note-contact db at-iso)
+             (%relieve-drive db "connection"
+                             (if (equal author "operator")
+                                 (%drive-option (%affect-dials db "affect.drives") "connection" "satisfaction_drop" *drive-satisfaction-drop*)
+                                 *peer-connection-relief*)
+                             at at-iso))))
         ((string= type "turn.received")
+         (let ((audience (obj-get p "audience")))
+           (when (and (stringp audience) (or (equal audience "operator") (and (> (length audience) 5) (string= "peer:" audience :end2 5))))
+             (%note-contact db at-iso)))
          (when (equal "operator" (obj-get p "audience"))
            (sql-exec db "INSERT INTO affect_now(kind,name,value,as_of) VALUES('anchor','operator_spoke',0,?1) ON CONFLICT(kind,name) DO UPDATE SET as_of=excluded.as_of"
                      at-iso)
@@ -291,8 +325,10 @@ is the point.")
 
 (define-projection "affect"
   :kind :inline
+  :version 2
   :consumes ("affect.moved" "affect.set" "drive.triggered" "drive.satisfied"
-             "turn.received" "thought.step" "setting.changed" "affect.appraisal.finished")
+             "turn.received" "thought.step" "setting.changed" "affect.appraisal.finished"
+             "forum.posted" "fleet.identity")
   :tables ("CREATE TABLE IF NOT EXISTS affect_now (kind TEXT NOT NULL, name TEXT NOT NULL, value REAL NOT NULL, as_of TEXT NOT NULL, target TEXT, last_satisfied TEXT, PRIMARY KEY(kind,name))"
            "CREATE TABLE IF NOT EXISTS affect_dials (name TEXT PRIMARY KEY, value_json TEXT NOT NULL)"
            "CREATE TABLE IF NOT EXISTS affect_appraisal_seen (source_key TEXT PRIMARY KEY, event_id INTEGER NOT NULL)")
@@ -301,12 +337,18 @@ is the point.")
 
 ;;; Reading
 
+(defun %last-contact (db)
+  "Universal time of the last contact with anyone: the operator, or the crew."
+  (let ((times (remove nil (list (second (%affect-row db "anchor" "operator_spoke"))
+                                 (second (%affect-row db "anchor" "contact"))))))
+    (and times (reduce #'max times))))
+
 (defun affect-now (kernel &optional (at (now)))
   "The modulators and drives as of AT: two objects of name -> value, and a
 third of drive name -> target for drives that have one."
   (let* ((db (kernel-db kernel))
          (modulators (obj)) (drives (obj)) (targets (obj))
-         (spoke (second (%affect-row db "anchor" "operator_spoke"))))
+         (spoke (%last-contact db)))
     (loop for name being the hash-keys of +modulator-defaults+
           do (setf (gethash name modulators) (%affect-current db "modulator" name at)))
     (when spoke
@@ -345,7 +387,7 @@ third of drive name -> target for drives that have one."
 without NUMBERS, the meaning and direction alone (for prose written from it)."
   (let* ((at (now)) (db (kernel-db kernel))
          (md (%affect-dials db "affect.modulators")) (dd (%affect-dials db "affect.drives"))
-         (spoke (second (%affect-row db "anchor" "operator_spoke"))))
+         (spoke (%last-contact db)))
     (multiple-value-bind (modulators drives targets) (affect-now kernel at)
       (format nil "Affect/process state (not an external fact): ~{~a~^; ~}~%Drives (unmet desires, not instructions): ~{~a~^; ~}"
               (mapcar (lambda (p)

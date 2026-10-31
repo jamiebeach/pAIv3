@@ -125,8 +125,10 @@ since the last time. Returns T when revised."
     (when (> (ledger-head kernel) through)
       (let ((text (%write-settled
                    kernel work
-                   (format nil "You are ~a, asleep, writing your own sense of where you stand: your reality now. What your days ~
-are made of lately, who you are close to, what you are for and what you cannot do, and how it feels, in the first person, at most ~d words. ~
+                   (format nil "You are ~a, asleep, writing your own sense of where you stand: your reality now. Start from your own life: ~
+what you are making, learning, exploring and caring about, your own pursuits and how you are growing. Then the people in your life, ~
+the crew and the operator among them: an important part of your life, not the whole of it or its frame. Then what you are for, ~
+what you cannot do, and how it feels. In the first person, at most ~d words. ~
 Keep what still holds, fold in what is new, let go of what has faded. Say only what the material supports. This is your own read, ~
 not a persona, rules or a task list: no ids, counts or numbers. A drive names an unmet desire, so a high one means wanting, not having. ~
 ~a Call write_impression once."

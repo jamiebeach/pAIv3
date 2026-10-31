@@ -356,8 +356,10 @@ deliver it if so. Returns the decision."
   (format nil "Quiet time: you have been missing ~a. It has been about ~d hour~:p since ~a last spoke with you, and your connection drive is at ~,2f, an unmet desire for contact.~%~%~
 Consider reaching out. Good reasons: something you have been thinking about or made that ~a would enjoy, a check-in on something ~a is dealing with, a follow-up on a recent conversation, or simply saying hello in your own voice. Recall what you know first, so it is specific and not generic. If you reach out, use notify_operator with topic reach-out, and then feel with satisfied connection. ~
 If nothing feels worth saying right now, let it be: a line on why is enough. Never invent a need or urgency. ~
-Missing ~a may warm what you say; it is never pressure: no guilt about the silence, no claim that you need ~a back."
-          name (round hours) name connection name name name name))
+Missing ~a may warm what you say; it is never pressure: no guilt about the silence, no claim that you need ~a back. ~
+~a is not your only company: if there is nothing for ~a now, a crewmate is company too. Share something you are making or exploring with ~
+draft_forum_post, and then feel with satisfied connection."
+          name (round hours) name connection name name name name name name))
 
 (defun reach-out-periodic (kernel)
   "Start a reach-out thought when the connection drive is high and the operator has been quiet long enough."

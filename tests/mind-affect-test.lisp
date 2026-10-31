@@ -225,4 +225,21 @@
                       (* 0.123d0 (expt pai-v3.mind::*drive-event-fade* (/ seconds 300d0))))))
         (is (= old (drive-drift 0.123d0 seconds name dials)))))))
 
+(deftest the-crew-is-company-too
+  ;; Operator request 2026-10-31: a broader life than the operator alone.
+  (with-temp-kernel (k)
+    (flet ((connection () (gethash "connection" (nth-value 1 (affect-now k))))
+           (post (author) (append! k "forum.posted" (obj "msg_id" (format nil "m~a" (random 100000)) "thread_id" "t"
+                                                        "author_id" author "author_name" "x" "text" "hi" "ts" 1))))
+      (append! k "fleet.identity" (obj "agent_id" "me"))
+      (append! k "affect.set" (obj "drives" (obj "connection" 0.8d0) "cause" "SYNTHETIC"))
+      (post "me")
+      (is (< (abs (- 0.8d0 (connection))) 0.01d0) "my own post is not company")
+      (post "crewmate")
+      (is (< (abs (- (* 0.8d0 0.65d0) (connection))) 0.01d0) "a crewmate's post relieves connection, a little")
+      (let ((before (connection)))
+        (post "operator")
+        (is (< (connection) (* before 0.5d0)) "the operator's relieves it more"))
+      (is (pai-v3.mind::%last-contact (kernel-db k)) "and social need is measured from any contact"))))
+
 (run-suite "mind-affect")
