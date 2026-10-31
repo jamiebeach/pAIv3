@@ -13,7 +13,7 @@
 list of (text tokens) rows, most relevant first.")
 
 (defparameter *slot-audience-policy*
-  '((:clock . :any) (:state . :any) (:myself . :any)
+  '((:clock . :any) (:turn . :any) (:state . :any) (:myself . :any)
     (:summary . :any) (:activity . :any) (:dialogue . :any)
     (:recollection . :any) (:seen . :any) (:scheduled . :any) (:restricted . :any)
     (:conclusions "operator") (:concerns "operator") (:docket "operator")
@@ -68,7 +68,8 @@ render audited content safe for every audience. Unreviewed sources default to op
           (:stream    :max 600   :source :stream    :title "What I noticed between thoughts")
           (:restricted :max 200  :source :restricted :title "Not for this audience")
           (:state     :max 300   :source :state     :title "How I am")
-          (:clock     :max 160   :source :clock     :title "Now")))
+          (:clock     :max 160   :source :clock     :title "Now")
+          (:turn      :max 80    :source :turn      :title "Before you answer")))
 
 (define-context-profile "private-cognition"
   :slots ((:myself    :max 120   :source :myself    :title "About me, lately")
@@ -87,7 +88,8 @@ render audited content safe for every audience. Unreviewed sources default to op
           (:present   :max 300   :source :present   :title "The operator's day")
           (:stream    :max 600   :source :stream    :title "What I noticed between thoughts")
           (:state     :max 300   :source :state     :title "How I am")
-          (:clock     :max 160   :source :clock     :title "Now")))
+          (:clock     :max 160   :source :clock     :title "Now")
+          (:turn      :max 80    :source :turn      :title "Before you answer")))
 
 (define-context-profile "communication-review"
   :slots ((:clock :max 160 :source :clock :title "Now")))
@@ -97,6 +99,14 @@ render audited content safe for every audience. Unreviewed sources default to op
 ;;; Sources available in phase 3. Others (state, summary, recall, knowledge,
 ;;; scheduled, restricted) arrive with their modules; until then they report
 ;;; themselves unavailable.
+
+;; The one rule most often missed, placed last, nearest the moment of answering:
+;; a fast model weighs the end of a prompt most (operator report 2026-10-31,
+;; Angel's "On it, writing chapter two now" with nothing written). The same
+;; rule stands at the top of the instructions (initiative.lisp); here it is
+;; repeated where it is read last.
+(define-slot-source :turn (kernel request max)
+  (list "A message with no tool call ends this thought. If there is a next step, make its tool call in the same message; if what was asked is something to write, write it now. Never end by saying what you are about to do."))
 
 (define-slot-source :dialogue (kernel request max)
   (mapcar (lambda (row) (list (dialogue-row-text row) (dialogue-row-tokens row)))

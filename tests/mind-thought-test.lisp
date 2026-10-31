@@ -454,4 +454,52 @@
           (is (= with-all (length (pai-v3.mind::tools-for (list :audience "operator" :origin "work"))))
               "all_tools sends every tool the thought may use"))))))
 
+(defun announce-judge (&key (calls (list 0)) fail)
+  "A Decisions provider that finds a reply containing ON IT only announcing, and others delivering."
+  (make-provider-profile
+   :name "affect-jev" :model "typesafe/jev-1.13" :base-url "https://openrouter.ai/api/v1" :secret "openrouter"
+   :transport (lambda (url headers body &key timeout)
+                (declare (ignore url headers timeout))
+                (incf (car calls))
+                (if fail
+                    (values 500 nil "{}")
+                    (let* ((reply (obj-get (obj-get (json-parse body) "state") "reply"))
+                           (level (if (search "On it" reply) 0 2)) (p (obj)))
+                      (dotimes (i 3) (setf (gethash (write-to-string i) p) (if (= i level) 1d0 0d0)))
+                      (values 200 nil (json-encode (obj "model" "typesafe/jev-test"
+                                                        "answers" (obj "reply" (obj "type" "score" "score" level "probabilities" p))
+                                                        "usage" (obj "input_tokens" 10 "output_tokens" 1 "cost" 0.000001)))))))))
+
+(deftest a-reply-that-only-announces-goes-on-once-and-does-it
+  ;; Operator report 2026-10-31: "On it, writing chapter two now", and nothing written.
+  (with-thinking (k)
+    (let* ((calls (list 0))
+           (pai-v3.mind::*decision-profile* (announce-judge :calls calls))
+           (*script* (list (obj "content" "On it, writing chapter two now.")
+                           (obj "content" "Chapter two: the workshop door opened.")))
+           (id (operator-turn k "Go ahead, write chapter two")))
+      (run-until-idle k)
+      (is (equal "ended" (getf (thought-row k id) :status)))
+      (is (= 2 (getf (thought-row k id) :model-calls)) "the announcement did not end the thought")
+      (let ((said (replies k)))
+        (is (find-if (lambda (r) (search "On it, writing chapter two now." r)) said) "the announcement is still said, as status")
+        (is (find-if (lambda (r) (search "Chapter two: the workshop door opened." r)) said) "then the thing itself"))
+      (is (= 1 (car calls)) "judged by meaning once; after the nudge the answer is not judged again")
+      (is (find "user" (pai-v3.mind::%replay-messages k id) :key (lambda (m) (obj-get m "role")) :test #'equal)
+          "the nudge survives a replay"))))
+
+(deftest an-announcing-reply-is-nudged-only-once-and-a-failed-judgment-lets-it-stand
+  (with-thinking (k)
+    (let* ((pai-v3.mind::*decision-profile* (announce-judge))
+           (*script* (list (obj "content" "On it, checking now.") (obj "content" "On it, checking again.")))
+           (id (operator-turn k "Is it raining?")))
+      (run-until-idle k)
+      (is (= 2 (getf (thought-row k id) :model-calls)) "once only, never a loop")))
+  (with-thinking (k)
+    (let* ((pai-v3.mind::*decision-profile* (announce-judge :fail t))
+           (*script* (list (obj "content" "On it, checking now.")))
+           (id (operator-turn k "Is it raining?")))
+      (run-until-idle k)
+      (is (= 1 (getf (thought-row k id) :model-calls)) "a failed judgment never holds the answer back"))))
+
 (run-suite "mind-thought")

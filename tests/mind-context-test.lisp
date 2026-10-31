@@ -219,4 +219,15 @@
         (is (< (search "## About me" now-text :end2 (length now-text)) (or (search "## Now" now-text) most-positive-fixnum))
             "the clock comes last")))))
 
+(deftest the-rule-about-ending-a-turn-is-read-last
+  ;; Operator report 2026-10-31: a fast model promised and stopped; the rule
+  ;; stood only at the top. It is now the last thing in context, for every audience.
+  (with-temp-kernel (k)
+    (dolist (audience '("operator" "peer:angel"))
+      (let* ((messages (assemble-context k "operator-turn" (list :audience audience :task "x")))
+             (text (format nil "~{~a~%~}" (mapcar (lambda (m) (obj-get m "content")) messages))))
+        (is (search "Never end by saying what you are about to do" text) audience)
+        (is (> (search "Never end by saying what you are about to do" text) (search "It is " text))
+            "after the clock, nearest the answer")))))
+
 (run-suite "mind-context")
