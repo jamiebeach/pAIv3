@@ -15,4 +15,16 @@
           (is (equal "queued" (obj-get (second items) "status")))
           (is (obj-get (second items) "next_at")))))))
 
+(deftest tool-use-peek-finishes-when-thought-ids-have-gaps
+  ;; It once searched forever for the first thought of the window when the
+  ;; ids in between were missing, pinning a core of the agent.
+  (with-temp-kernel (k)
+    (let ((ids (loop repeat 5 collect (request-thought k "concern" "Synthetic thought"))))
+      (sql-exec (kernel-db k) "DELETE FROM thoughts WHERE id>?1 AND id<?2" (first ids) (car (last ids)))
+      (sql-exec (kernel-db k) "UPDATE thoughts SET created_at=?1 WHERE id=?2"
+                (iso8601 (- (now) (* 86400 10))) (first ids))
+      (is (handler-case (sb-ext:with-timeout 20 (pai-v3.api::dev-peek k "tool-use" 1) t)
+            (sb-ext:timeout () nil))
+          "the peek answers"))))
+
 (run-suite "api-work-peek")

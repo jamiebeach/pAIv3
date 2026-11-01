@@ -201,7 +201,10 @@ becomes a stimulus (pai-v3.mind:coding-agent-message)."
                                       (loop while (< lo hi)
                                             do (let* ((mid (floor (+ lo hi) 2))
                                                       (row (sql-row db "SELECT id,created_at FROM thoughts WHERE id>=?1 ORDER BY id LIMIT 1" mid)))
-                                                 (if (and row (string< (second row) since)) (setf lo (1+ (first row))) (setf hi (if row (first row) mid)))))
+                                                 (if (and row (string< (second row) since))
+                                                     (setf lo (1+ (first row)))
+                                                     ;; No id between MID and ROW's, so MID bounds as well, and the range always shrinks.
+                                                     (setf hi mid))))
                                       lo))
                           (hour (* 3600 (floor (- (unix-now) (* 86400 days)) 3600))))
                      (list (obj "brave_last" (let ((id (first (latest-event-ids kernel "web.searched" 1))))
