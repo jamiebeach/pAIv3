@@ -434,6 +434,7 @@ transcript, all other cognition as toasts that name the kind of thought."
          (out (hunchentoot:send-headers))
          (last since)
          (last-waits :unseen)
+         (operator-thoughts (make-hash-table))
          (last-failed (or (sql-value (kernel-db k) "SELECT max(id) FROM thoughts WHERE audience=?1 LIMIT 1" "operator") 0)))
     (bt:with-lock-held ((agent-lock agent)) (push box (agent-subscribers agent)))
     (write-sequence (babel:string-to-octets (format nil ": connected~%~%")) out)
@@ -447,6 +448,16 @@ transcript, all other cognition as toasts that name the kind of thought."
                           (when (string= event "command")
                             (%sse out (obj "id" 0 "type" "user" "data" (obj "text" (obj-get data "text"))))
                             (%sse out (obj "id" 0 "type" "command" "data" (obj-get data "reply"))))
+                          ;; Reply fragments as they are generated, for clients that
+                          ;; act on a reply before it is whole (speech); only the
+                          ;; operator's own thoughts.
+                          (when (string= event "delta")
+                            (let ((id (obj-get data "thought_id")))
+                              (when (eq :yes (or (gethash id operator-thoughts)
+                                                 (setf (gethash id operator-thoughts)
+                                                       (if (equal "operator" (sql-value (kernel-db k) "SELECT audience FROM thoughts WHERE id=?1" id))
+                                                           :yes :no))))
+                                (%sse out (obj "id" 0 "type" "delta" "data" data)))))
                           (when (string= event "activity")
                             (let ((kind (obj-get data "kind"))
                                   (private (eq t (obj-get data "private")))
