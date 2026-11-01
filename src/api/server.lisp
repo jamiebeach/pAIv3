@@ -1,6 +1,9 @@
 (defpackage #:pai-v3.api
   (:use #:cl #:pai-v3.kernel #:pai-v3.mind #:pai-v3.trust)
-  (:export #:start-agent #:stop-agent #:agent-port #:*api-version* #:terminal-command #:terminal-history))
+  (:export #:start-agent #:stop-agent #:agent-port #:*api-version* #:terminal-command #:terminal-history
+           ;; plugins (plugins.lisp)
+           #:define-plugin-route #:plugin-reply #:plugin-static #:load-plugins #:plugins-directory #:*plugins*
+           #:agent-kernel #:reply))
 (in-package #:pai-v3.api)
 
 ;;; The client API (NFR EXT-1..5). One versioned HTTP API for every client;

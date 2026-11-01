@@ -89,6 +89,7 @@
    (:module "src/api"
     :serial t
     :components ((:file "server")
+                 (:file "plugins")
                  (:file "fleet")
                  (:file "boards")
                  (:file "drafts")

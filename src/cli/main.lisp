@@ -95,6 +95,9 @@ for when the agent stops answering. Sent with SIGUSR1; nothing stops."
 (defun cmd-run (args)
   (destructuring-bind (dir &rest ignore) (%positional args)
     (declare (ignore ignore))
+    ;; Plugins load first, so the projections and tools they define are there
+    ;; when the agent opens (plugins.lisp). None found is fine.
+    (pai-v3.api:load-plugins)
     (let* ((config (agent-config dir))
            (handle (%open dir)))
       (let ((agent (pai-v3.api:start-agent

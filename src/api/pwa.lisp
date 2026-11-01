@@ -161,6 +161,11 @@ becomes a stimulus (pai-v3.mind:coding-agent-message)."
                   ((equal what "forum-thread")
                    (let ((th (forum-thread-json kernel (hunchentoot:get-parameter "id")))) (and th (list th))))
                   ;; What sleep wrote of the agent's close ones and its reality (v3-dwk).
+                  ;; Plugins found at start, and whether each loaded (plugins.lisp).
+                  ((equal what "plugins")
+                   (list (obj "directory" (namestring (plugins-directory))
+                              "plugins" (mapcar (lambda (p) (obj "name" (first p) "status" (second p) "detail" (third p))) *plugins*)
+                              "routes" (loop for k being the hash-keys of *plugin-routes* collect k))))
                   ;; Drafts by state, to see none is stranded (v3-zjq).
                   ((equal what "drafts")
                    (list (obj "by_state" (loop for state in '("open" "ready" "speaking" "unresolved")
@@ -550,6 +555,9 @@ localhost), the URL to send it to; passkeys only work at the agent's origin."
     (cond
       ;; Peers sign their requests; an operator session never stands in.
       ((fleet-path-p path) (values (fleet-route agent method path) t))
+
+      ;; What plugins answer, behind the operator's sign-in (plugins.lisp).
+      ((uiop:string-prefix-p "/plugins/" path) (values (plugin-route agent method path) t))
 
       ;; Google's return carries no session cookie: SameSite=Strict withholds it
       ;; on arrival from another site. The single-use state, made from the
