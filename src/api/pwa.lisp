@@ -165,7 +165,8 @@ becomes a stimulus (pai-v3.mind:coding-agent-message)."
                   ((equal what "plugins")
                    (list (obj "directory" (namestring (plugins-directory))
                               "plugins" (mapcar (lambda (p) (obj "name" (first p) "status" (second p) "detail" (third p))) *plugins*)
-                              "routes" (loop for k being the hash-keys of *plugin-routes* collect k))))
+                              "routes" (loop for k being the hash-keys of *plugin-routes* collect k)
+                              "menu" (plugin-menu))))
                   ;; Drafts by state, to see none is stranded (v3-zjq).
                   ((equal what "drafts")
                    (list (obj "by_state" (loop for state in '("open" "ready" "speaking" "unresolved")
