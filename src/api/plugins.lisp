@@ -43,8 +43,10 @@ the rest of the path (\"\" for the plugin's root). BODY sets the content type
     ("vrm" . "application/octet-stream") ("glb" . "model/gltf-binary") ("vrma" . "application/octet-stream")))
 
 (defun plugin-reply (content-type body &key (status 200))
-  "BODY (string or octets) with CONTENT-TYPE and STATUS."
-  (setf (hunchentoot:return-code*) status (hunchentoot:content-type*) content-type)
+  "BODY (string or octets) with CONTENT-TYPE and STATUS. Browsers check back
+before reusing it, so a reinstalled plugin is seen on the next load."
+  (setf (hunchentoot:return-code*) status (hunchentoot:content-type*) content-type
+        (hunchentoot:header-out "Cache-Control") "no-cache")
   body)
 
 (defun plugin-static (root subpath &key (index "index.html"))
