@@ -816,6 +816,13 @@ localhost), the URL to send it to; passkeys only work at the agent's origin."
                    (reply 401 (obj "error" "not signed in")))
                t))
 
+      ;; Plugin pages offered in the menu (plugins.lisp).
+      ((and (eq method :get) (string= path "/api/v2/plugins"))
+       (values (if (%signed-in agent)
+                   (reply 200 (obj "entries" (plugin-menu)))
+                   (reply 401 (obj "error" "not signed in")))
+               t))
+
       ((and (eq method :get) (string= path "/api/v2/stream"))
        (values (if (%signed-in agent)
                    (terminal-stream agent (or (ignore-errors (parse-integer (hunchentoot:get-parameter "since"))) 0))

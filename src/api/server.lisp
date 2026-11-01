@@ -2,7 +2,7 @@
   (:use #:cl #:pai-v3.kernel #:pai-v3.mind #:pai-v3.trust)
   (:export #:start-agent #:stop-agent #:agent-port #:*api-version* #:terminal-command #:terminal-history
            ;; plugins (plugins.lisp)
-           #:define-plugin-route #:plugin-reply #:plugin-static #:load-plugins #:plugins-directory #:*plugins*
+           #:define-plugin-route #:plugin-menu-entry #:plugin-reply #:plugin-static #:load-plugins #:plugins-directory #:*plugins*
            #:agent-kernel #:reply))
 (in-package #:pai-v3.api)
 

@@ -29,6 +29,9 @@ It runs in the agent's process, so every existing extension point is open to it:
   endpoints at `/plugins/<name>/...`, behind the operator's own sign-in (a POST
   must also be same-origin). `plugin-reply` and `plugin-static` help; static
   files are served only from inside the folder given.
+- `(plugin-menu-entry "<name>" "<label>")`: offer the plugin's page,
+  `/plugins/<name>/`, in the operator's menu. The menu reads `GET /api/v2/plugins`
+  (signed in), which lists only entries whose plugin answers a route.
 
 ## What it must not do
 

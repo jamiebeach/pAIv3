@@ -124,6 +124,12 @@
     register({id:'secrets', label:'Secrets', href:'/secrets', current:path === '/secrets'});
     register({id:'avatars', label:'Avatars', href:'/avatars', current:path === '/avatars'});
     register({id:'senses', label:'Senses', href:'/senses', current:path === '/senses'});
+    // Plugin pages that asked for a place in the menu (plugin-menu-entry).
+    fetch('/api/v2/plugins', {credentials:'same-origin'})
+      .then(r => r.ok ? r.json() : {entries:[]})
+      .then(page => (page.entries || []).forEach(e => register({id:'plugin-' + e.name, label:e.label, href:e.href,
+                                                                current:path.startsWith(e.href)})))
+      .catch(() => {});
     const camera = document.createElement('script');
     camera.src = '/camera.js';
     document.head.appendChild(camera);

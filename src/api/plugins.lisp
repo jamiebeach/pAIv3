@@ -14,6 +14,7 @@
 (defvar *plugin-routes* (make-hash-table :test 'equal)
   "Plugin name -> (lambda (agent method subpath origin)) returning a reply body.")
 (defvar *plugins* '() "(name status detail) of each plugin found at start, in load order.")
+(defvar *plugin-menu* '() "(name label) of each plugin page offered in the operator's menu, in order.")
 
 (defmacro define-plugin-route (name (agent method subpath origin) &body body)
   "Answer requests under /plugins/NAME/ for the signed-in operator. SUBPATH is
@@ -23,6 +24,17 @@ the rest of the path (\"\" for the plugin's root). BODY sets the content type
          (lambda (,agent ,method ,subpath ,origin)
            (declare (ignorable ,agent ,method ,subpath ,origin))
            ,@body)))
+
+(defun plugin-menu-entry (name label)
+  "Offer plugin NAME's page, /plugins/NAME/, in the operator's menu as LABEL."
+  (setf *plugin-menu* (append (remove name *plugin-menu* :key #'first :test #'equal) (list (list name label))))
+  name)
+
+(defun plugin-menu ()
+  "The menu entries whose plugin answers a route, as objects for the web menu."
+  (loop for (name label) in *plugin-menu*
+        when (gethash name *plugin-routes*)
+          collect (obj "name" name "label" label "href" (format nil "/plugins/~a/" name))))
 
 (defparameter +plugin-types+
   '(("html" . "text/html; charset=utf-8") ("js" . "text/javascript; charset=utf-8") ("mjs" . "text/javascript; charset=utf-8")
@@ -78,7 +90,7 @@ ROOT, or name hidden files, are refused."
 (defun load-plugins (&optional (dir (plugins-directory)))
   "Load every plugin under DIR: each folder holding <folder>.asd is one.
 Returns *plugins*. Nothing found is not an error, and no failure stops the agent."
-  (setf *plugins* '())
+  (setf *plugins* '() *plugin-menu* '())
   (dolist (folder (and (probe-file dir) (uiop:subdirectories dir)) (setf *plugins* (nreverse *plugins*)))
     (let* ((name (car (last (pathname-directory folder))))
            (asd (merge-pathnames (make-pathname :name name :type "asd") folder)))
