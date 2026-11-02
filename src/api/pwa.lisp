@@ -220,6 +220,10 @@ becomes a stimulus (pai-v3.mind:coding-agent-message)."
                                                            (rows "SELECT s.arguments,count(*) FROM thought_steps s WHERE s.event_id>=?1 AND s.kind=?2 AND s.tool=?3 GROUP BY 1 HAVING count(*)>1 ORDER BY 2 DESC LIMIT 20" first-id "tool_call" "brave_search"))))))
                   ;; Spending over the last limit days (default 7).
                   ((equal what "spend") (list (pai-v3.mind::spend-report kernel :days (max 1 (min 30 limit)))))
+                  ;; One stored image as a data URL (?id=), for looking at a reference image.
+                  ((equal what "image")
+                   (let ((url (pai-v3.mind::image-data-url kernel (hunchentoot:get-parameter "id"))))
+                     (and url (list (obj "id" (hunchentoot:get-parameter "id") "data_url" url)))))
                   ((equal what "forum")
                    (list (obj "threads" (or (sql-value db "SELECT count(*) FROM forum_threads WHERE status IN (?1,?2) LIMIT 1" "open" "resolved") 0)
                               "posts" (or (sql-value db "SELECT count(*) FROM forum_messages WHERE thread_id IN (SELECT thread_id FROM forum_threads WHERE status IN (?1,?2)) LIMIT 1" "open" "resolved") 0)
