@@ -69,7 +69,7 @@ render audited content safe for every audience. Unreviewed sources default to op
           (:restricted :max 200  :source :restricted :title "Not for this audience")
           (:state     :max 300   :source :state     :title "How I am")
           (:clock     :max 160   :source :clock     :title "Now")
-          (:turn      :max 80    :source :turn      :title "Before you answer")))
+          (:turn      :max 200   :source :turn      :title "Before you answer")))
 
 (define-context-profile "private-cognition"
   :slots ((:myself    :max 120   :source :myself    :title "About me, lately")
@@ -89,7 +89,7 @@ render audited content safe for every audience. Unreviewed sources default to op
           (:stream    :max 600   :source :stream    :title "What I noticed between thoughts")
           (:state     :max 300   :source :state     :title "How I am")
           (:clock     :max 160   :source :clock     :title "Now")
-          (:turn      :max 80    :source :turn      :title "Before you answer")))
+          (:turn      :max 200   :source :turn      :title "Before you answer")))
 
 (define-context-profile "communication-review"
   :slots ((:clock :max 160 :source :clock :title "Now")))
@@ -105,8 +105,21 @@ render audited content safe for every audience. Unreviewed sources default to op
 ;; Angel's "On it, writing chapter two now" with nothing written). The same
 ;; rule stands at the top of the instructions (initiative.lisp); here it is
 ;; repeated where it is read last.
+(defparameter +voice-rule+
+  "This message came by voice: the operator is talking with you through your avatar, and your reply will be spoken aloud. Answer the way a person talks: one to three short sentences, about forty words at most, unless they asked you to read something out or explain at length. No lists, headings, markdown, links or emoji. To show a gesture or an expression, you may begin with one short stage direction in asterisks, such as *smiles*; it is performed, not spoken.")
+
+(defun %voice-turn-p (kernel thought-id)
+  "True when the thought THOUGHT-ID answers a turn the operator gave by voice
+(the avatar marks its messages so: origin mode \"voice\")."
+  (let* ((thought (and thought-id (thought-row kernel thought-id)))
+         (event-id (and thought (getf thought :source-event-id)))
+         (event (and event-id (event-by-id kernel event-id))))
+    (and event (equal "voice" (obj-get (obj-get (event-payload event) "origin") "mode")))))
+
 (define-slot-source :turn (kernel request max)
-  (list "A message with no tool call ends this thought. If there is a next step, make its tool call in the same message; if what was asked is something to write, write it now. Never end by saying what you are about to do."))
+  (append
+   (and (%voice-turn-p kernel (getf request :thought-id)) (list +voice-rule+))
+   (list "A message with no tool call ends this thought. If there is a next step, make its tool call in the same message; if what was asked is something to write, write it now. Never end by saying what you are about to do.")))
 
 (define-slot-source :dialogue (kernel request max)
   (mapcar (lambda (row) (list (dialogue-row-text row) (dialogue-row-tokens row)))

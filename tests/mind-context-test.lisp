@@ -230,4 +230,20 @@
         (is (> (search "Never end by saying what you are about to do" text) (search "It is " text))
             "after the clock, nearest the answer")))))
 
+(deftest a-voice-turn-asks-for-a-short-spoken-answer
+  ;; Operator 2026-11-02: through the avatar, replies ran long. A turn the avatar
+  ;; marks as voice gets a rule for spoken answers; a typed one does not.
+  (with-temp-kernel (k)
+    (flet ((context-for (mode)
+             (let* ((origin (obj "principal_type" "operator" "channel" "web"))
+                    (turn (progn (when mode (setf (gethash "mode" origin) mode))
+                                 (receive-turn k :channel "web" :audience "operator" :speaker "Jamie" :text "hi" :origin origin)))
+                    (thought (request-thought k "responding" "The operator spoke." :channel "web" :source-event-id (event-id turn)))
+                    (messages (assemble-context k "operator-turn" (list :audience "operator" :task "x" :thought-id thought))))
+               (format nil "~{~a~%~}" (mapcar (lambda (m) (obj-get m "content")) messages)))))
+      (let ((spoken (context-for "voice")) (typed (context-for nil)))
+        (is (search "This message came by voice" spoken) "a voice turn gets the rule")
+        (is (search "Never end by saying what you are about to do" spoken) "and keeps the turn-ending rule")
+        (is (not (search "This message came by voice" typed)) "a typed turn does not")))))
+
 (run-suite "mind-context")

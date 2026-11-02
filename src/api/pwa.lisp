@@ -868,7 +868,11 @@ localhost), the URL to send it to; passkeys only work at the agent's origin."
                                        (turn (receive-turn k :channel "web" :audience "operator" :speaker (setting k "operator.name")
                                                              :text (if (zerop (length text)) "(an image)" text) :images images
                                                              :camera-images (append (and reaction (list reaction)) (and frame (list frame)))
-                                                             :origin (progn (setf (gethash "channel" origin) "web") origin)))
+                                                             :origin (progn (setf (gethash "channel" origin) "web")
+                                                                            ;; Spoken through the avatar: the reply will be spoken too.
+                                                                            (when (equal "voice" (obj-get b "mode"))
+                                                                              (setf (gethash "mode" origin) "voice"))
+                                                                            origin)))
                                        (thought (request-thought k "responding" "The operator spoke."
                                                                  :channel "web" :source-event-id (event-id turn))))
                                   (reply 200 (obj "ok" t "receipt" (obj "turn_id" (event-id turn) "thought_id" thought)))))))))))
