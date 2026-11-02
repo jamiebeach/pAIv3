@@ -430,7 +430,7 @@ transcript, all other cognition as toasts that name the kind of thought."
             "SELECT t.id,w.deferred_reason,w.next_at FROM v3_work w JOIN thoughts t ON t.id=CAST(w.entity AS INTEGER) WHERE w.status='queued' AND w.deferred_reason IS NOT NULL AND w.handler=?1 AND w.priority=?2 AND t.audience=?3 AND t.status IN ('queued','running') ORDER BY w.priority,w.next_at LIMIT 20"
             "thought" 0 "operator")))
 
-(defun terminal-stream (agent since)
+(defun terminal-stream (agent since &key deltas)
   (setf (hunchentoot:content-type*) "text/event-stream"
         (hunchentoot:header-out "Cache-Control") "no-cache")
   (let* ((k (agent-kernel agent))
@@ -455,7 +455,9 @@ transcript, all other cognition as toasts that name the kind of thought."
                           ;; Reply fragments as they are generated, for clients that
                           ;; act on a reply before it is whole (speech); only the
                           ;; operator's own thoughts.
-                          (when (string= event "delta")
+                          ;; Only to a client that asked (?deltas=1): an older page draws
+                          ;; an event type it does not know as a row of its own.
+                          (when (and deltas (string= event "delta"))
                             (let ((id (obj-get data "thought_id")))
                               (when (eq :yes (or (gethash id operator-thoughts)
                                                  (setf (gethash id operator-thoughts)
@@ -829,7 +831,8 @@ localhost), the URL to send it to; passkeys only work at the agent's origin."
 
       ((and (eq method :get) (string= path "/api/v2/stream"))
        (values (if (%signed-in agent)
-                   (terminal-stream agent (or (ignore-errors (parse-integer (hunchentoot:get-parameter "since"))) 0))
+                   (terminal-stream agent (or (ignore-errors (parse-integer (hunchentoot:get-parameter "since"))) 0)
+                                    :deltas (equal "1" (hunchentoot:get-parameter "deltas")))
                    (reply 401 (obj "error" "not signed in")))
                t))
 
