@@ -108,6 +108,11 @@ render audited content safe for every audience. Unreviewed sources default to op
 (defparameter +voice-rule+
   "This message came by voice: the operator is talking with you through your avatar, and your reply will be spoken aloud. Answer the way a person talks: one to three short sentences, about forty words at most, unless they asked you to read something out or explain at length. No lists, headings, markdown, links or emoji. To show a gesture or an expression, you may begin with one short stage direction in asterisks, such as *smiles*; it is performed, not spoken.")
 
+(defvar *voice-turn-notes* '()
+  "Functions of the kernel, each returning a line (or NIL) to add to the rule for
+a voice turn: how a plugin tells the agent what its avatar can do, such as the
+animations it can perform.")
+
 (defun %voice-turn-p (kernel thought-id)
   "True when the thought THOUGHT-ID answers a turn the operator gave by voice
 (the avatar marks its messages so: origin mode \"voice\")."
@@ -118,7 +123,11 @@ render audited content safe for every audience. Unreviewed sources default to op
 
 (define-slot-source :turn (kernel request max)
   (append
-   (and (%voice-turn-p kernel (getf request :thought-id)) (list +voice-rule+))
+   (and (%voice-turn-p kernel (getf request :thought-id))
+        (cons +voice-rule+
+              (loop for note in *voice-turn-notes*
+                    for line = (ignore-errors (funcall note kernel))
+                    when (and (stringp line) (plusp (length line))) collect line)))
    (list "A message with no tool call ends this thought. If there is a next step, make its tool call in the same message; if what was asked is something to write, write it now. Never end by saying what you are about to do.")))
 
 (define-slot-source :dialogue (kernel request max)

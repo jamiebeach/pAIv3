@@ -244,6 +244,10 @@
       (let ((spoken (context-for "voice")) (typed (context-for nil)))
         (is (search "This message came by voice" spoken) "a voice turn gets the rule")
         (is (search "Never end by saying what you are about to do" spoken) "and keeps the turn-ending rule")
-        (is (not (search "This message came by voice" typed)) "a typed turn does not")))))
+        (is (not (search "This message came by voice" typed)) "a typed turn does not"))
+      ;; A plugin's note (here, what an avatar can perform) joins the rule, for voice turns only.
+      (let ((pai-v3.mind::*voice-turn-notes* (list (lambda (kernel) (declare (ignore kernel)) "You can *wave*."))))
+        (is (search "You can *wave*." (context-for "voice")) "a plugin's note joins a voice turn")
+        (is (not (search "You can *wave*." (context-for nil))) "and only a voice turn")))))
 
 (run-suite "mind-context")
