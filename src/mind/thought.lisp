@@ -693,7 +693,7 @@ the parent's tool result, which re-queues the parent."
 TOOLS NIL asks for an answer with no tools offered."
   (let* ((kernel (mind-kernel mind)) (thought (mind-thought mind))
          (id (getf thought :id))
-         (tools (and tools (tools-for thought)))
+         (tools (and tools (remove-if-not (lambda (tool) (tool-usable-p kernel tool thought)) (tools-for thought))))
          (images (thought-images kernel thought))
          (profile (let ((p (profile-for kernel (%purpose thought) (funcall *route-signals* kernel thought))))
                     ;; A turn with images asks for a model that can see, if one is routed.
@@ -808,7 +808,7 @@ sub-call's result arrives later."
                                 (setf failed t)
                                 (format nil "Not run: this response asked for ~d tool calls and at most ~d run at once. Ask again for the ones you still need, a few at a time."
                                         (length calls) most))
-                               ((not (and tool (tool-available-p tool thought)))
+                               ((not (and tool (tool-usable-p kernel tool thought)))
                                 (setf failed t)
                                 (format nil "No tool named ~a." name))
                                (t (let* ((*publication-recipient* nil)

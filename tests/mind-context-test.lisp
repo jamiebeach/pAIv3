@@ -250,4 +250,23 @@
         (is (search "You can *wave*." (context-for "voice")) "a plugin's note joins a voice turn")
         (is (not (search "You can *wave*." (context-for nil))) "and only a voice turn")))))
 
+(deftest a-voice-only-tool-is-offered-only-on-voice-turns
+  ;; Operator 2026-11-02: the agent should be able to animate its avatar on
+  ;; command, but only while talking through the avatar.
+  (with-temp-kernel (k)
+    (let ((pai-v3.mind::*tools* (alexandria:copy-hash-table pai-v3.mind::*tools*)))
+      (define-tool "test_wave" :description "Wave." :available :operator-trust :voice-only t
+        :run (lambda (kernel id args) (declare (ignore kernel id args)) "waved"))
+      (flet ((thought-for (mode)
+               (let* ((origin (obj "principal_type" "operator" "channel" "web"))
+                      (turn (progn (when mode (setf (gethash "mode" origin) mode))
+                                   (receive-turn k :channel "web" :audience "operator" :speaker "Jamie" :text "hi" :origin origin))))
+                 (thought-row k (request-thought k "responding" "The operator spoke." :channel "web" :source-event-id (event-id turn))))))
+        (let ((tool (gethash "test_wave" pai-v3.mind::*tools*))
+              (spoken (thought-for "voice")) (typed (thought-for nil)))
+          (is (pai-v3.mind::tool-usable-p k tool spoken) "usable on a voice turn")
+          (is (not (pai-v3.mind::tool-usable-p k tool typed)) "not on a typed one")
+          (is (member "test_wave" (mapcar #'tool-name (tools-in-hand spoken (list tool) nil)) :test #'equal)
+              "and in hand without picking it up"))))))
+
 (run-suite "mind-context")

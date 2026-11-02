@@ -7,7 +7,7 @@
 ;;; up); every other available tool is one line in a compact index. All
 ;;; output is in name order so the prefix stays byte-identical for caching.
 
-(defstruct tool name summary doc parameters (available :any) core run publishes)
+(defstruct tool name summary doc parameters (available :any) core run publishes voice-only)
 
 (defvar *tools* (make-hash-table :test 'equal))
 
@@ -15,18 +15,20 @@
   (let ((end (or (position #\. text) (position #\Newline text))))
     (if end (subseq text 0 (1+ end)) text)))
 
-(defmacro define-tool (name &key description summary parameters (available :any) core run publishes)
+(defmacro define-tool (name &key description summary parameters (available :any) core run publishes voice-only)
   "Declare a tool. DESCRIPTION is its documentation; SUMMARY (default: the
 first sentence of DESCRIPTION) is its index line. PARAMETERS is a JSON-schema
 object. AVAILABLE is :ANY, :OPERATOR-TRUST (private cognition, or communication to
 the operator), or a list of the audiences that may use it. CORE is T, or a list of origins, for which the tool is always
 in hand. RUN is (lambda (kernel thought-id arguments-object)) returning a
 string, or :PENDING when the result will arrive later. PUBLISHES marks tools
-that publish to non-operator audiences; private reflection cannot use them."
+that publish to non-operator audiences; private reflection cannot use them.
+VOICE-ONLY marks a tool offered only while answering a turn the operator gave
+by voice, such as an avatar's; there it is always in hand."
   `(register-tool (make-tool :name ,name :doc ,description
                              :summary (or ,summary (%first-sentence ,description))
                              :parameters ,parameters :available ,available :core ,core :run ,run
-                             :publishes ,publishes)))
+                             :publishes ,publishes :voice-only ,voice-only)))
 
 (defvar *agent-defining* nil
   "True while the agent's own code (lisp-eval) runs. A tool the agent
@@ -86,6 +88,11 @@ defines for itself is always operator-trust and never core.")
                (:operator-trust (equal "operator" audience))
                (:operator-and-peers (or (equal "operator" audience) (peer-audience-p audience))))))))
 
+(defun tool-usable-p (kernel tool thought)
+  "TOOL is available to THOUGHT, and, if voice-only, THOUGHT answers a voice turn."
+  (and (tool-available-p tool thought)
+       (or (not (tool-voice-only tool)) (%voice-turn-p kernel (getf thought :id)))))
+
 (defun tools-for (thought)
   "Tools THOUGHT may use, in name order."
   (sort (loop for tool being the hash-values of *tools*
@@ -101,6 +108,7 @@ defines for itself is always operator-trust and never core.")
 those named in PICKED-UP. describe_tool is in hand only if something is not."
   (let* ((hand (remove-if-not (lambda (tool)
                                 (or (%core-p tool (getf thought :origin))
+                                    (tool-voice-only tool)     ; offered only on voice turns, so always in hand there
                                     (member (tool-name tool) picked-up :test #'string=)))
                               tools))
          (rest (set-difference tools hand)))
@@ -131,7 +139,7 @@ those named in PICKED-UP. describe_tool is in hand only if something is not."
   :core t
   :run (lambda (kernel id args)
          (let ((tool (gethash (obj-get args "name" "") *tools*)))
-           (if (and tool (tool-available-p tool (thought-row kernel id)))
+           (if (and tool (tool-usable-p kernel tool (thought-row kernel id)))
                (format nil "~a~%~%~a~%~%Parameters: ~a" (tool-name tool) (tool-doc tool)
                        (json-encode (or (tool-parameters tool) (obj "type" "object"))))
                (format nil "No tool named ~a." (obj-get args "name" ""))))))
