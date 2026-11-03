@@ -35,7 +35,7 @@
    ;; persona
    #:render-identity #:*identity-order* #:adopt-trait #:adopt-influence
    #:affect-now #:render-affect #:modulator-drift #:drive-drift
-   #:run-periodic #:*periodic-hooks* #:*quiet-starters* #:request-summaries #:working-summary #:*activity-hook* #:*progress-hook*
+   #:run-periodic #:*periodic-hooks* #:*quiet-starters* #:request-summaries #:working-summary #:*activity-hook* #:*activity-listeners* #:*progress-hook*
    #:add-schedule #:cancel-schedule #:run-due-schedules #:cron-next #:local-slot #:local-to-universal
    ;; context
    #:assemble-context #:define-context-profile #:define-slot-source

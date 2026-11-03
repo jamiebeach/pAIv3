@@ -269,4 +269,14 @@
           (is (member "test_wave" (mapcar #'tool-name (tools-in-hand spoken (list tool) nil)) :test #'equal)
               "and in hand without picking it up"))))))
 
+
+(deftest plugins-can-listen-to-every-thoughts-activity
+  (let* ((seen '())
+         (pai-v3.mind:*activity-hook* nil)
+         (pai-v3.mind:*activity-listeners*
+           (list (lambda (thought kind detail) (declare (ignore detail)) (error "a broken listener ~a ~a" thought kind))
+                 (lambda (thought kind detail) (push (list (getf thought :origin) kind (obj-get detail "tool_name")) seen)))))
+    (pai-v3.mind::%activity '(:origin "concern" :audience "self") "tool-start" "tool_name" "read_book")
+    (is (equal '(("concern" "tool-start" "read_book")) seen) "heard even with no operator view, past a broken listener")))
+
 (run-suite "mind-context")

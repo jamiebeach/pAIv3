@@ -187,12 +187,19 @@ model-request, progress, tool-start, tool-result, reply-ready or
 model-failed; DETAIL is an object of content-free counts and labels, plus a
 short preview of tool input. Never recorded; live only.")
 
+;; Besides the operator's live view, plugins may listen to every thought's
+;; activity (an avatar showing what she is doing in quiet time). Live only, like
+;; the hook; a listener that fails is skipped.
+(defvar *activity-listeners* '()
+  "Functions (lambda (thought kind detail)) called with every thought's activity.")
+
 (defun %activity-detail (thought kind detail)
-  (when *activity-hook* (ignore-errors (funcall *activity-hook* thought kind detail))))
+  (when *activity-hook* (ignore-errors (funcall *activity-hook* thought kind detail)))
+  (dolist (f *activity-listeners*) (ignore-errors (funcall f thought kind detail))))
 
 (defun %activity (thought kind &rest detail)
-  (when *activity-hook*
-    (ignore-errors (funcall *activity-hook* thought kind (apply #'obj detail)))))
+  (when (or *activity-hook* *activity-listeners*)
+    (%activity-detail thought kind (apply #'obj detail))))
 (defvar *interrupts* (make-hash-table))
 (defvar *interrupt-lock* (bt:make-lock "thought interrupts"))
 
