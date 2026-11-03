@@ -88,7 +88,7 @@ sub-calls. Change budgets here, not per kind.")
            ("depth" :integer :optional)))
 
 (define-event-type "thought.step"
-  :schema (("thought_id" :integer) ("kind" :string)   ; model | tool_call | tool_result | nudge
+  :schema (("thought_id" :integer) ("kind" :string)   ; model | tool_call | step_note | tool_result | nudge
            ("part" :integer) ("text" :string)
            ("tool" :string :optional) ("call_id" :string :optional)
            ("arguments" :string :optional)
@@ -283,7 +283,8 @@ assistant message; a long tool result shows its first part and how to page."
                          (obj "role" "assistant" "content" text))
                      messages)
                (setf text nil calls '()))))
-      (loop for (kind part step-text tool call-id arguments) in (thought-steps kernel id)
+      (loop with notes = (make-hash-table :test 'equal)
+            for (kind part step-text tool call-id arguments) in (thought-steps kernel id)
             do (cond ((string= kind "model")
                       (when (and (zerop part) (or calls text)) (flush))
                       (setf text (if (zerop part) step-text (concatenate 'string text step-text))))
@@ -294,11 +295,14 @@ assistant message; a long tool result shows its first part and how to page."
                      ((string= kind "nudge")
                       (flush)
                       (push (obj "role" "user" "content" step-text) messages))
+                     ((string= kind "step_note")
+                      (setf (gethash call-id notes) (concatenate 'string (gethash call-id notes "") step-text)))
                      ((string= kind "tool_result")
                       (flush)
                       (if (zerop part)
                           (push (setf (gethash call-id results)
-                                      (obj "role" "tool" "tool_call_id" call-id "content" step-text))
+                                      (obj "role" "tool" "tool_call_id" call-id
+                                           "content" (%with-notes (gethash call-id notes) step-text)))
                                 messages)
                           (let ((shown (gethash call-id results)))
                             (when (and shown (= part 1))
@@ -547,6 +551,16 @@ tool-name arguments prior result). Redefining NAME replaces it in place."
      (defun ,name ,lambda-list (declare (ignorable ,@lambda-list)) ,@body)
      (pushnew ',name *step-notes*)
      ',name))
+
+(defun %with-notes (notes result)
+  "What the model sees for a tool call: its step NOTES, marked as the agent's
+own recollection, then RESULT. Only this view carries them; the stored result
+stays pure, so read_result, recall and later quotes never take a note for the
+tool's output (beads v3-w52, v3-gu1)."
+  (if (and notes (plusp (length notes)))
+      (format nil "[Brought to mind by this call: your own memories and notes, not part of its result]~%~a~%~%[The tool's result]~%~a"
+              notes result)
+      result))
 
 (defun %step-notes (kernel thought-id name arguments prior result)
   (loop for note in (reverse *step-notes*)
@@ -808,6 +822,7 @@ sub-call's result arrives later."
           for name = (obj-get fn "name")
           for tool = (gethash name *tools*)
           for failed = nil
+          for notes = nil
           for result = (let ((*call-id* (obj-get call "id")))
                          (%activity thought "tool-start" "tool_name" name
                                     "input" (let ((a (or (obj-get fn "arguments") ""))) (subseq a 0 (min 200 (length a)))))
@@ -831,8 +846,9 @@ sub-call's result arrives later."
                                                                    (setf *publication-recipient* restricted-recipient)))
                                                                args)))
                                                   (error (e) (setf failed t) (format nil "Tool error: ~a" e))))
-                                        (notes (and (stringp result) (%step-notes kernel id name (obj-get fn "arguments") prior result))))
-                                    (if (and notes (stringp result)) (format nil "~{~a~%~%~}~a" notes result) result))))))
+                                        (found (and (stringp result) (%step-notes kernel id name (obj-get fn "arguments") prior result))))
+                                    (when found (setf notes (format nil "~{~a~^~%~%~}" found)))
+                                    result)))))
                          (when (and asked (= n (length calls)) (stringp result))
                            (setf result (format nil "~a~%~%[Only the first ~d of the ~d tool calls in that response ran; the rest were dropped. Ask again for the ones you still need, a few at a time.]"
                                                 result most asked)))
@@ -842,9 +858,12 @@ sub-call's result arrives later."
                           "result_characters" (if (stringp result) (length result) 0))
                (when (and (stringp result) (>= (length result) 6) (string-equal "Error:" result :end2 6))
                  (setf failed t))
+               (when notes
+                 (%record-text kernel id "step_note" notes "tool" name "call_id" (obj-get call "id")))
                (apply #'%record-text kernel id "tool_result" result "tool" name "call_id" (obj-get call "id")
                       (and failed (list "failed" t)))
-            and collect (obj "role" "tool" "tool_call_id" (obj-get call "id") "content" result))))
+            and collect (obj "role" "tool" "tool_call_id" (obj-get call "id")
+                             "content" (if (stringp result) (%with-notes notes result) result)))))
 
 ;;; Tools of thinking itself
 

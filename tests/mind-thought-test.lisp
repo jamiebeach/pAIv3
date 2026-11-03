@@ -211,9 +211,10 @@
                            (obj "content" "Noon.")))
            (id (request-thought k "work" "check the time")))
       (run-until-idle k)
-      (let ((results (remove "tool_result" (thought-steps k id) :key #'first :test-not #'equal)))
-        (is (not (search "already made" (third (first results)))) "the first call is new")
-        (is (search "already made this exact call" (third (second results))) "the same call, keys reordered, is noticed")))))
+      (let ((results (remove "tool" (pai-v3.mind::%replay-messages k id)
+                             :key (lambda (m) (obj-get m "role")) :test-not #'equal)))
+        (is (not (search "already made" (obj-get (first results) "content"))) "the first call is new")
+        (is (search "already made this exact call" (obj-get (second results) "content")) "the same call, keys reordered, is noticed")))))
 
 (deftest a-flood-of-tool-calls-runs-only-the-first-few
   (with-thinking (k)
@@ -239,9 +240,15 @@
                            (obj "content" "Noon.")))
            (id (request-thought k "work" "check the time")))
       (run-until-idle k)
-      (let ((result (third (find "tool_result" (thought-steps k id) :key #'first :test #'equal))))
-        (is (search "(Noted: you asked the time.)" result) "a registered note is shown with the result")
-        (is (< (search "Noted" result) (length result)) "before it"))
+      (let ((result (third (find "tool_result" (thought-steps k id) :key #'first :test #'equal)))
+            (note (third (find "step_note" (thought-steps k id) :key #'first :test #'equal)))
+            (shown (obj-get (find "tool" (pai-v3.mind::%replay-messages k id)
+                                  :key (lambda (m) (obj-get m "role")) :test #'equal)
+                            "content")))
+        (is (equal "(Noted: you asked the time.)" note) "a registered note is recorded beside the result")
+        (is (null (search "Noted" result)) "and never inside it, which read_result and recall serve")
+        (is (search "not part of its result" shown) "the model sees it marked as its own")
+        (is (< (search "Noted" shown) (search "[The tool's result]" shown)) "before the result"))
       (is (equal "ended" (getf (thought-row k id) :status)) "a note that fails is skipped, not fatal"))))
 
 (deftest provider-outage-retries-without-losing-the-thought
