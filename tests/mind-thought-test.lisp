@@ -509,4 +509,47 @@
       (run-until-idle k)
       (is (= 1 (getf (thought-row k id) :model-calls)) "a failed judgment never holds the answer back"))))
 
+(defun grounding-judge (&key (calls (list 0)))
+  "A Decisions provider that finds a reply saying Goodnight ungrounded unless
+the operator spoke of bed; anything else says nothing of the operator."
+  (make-provider-profile
+   :name "affect-jev" :model "typesafe/jev-1.13" :base-url "https://openrouter.ai/api/v1" :secret "openrouter"
+   :transport (lambda (url headers body &key timeout)
+                (declare (ignore url headers timeout))
+                (incf (car calls))
+                (let* ((state (obj-get (json-parse body) "state"))
+                       (reply (obj-get state "reply"))
+                       (said (format nil "~a ~{~a ~}" (obj-get state "asked") (coerce (or (obj-get state "operator_said") #()) 'list)))
+                       (level (cond ((not (search "Goodnight" reply)) 2) ((search "bed" said) 1) (t 0)))
+                       (answers (obj)))
+                  (flet ((score (n)
+                           (let ((p (obj)))
+                             (dotimes (i 3) (setf (gethash (write-to-string i) p) (if (= i n) 1d0 0d0)))
+                             (obj "type" "score" "score" n "probabilities" p))))
+                    (setf (gethash "reply" answers) (score 2)
+                          (gethash "grounding" answers) (score level)))
+                  (values 200 nil (json-encode (obj "model" "typesafe/jev-test" "answers" answers
+                                                    "usage" (obj "input_tokens" 10 "output_tokens" 1 "cost" 0.000001))))))))
+
+(deftest a-reply-that-states-the-operators-state-unsupported-is-written-again
+  ;; Bead v3-568: "Goodnight, Jamie" from a sign-off, when he was up for another hour.
+  (with-thinking (k)
+    (let* ((calls (list 0))
+           (pai-v3.mind::*decision-profile* (grounding-judge :calls calls))
+           (*script* (list (obj "content" "Goodnight, sleep well.")
+                           (obj "content" "Glad it helped. Are you turning in, or still at it?")))
+           (id (operator-turn k "Thanks. Much appreciated.")))
+      (run-until-idle k)
+      (let ((said (replies k)))
+        (is (notany (lambda (r) (search "Goodnight" r)) said) "the unsupported goodnight is never said")
+        (is (find-if (lambda (r) (search "Are you turning in" r)) said) "the rewritten reply is"))
+      (is (= 1 (car calls)) "judged once")))
+  (with-thinking (k)
+    (let* ((pai-v3.mind::*decision-profile* (grounding-judge))
+           (*script* (list (obj "content" "Goodnight, sleep well.")))
+           (id (operator-turn k "I'm tired and in bed, my eyelids are heavy.")))
+      (run-until-idle k)
+      (is (= 1 (getf (thought-row k id) :model-calls)) "with the operator's own words behind it, it stands")
+      (is (find-if (lambda (r) (search "Goodnight" r)) (replies k)) "and is said"))))
+
 (run-suite "mind-thought")
