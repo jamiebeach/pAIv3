@@ -169,4 +169,16 @@
           (let ((ghost (sql-value (kernel-db k) "SELECT id FROM scheduled_items WHERE text=?1 LIMIT 1" "Old ghost")))
             (is (search "Cancelled" (funcall run k own (obj "action" "cancel" "id" ghost))))))))))
 
+(deftest a-woken-context-note-does-not-do-the-job-it-is-for
+  ;; Bead v3-upq: a 06:28 note for the 06:30 brief woke and ran the brief itself.
+  (with-temp-kernel (k)
+    (at-utc ((utc 2026 10 12 12 0))
+      (add-schedule k "SYNTHETIC for the 06:30 brief: read the summaries file" :in 60 :mode "context" :wake t)
+      (add-schedule k "SYNTHETIC plain notice" :in 60 :wake t))
+    (at-utc ((utc 2026 10 12 12 2))
+      (run-due-schedules k))
+    (flet ((reason (like) (sql-value (kernel-db k) "SELECT reason FROM thoughts WHERE reason LIKE ?1 LIMIT 1" like)))
+      (is (search "do not do that job now" (reason "%06:30 brief%")) "a context note says it is context for a later run")
+      (is (not (search "do not do that job now" (reason "%plain notice%"))) "a notify reminder does not"))))
+
 (run-suite "mind-schedule")

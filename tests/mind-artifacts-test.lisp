@@ -138,4 +138,16 @@
         (end-thought k second-thought)
         (is (null (follow-ups k)) "an older revision of a delivered document is not left behind")))))
 
+(deftest a-wrap-up-is-told-what-it-already-saved
+  ;; Bead v3-upq: a brief out of model calls wrote STATE=FAILED, "no artifact
+  ;; saved", over a draft that had saved and was delivered a minute later.
+  (with-temp-kernel (k)
+    (let* ((thought (request-thought k "noticing" "Synthetic morning brief"))
+           (a (pai-v3.mind::save-document k thought (sample-document "Morning brief")))
+           (facts (funcall pai-v3.mind::*wrap-up-facts-hook* k (thought-row k thought))))
+      (is (search (obj-get a "artifact_id") facts) "the saved draft is named")
+      (is (search "do not report them as unsaved" facts))
+      (pai-v3.mind::set-artifact-state k thought (obj-get a "artifact_id") (obj-get a "revision") "delivered" "Here.")
+      (is (null (funcall pai-v3.mind::*wrap-up-facts-hook* k (thought-row k thought))) "nothing once it is settled"))))
+
 (run-suite "mind-artifacts")

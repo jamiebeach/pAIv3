@@ -627,6 +627,11 @@ source it has read; PRIOR is the thought's earlier (tool arguments) calls."
 (define-step-note repeated-call-note (kernel thought-id name arguments prior result)
   (%repeat-note name arguments prior))
 
+(defvar *wrap-up-facts-hook* nil
+  "(lambda (kernel thought)) or NIL: a line of what the thought has already
+done that its last call cannot see for itself (a document saved deep in a
+sub-call), added to the wrap-up so its account matches the ledger (bead v3-upq).")
+
 (defvar *wrap-up-hook* nil
   "(lambda (kernel thought text)) or NIL: delivers a wrap-up answer that has
 no conversation to go to (the coding agent's, on its bead).")
@@ -637,7 +642,11 @@ no tools; if even that fails, it parks."
   (let* ((kernel (mind-kernel mind)) (thought (mind-thought mind))
          (max (getf (%policy kernel (getf thought :origin)) :max-calls)))
     (%activity thought "allowance-spent" "model_calls" max)
-    (let ((reply (handler-case (consult mind (append messages (list (obj "role" "user" "content" +wrap-up+)))
+    (let ((reply (handler-case (consult mind (append messages
+                                                     (list (obj "role" "user" "content"
+                                                                (format nil "~a~@[~%~%~a~]" +wrap-up+
+                                                                        (and *wrap-up-facts-hook*
+                                                                             (ignore-errors (funcall *wrap-up-facts-hook* kernel thought)))))))
                                         :tools nil)
                    (error () nil))))
       (when (and reply (plusp (length (obj-get reply "content" ""))))

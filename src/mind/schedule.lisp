@@ -303,8 +303,12 @@ called off. If so, revise it, move it to a real date, or cancel or close it, rat
   "A one-off notify reminder set at least this long ago, after which the
 operator has spoken, is checked by a thought before it is sent.")
 
+(defparameter +context-woke+
+  "This is a note I left for myself. If it is meant for a job scheduled for later (context for that run), keep it in mind and do not do that job now: the scheduled run will do it (bead v3-upq).")
+
 (defun %fire-schedule (kernel id kind text mode audience cron timezone wake next-at)
-  (let ((created (sql-value (kernel-db kernel) "SELECT created_at FROM scheduled_items WHERE id=?1 LIMIT 1" id)))
+  (let ((created (sql-value (kernel-db kernel) "SELECT created_at FROM scheduled_items WHERE id=?1 LIMIT 1" id))
+        (asked-mode mode))
     ;; A one-off message written hours ago may rest on a plan that has since
     ;; changed: when the operator has spoken since, a thought checks it first.
     (when (and created (string= mode "notify") (string= kind "once") (equal audience "operator")
@@ -328,7 +332,8 @@ operator has spoken, is checked by a thought before it is sent.")
             ;; A reminder going off is something noticed; the claim above
             ;; already holds, so a crash here loses the thought, never repeats it.
             (when (eql wake 1)
-              (request-thought kernel "noticing" (format nil "It is ~a: ~a~@[~%~%~a~]" slot text
+              (request-thought kernel "noticing" (format nil "It is ~a: ~a~@[~%~%~a~]~@[~%~%~a~]" slot text
+                                                         (and (string= asked-mode "context") +context-woke+)
                                                          (and created (ignore-errors (premise-check kernel created :what "This reminder"))))
                                :audience audience :source-event-id (event-id fired)))))))
 

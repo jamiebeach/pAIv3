@@ -206,6 +206,14 @@ its sub-thoughts and still neither delivered, kept nor abandoned."
             "SELECT a.artifact_id,a.revision,a.title FROM thoughts t JOIN artifacts a ON a.thought_id=t.id AND a.state=?2 WHERE t.root_id=?1 AND NOT EXISTS (SELECT 1 FROM artifacts b WHERE b.artifact_id=a.artifact_id AND b.revision>a.revision) ORDER BY a.revision LIMIT 8"
             root-id "draft"))
 
+(setf *wrap-up-facts-hook*
+      (lambda (kernel thought)
+        (let ((drafts (unsettled-drafts kernel (or (getf thought :root-id) (getf thought :id)))))
+          (when drafts
+            (format nil "Already saved in this thought, as drafts not yet delivered:~%~{~{- \"~a\" (artifact_id ~a, revision ~a)~}~%~}~
+These saves landed. A follow-up thought will settle them right after this one, so do not report them as unsaved or failed."
+                    (mapcar (lambda (d) (list (third d) (first d) (second d))) drafts))))))
+
 (setf *concluded-hook*
       (lambda (kernel thought)
         (let ((drafts (unsettled-drafts kernel (getf thought :id))))
