@@ -571,6 +571,26 @@ localhost), the URL to send it to; passkeys only work at the agent's origin."
                (or (search "127.0.0.1" host) (search "[::1]" host)))
       (format nil "~a~a~@[?~a~]" origin path (hunchentoot:query-string*)))))
 
+;;; A spoken turn sent twice (bead v3-7fn): Chrome on Android can deliver a
+;;; recogniser's final result again after the page sent it, and the page sends
+;;; the same words a second time. The copy is built afresh, so no id would match
+;;; it; the same words by voice within *voice-repeat-seconds* are one turn.
+
+(defparameter *voice-repeat-seconds* 4)
+(defvar *last-voice-sends* (make-hash-table :test 'eq :weakness :key)
+  "Agent -> (text universal-time receipt): the last spoken turn each agent took.")
+(defvar *voice-sends-lock* (bt:make-lock "voice sends"))
+
+(defun %repeated-voice-send (agent text)
+  "The receipt of the turn TEXT already made, when it was spoken just now."
+  (bt:with-lock-held (*voice-sends-lock*)
+    (destructuring-bind (&optional said at receipt) (gethash agent *last-voice-sends*)
+      (and said (string-equal said text) (<= (- (get-universal-time) at) *voice-repeat-seconds*) receipt))))
+
+(defun %note-voice-send (agent text receipt)
+  (bt:with-lock-held (*voice-sends-lock*)
+    (setf (gethash agent *last-voice-sends*) (list text (get-universal-time) receipt))))
+
 (defun %pwa-route (agent method path)
   (let ((k (agent-kernel agent)))
     (cond
@@ -854,6 +874,8 @@ localhost), the URL to send it to; passkeys only work at the agent's origin."
                                ((char= #\/ (char text 0))
                                 (broadcast agent "command" (obj "text" text "reply" (terminal-command k text (session-token))))
                                 (reply 200 (obj "ok" t "command" text)))
+                               ((and (equal "voice" (obj-get b "mode")) (%repeated-voice-send agent text))
+                                (reply 200 (obj "ok" t "duplicate" t "receipt" (%repeated-voice-send agent text))))
                                (t
                                 (let* ((images (handler-case
                                                    (mapcar (lambda (url) (pai-v3.mind::store-image k url)) (obj-get b "images"))
@@ -875,6 +897,8 @@ localhost), the URL to send it to; passkeys only work at the agent's origin."
                                                                             origin)))
                                        (thought (request-thought k "responding" "The operator spoke."
                                                                  :channel "web" :source-event-id (event-id turn))))
+                                  (when (equal "voice" (obj-get b "mode"))
+                                    (%note-voice-send agent text (obj "turn_id" (event-id turn) "thought_id" thought)))
                                   (reply 200 (obj "ok" t "receipt" (obj "turn_id" (event-id turn) "thought_id" thought)))))))))))
         t))
 
