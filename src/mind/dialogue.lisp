@@ -120,6 +120,22 @@ channel adapter; it is stored, never inferred from TEXT."
               (if (< hours 48) (format nil "~d hour~:p" (round hours)) (format nil "~d day~:p" (round hours 24)))
               speaker))))
 
+;;; The same words from the same speaker twice within a minute are one row
+;;; here: double sends (beads v3-7fn, v3-gjz) left both copies of a turn, and of
+;;; the two replies to it, in the dialogue every thought reads (v3-7fn.1).
+(defparameter *repeat-row-seconds* 60)
+
+(defun %repeated-row-p (newer channel speaker kind text at)
+  "True when a newer row already kept has TEXT's words from the same speaker,
+channel and kind within *repeat-row-seconds*; NEWER maps each such key to its time."
+  (let* ((close (position #\] text))
+         (words (string-trim " " (if close (subseq text (1+ close)) text)))
+         (key (format nil "~a|~a|~a|~a" speaker channel kind words))
+         (seconds (ignore-errors (parse-iso8601 at)))
+         (seen (gethash key newer)))
+    (prog1 (and seen seconds (<= (- seen seconds) *repeat-row-seconds*))
+      (when seconds (setf (gethash key newer) seconds)))))
+
 (defun recent-dialogue (kernel audience &key (token-budget 4000) (max-rows 200) before-id)
   "Most recent dialogue visible to AUDIENCE across all channels, oldest first,
 fitted to TOKEN-BUDGET. One indexed read of at most MAX-ROWS rows."
@@ -127,11 +143,14 @@ fitted to TOKEN-BUDGET. One indexed read of at most MAX-ROWS rows."
                          "SELECT event_id,channel,speaker,rendered,tokens,kind,at FROM working_dialogue WHERE audience=?1 AND event_id<?2 ORDER BY event_id DESC LIMIT ?3"
                          audience (or before-id most-positive-fixnum) max-rows))
          (kept '())
-         (used 0))
+         (used 0)
+         (newer (make-hash-table :test 'equal)))
     (loop for (id channel speaker text tokens kind at) in rows
-          for gap = (and (equal kind "turn") (ignore-errors (%gap-marker kernel audience id speaker at)))
+          for repeat = (%repeated-row-p newer channel speaker kind text at)
+          for gap = (and (not repeat) (equal kind "turn") (ignore-errors (%gap-marker kernel audience id speaker at)))
           for cost = (+ tokens (if gap (estimate-tokens gap) 0))
-          while (<= (+ used cost) token-budget)
+          until (and (not repeat) (> (+ used cost) token-budget))
+          unless repeat
           do (incf used cost)
              (push (make-dialogue-row :event-id id :channel channel :speaker speaker
                                       :text (format nil "~@[~a~]~a" gap (localize-dialogue kernel text)) :tokens cost)

@@ -69,4 +69,17 @@
       (signals error (append! k "notice.posted" (obj "channel" "web" "audience" "operator" "text" text "importance" "normal"))
                "other events keep the ordinary limit"))))
 
+(deftest the-same-words-twice-within-a-minute-are-one-row
+  ;; Bead v3-7fn.1: double sends left both copies in every thought's dialogue.
+  (with-temp-kernel (k)
+    (flet ((say (text) (receive-turn k :channel "web" :audience "operator" :speaker "Sam" :text text))
+           (texts () (mapcar #'dialogue-row-text (recent-dialogue k "operator"))))
+      (say "SYNTHETIC road is fine") (say "SYNTHETIC road is fine")
+      (is (= 1 (count-if (lambda (x) (search "road is fine" x)) (texts))) "a double send reads once")
+      (say "SYNTHETIC something else") (say "SYNTHETIC road is fine")
+      (is (= 1 (count-if (lambda (x) (search "road is fine" x)) (texts))) "even with a row between them")
+      (sql-exec (kernel-db k) "UPDATE working_dialogue SET at=?1" (iso8601 (- (now) 3600)))
+      (say "SYNTHETIC road is fine")
+      (is (= 2 (count-if (lambda (x) (search "road is fine" x)) (texts))) "said again an hour later, it is said again"))))
+
 (run-suite "mind-dialogue")
