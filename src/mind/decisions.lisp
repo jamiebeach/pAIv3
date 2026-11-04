@@ -51,7 +51,8 @@
               (sb-ext:with-timeout timeout
                 (funcall (provider-profile-transport profile) (%decision-url profile) headers body :timeout timeout))
             (provider-failure (e) (fail :source 0 (failure-reason e)))
-            (egress-refused () (fail :source 0 "Decision egress refused"))
+            ;; A host not found just now is the network: retried, not dead (bead v3-mi4).
+            (egress-refused (e) (fail (if (egress-transient-p e) :transient :source) 0 (egress-reason e)))
             (sb-ext:timeout () (fail :transient 0 "Decision deadline exceeded"))
             (error () (fail :transient 0 "Decision transport failed")))
         (declare (ignore response-headers))
