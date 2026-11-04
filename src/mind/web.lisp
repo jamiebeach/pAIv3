@@ -9,6 +9,10 @@
 
 (defvar *fetch-allow-private* nil "Allow private addresses (tests only).")
 
+(define-setting "net.egress_proxy"
+  :type :string :default "" :group "Web"
+  :description "The egress proxy every public request and shell command leaves through, such as http://specter@host.docker.internal:3128 (the name before @ says who is asking). Empty: direct.")
+
 (defvar *http-get*
   (lambda (url headers)
     (multiple-value-bind (body status response-headers)

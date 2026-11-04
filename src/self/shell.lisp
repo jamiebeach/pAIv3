@@ -54,11 +54,13 @@
                (sb-ext:with-timeout (+ seconds 5)
                  (multiple-value-bind (out err code)
                      (uiop:run-program
-                      (list "timeout" "--signal=TERM" "--kill-after=2s" (format nil "~ds" seconds)
-                            "env" "-i" (format nil "HOME=~a" (namestring root))
-                            (format nil "PATH=~a" (%shell-path root)) "LANG=C.UTF-8"
-                            (format nil "MAMBA_ROOT_PREFIX=~a" (namestring (merge-pathnames ".local/mamba/" root)))
-                            "bash" "--noprofile" "--norc" "-c" command)
+                      (append
+                       (list "timeout" "--signal=TERM" "--kill-after=2s" (format nil "~ds" seconds)
+                             "env" "-i" (format nil "HOME=~a" (namestring root))
+                             (format nil "PATH=~a" (%shell-path root)) "LANG=C.UTF-8"
+                             (format nil "MAMBA_ROOT_PREFIX=~a" (namestring (merge-pathnames ".local/mamba/" root))))
+                       (%shell-proxy-env kernel)
+                       (list "bash" "--noprofile" "--norc" "-c" command))
                       :directory root :input nil :output :string :error-output :string
                       :ignore-error-status t)
                    (if (member code '(124 137))
@@ -71,6 +73,16 @@
                         limit))))
              (sb-ext:timeout () (format nil "Stopped after ~d seconds." seconds))
              (error (e) (format nil "The shell failed: ~a" e)))))))
+
+(defun %shell-proxy-env (kernel)
+  "Out through the egress proxy, like every other request (bead v3-r2j.1);
+local services stay direct."
+  (let ((proxy (setting kernel "net.egress_proxy")))
+    (when (plusp (length proxy))
+      (loop for name in '("HTTP_PROXY" "HTTPS_PROXY" "http_proxy" "https_proxy")
+            collect (format nil "~a=~a" name proxy) into env
+            finally (return (append env (list "NO_PROXY=localhost,127.0.0.1,host.docker.internal"
+                                              "no_proxy=localhost,127.0.0.1,host.docker.internal")))))))
 
 (define-tool "shell"
   :description "Run a bash command in my own container, in my workspace folder, and see its exit code and output.

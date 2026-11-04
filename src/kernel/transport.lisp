@@ -63,6 +63,16 @@ Installed by the trust module; signals EGRESS-REFUSED.")
           (%refuse "~a is on a private network; only the public web is reachable." host))))
     (string-downcase host)))
 
+(defvar *egress-proxy* nil
+  "(lambda ()) -> the egress proxy URL for public requests, or NIL: the
+filtering forward proxy every container's traffic leaves through (bead
+v3-r2j.1). A request to a configured local service (ALLOW-PRIVATE) never
+goes through it.")
+
+(defun %egress-proxy ()
+  (let ((p (and *egress-proxy* (ignore-errors (funcall *egress-proxy*)))))
+    (and (stringp p) (plusp (length p)) p)))
+
 (defun http-request (method url &key headers body stream (connect-timeout 10) (read-timeout 60)
                                      (max-redirects 5) allow-private)
   "Make an outbound request. Returns (values body status response-headers
@@ -77,7 +87,8 @@ failures signal; HTTP error statuses are returned, not signalled."
                        (dex:request url :method method :headers sent-headers :content sent-body
                                         :want-stream stream :force-string (not stream)
                                         :max-redirects 0 :insecure nil :keep-alive nil
-                                        :connect-timeout connect-timeout :read-timeout read-timeout)
+                                        :connect-timeout connect-timeout :read-timeout read-timeout
+                                        :proxy (and (not allow-private) (%egress-proxy)))
                      (dex:http-request-failed (e)
                        (values (dex:response-body e) (dex:response-status e) (dex:response-headers e))))
                  (let ((location (and (<= 300 status 399) response-headers

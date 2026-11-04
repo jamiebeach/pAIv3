@@ -370,7 +370,8 @@ listens on localhost by default (AUTH-10)."
          (acceptor (make-instance 'api-acceptor :agent agent :port port :address address
                                                 :access-log-destination nil :message-log-destination nil)))
     (setf (agent-acceptor agent) acceptor
-          *reply-delta-hook* (lambda (id text) (broadcast agent "delta" (obj "thought_id" id "text" text))))
+          *reply-delta-hook* (lambda (id text) (broadcast agent "delta" (obj "thought_id" id "text" text)))
+          *egress-proxy* (lambda () (setting kernel "net.egress_proxy")))
     (install-activity agent)
     (hunchentoot:start acceptor)
     (setf (agent-scheduler agent)
