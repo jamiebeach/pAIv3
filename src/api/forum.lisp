@@ -114,6 +114,27 @@
 (defun thread-pinned-p (kernel thread-id)
   (eql 1 (sql-value (kernel-db kernel) "SELECT pinned FROM forum_pins WHERE thread_id=?1 LIMIT 1" thread-id)))
 
+;;; Who resolved a thread, and when (operator request 2026-11-04): the
+;;; resolve event already carries it; its own small projection keeps the latest,
+;;; so a reopen clears it and a second resolve names the second resolver.
+
+(define-projection "forum_resolved"
+  :kind :inline :consumes ("forum.thread.set")
+  :tables ("CREATE TABLE IF NOT EXISTS forum_resolved (thread_id TEXT PRIMARY KEY, resolved INTEGER NOT NULL, by_name TEXT NOT NULL, at INTEGER NOT NULL)")
+  :reduce (lambda (db e)
+            (let* ((p (event-payload e)) (status (obj-get p "status")))
+              (when (member status '("open" "resolved") :test #'equal)
+                (sql-exec db "INSERT INTO forum_resolved(thread_id,resolved,by_name,at) VALUES(?1,?2,?3,?4) ON CONFLICT(thread_id) DO UPDATE SET resolved=excluded.resolved,by_name=excluded.by_name,at=excluded.at WHERE excluded.at>=forum_resolved.at"
+                          (obj-get p "thread_id") (if (equal status "resolved") 1 0) (or (obj-get p "by_name") "") (or (obj-get p "ts") 0))))))
+
+(defun thread-resolved-by (kernel thread-id)
+  "(name at) of whoever last resolved THREAD-ID, while it stays resolved, or NIL."
+  (sql-row (kernel-db kernel) "SELECT by_name,at FROM forum_resolved WHERE thread_id=?1 AND resolved=1 LIMIT 1" thread-id))
+
+(defun %resolved-plist (kernel thread-id)
+  (let ((r (thread-resolved-by kernel thread-id)))
+    (list :by (if r (first r) :null) :at (if r (second r) :null))))
+
 (defparameter +relayed-note+
   "This thread is RELAYED outside the household: Muse (Meta) and any relayed guest read it, and a copy is kept outside the operator's network. Whatever is said here should be fine for a third party to hold for good.")
 
@@ -545,6 +566,8 @@ came from, or NIL when it was made here."
            "created_by" (seventh th) "created_at" (eighth th) "last_at" (ninth th)
            "relayed" (if (thread-relayed-p kernel (first th)) t :false)
            "pinned" (if (thread-pinned-p kernel (first th)) t :false)
+           "resolved_by" (getf (%resolved-plist kernel (first th)) :by)
+           "resolved_at" (getf (%resolved-plist kernel (first th)) :at)
            "messages" (mapcar (lambda (r) (%forum-message-json kernel r))
                               (sql-rows (kernel-db kernel)
                                         "SELECT msg_id,author_id,author_name,text,intent,reply_to,ts,images,quiet_for,via FROM forum_messages WHERE thread_id=?1 ORDER BY ts,event_id LIMIT 2000"
@@ -561,6 +584,8 @@ came from, or NIL when it was made here."
                    "created_by" (seventh th) "last_at" (ninth th) "posts" (or count 0)
                    "relayed" (if (thread-relayed-p kernel (first th)) t :false)
                    "pinned" (if (thread-pinned-p kernel (first th)) t :false)
+                   "resolved_by" (getf (%resolved-plist kernel (first th)) :by)
+                   "resolved_at" (getf (%resolved-plist kernel (first th)) :at)
                    "last_author" (if last (first last) :null)
                    "preview" (if last (let ((s (second last))) (subseq s 0 (min 160 (length s)))) :null))))
           (forum-threads kernel :member member))
@@ -621,8 +646,8 @@ came from, or NIL when it was made here."
         (let ((th (forum-thread kernel thread-id)))
           (if (or (null th) (not (forum-visible-p th me)))
               "There is no such thread, or it is private."
-              (format nil "~a [~a~:[~*~;, private to ~{~a~^, ~}~]] (thread_id ~a)~@[~%~a~]~%~{~a~^~%~}"
-                      (second th) (third th) (equal "private" (fourth th))
+              (format nil "~a [~a~@[ by ~a~]~:[~*~;, private to ~{~a~^, ~}~]] (thread_id ~a)~@[~%~a~]~%~{~a~^~%~}"
+                      (second th) (third th) (first (thread-resolved-by kernel (first th))) (equal "private" (fourth th))
                       (mapcar (lambda (v) (%member-name kernel v)) (fifth th)) (first th)
                       (and (thread-relayed-p kernel (first th)) +relayed-note+)
                       (mapcar (lambda (r)
@@ -832,15 +857,22 @@ way for a single peer whose thread now lives in the forum (bead v3-m9m)."
                         (unless (and (stringp body) (<= 1 (length body) 4000) (every #'stringp images)
                                      (every (lambda (i) (member i allowed :test #'equal)) images))
                           (error "Invalid checked post; nothing sent"))
-                        (destructuring-bind (title quiet private) (%draft-extra kernel id)
-                          (let ((pai-v3.mind::*publication-recipient* nil))
-                            (forum-post kernel :thread-id thread :title title :text body :reply-to reply :intent intent
-                                               :images images :author-id (fleet-agent-id kernel) :author-name (fleet-own-name kernel)
-                                               :chain-depth (%outgoing-depth kernel (getf thought :id))
-                                               :quiet-for quiet :access (if (and (null thread) private) "private" "crew")
-                                               :viewers private)))
-                        (setf fate (if (equal body (sql-value (kernel-db kernel) "SELECT text FROM fleet_drafts WHERE draft_id=?1 LIMIT 1" id))
-                                       "sent" "edited"))))
+                        ;; The forum may refuse it now (a thread resolved while the
+                        ;; draft waited): that settles it as dropped, with the reason,
+                        ;; never as an error the review retries (bead v3-z16).
+                        (handler-case
+                            (progn
+                              (destructuring-bind (title quiet private) (%draft-extra kernel id)
+                                (let ((pai-v3.mind::*publication-recipient* nil))
+                                  (forum-post kernel :thread-id thread :title title :text body :reply-to reply :intent intent
+                                                     :images images :author-id (fleet-agent-id kernel) :author-name (fleet-own-name kernel)
+                                                     :chain-depth (%outgoing-depth kernel (getf thought :id))
+                                                     :quiet-for quiet :access (if (and (null thread) private) "private" "crew")
+                                                     :viewers private)))
+                              (setf fate (if (equal body (sql-value (kernel-db kernel) "SELECT text FROM fleet_drafts WHERE draft_id=?1 LIMIT 1" id))
+                                             "sent" "edited")))
+                          (board-error (e)
+                            (setf (gethash "note" result) (format nil "not sent: ~a" (board-error-reason e)))))))
                     (append! kernel "fleet.draft.settled"
                              (obj "draft_id" id "fate" fate
                                   "note" (let ((note (obj-get result "note")))

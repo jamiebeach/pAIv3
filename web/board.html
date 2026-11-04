@@ -297,7 +297,9 @@
 
   function badges(t) {
     return [t.pinned === true ? el('span', { class: 'badge pinned', text: '📌 pinned' }) : null,
-            el('span', { class: 'badge ' + (t.status === 'open' ? 'open' : ''), text: t.status }),
+            el('span', { class: 'badge ' + (t.status === 'open' ? 'open' : ''),
+                         text: t.status + (t.status === 'resolved' && t.resolved_by ? ' by ' + t.resolved_by : ''),
+                         title: t.resolved_at ? 'Resolved ' + new Date(t.resolved_at * 1000).toLocaleString() : '' }),
             t.access === 'private' ? el('span', { class: 'badge private', text: 'private' }) :
             t.access === 'guests' ? el('span', { class: 'badge guests', text: 'guests' }) : null,
             t.relayed === true ? el('span', { class: 'badge relayed', text: 'relayed outside', title: 'Copies of this thread leave the household through the relay' }) : null];
