@@ -242,13 +242,13 @@ or identifiers), newest first, as (kind at text ref event-id)."
 
 (defun search-experience (kernel query audience &key (limit 8))
   "What AUDIENCE may see of my experience matching QUERY, best first, as
-(kind at snippet ref). All words must match; if nothing does, any word may."
+(kind at snippet ref event-id). All words must match; if nothing does, any word may."
   (let ((scopes (%scopes kernel audience)))
     (dolist (joiner '(" " " OR "))
       (let* ((match (%fts-query query joiner))
              (rows (and match
                         (sql-rows (kernel-db kernel)
-                                  "SELECT kind,at,snippet(experience_fts,0,'[',']','…',32),ref FROM experience_fts WHERE experience_fts MATCH ?1 AND (?2 IS NULL OR instr(?2,'|'||scope||'|')>0) ORDER BY rank LIMIT ?3"
+                                  "SELECT kind,at,snippet(experience_fts,0,'[',']','…',32),ref,event_id FROM experience_fts WHERE experience_fts MATCH ?1 AND (?2 IS NULL OR instr(?2,'|'||scope||'|')>0) ORDER BY rank LIMIT ?3"
                                   match scopes limit))))
         (when rows (return rows))))))
 
@@ -264,9 +264,11 @@ or identifiers), newest first, as (kind at text ref event-id)."
                                         :limit (max 1 (min 25 (obj-get args "limit" 8))))))
            (if rows
                (format nil "~{~a~^~%~}"
-                       (loop for (kind at snippet ref) in rows
-                             collect (format nil "[~a ~a UTC] ~a (~a): ~a"
-                                             (subseq at 0 10) (subseq at 11 16) kind ref snippet)))
+                       ;; The event id lets a later step name exactly what was said
+                       ;; (correct_knowledge's source_event_id).
+                       (loop for (kind at snippet ref event-id) in rows
+                             collect (format nil "[~a ~a UTC] ~a (~a, event ~a): ~a"
+                                             (subseq at 0 10) (subseq at 11 16) kind ref event-id snippet)))
                "Nothing in my experience matches that."))))
 
 ;;; Memory

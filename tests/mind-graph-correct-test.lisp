@@ -145,4 +145,26 @@
       (is (search "is not a predicate" e) "named as unknown, not as a kind it cannot link")
       (is (search "worked_with" e) "with the names to use"))))
 
+(deftest an-earlier-message-from-the-operator-can-carry-a-correction
+  ;; Jamie, 2026-11-04: a correction he made in an earlier conversation, anchored
+  ;; to his message as he sent it, never to a remembered paraphrase.
+  (with-temp-kernel (k)
+    (let* ((sam (form-entity k :kind "person" :name "Sam" :lineage (own k)))
+           (city (form-entity k :kind "place" :name "Lisbon" :lineage (own k)))
+           (fact (admit-fact k :subject sam :predicate "lives_at" :object city :evidence (quote-of "I live in Lisbon") :lineage (own k)))
+           (earlier (receive-turn k :channel "web" :audience "operator" :speaker "Sam" :text "SYNTHETIC: I moved out of Lisbon last year."
+                                    :origin (obj "principal_type" "operator")))
+           (peer (receive-turn k :channel "fleet" :audience "peer:x" :speaker "Nova" :text "Sam moved out of Lisbon."
+                                 :origin (obj "principal_type" "peer")))
+           (later (request-thought k "concern" "tidying what I know")))
+      (is (search "not a message from the operator"
+                  (correct k later "action" "retract" "fact_id" fact "reason" "moved" "source_event_id" (event-id peer) "quote" "moved out of Lisbon"))
+          "only the operator's own message")
+      (is (search "exact words"
+                  (correct k later "action" "retract" "fact_id" fact "reason" "moved" "source_event_id" (event-id earlier) "quote" "Sam left Lisbon"))
+          "and only a quote that is in it")
+      (is (equal "active" (fact-status k fact)) "untouched so far")
+      (correct k later "action" "retract" "fact_id" fact "reason" "moved" "source_event_id" (event-id earlier) "quote" "I moved out of Lisbon")
+      (is (not (equal "active" (fact-status k fact))) "then the correction is made, outside any conversation"))))
+
 (run-suite "mind-graph-correct")

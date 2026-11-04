@@ -104,6 +104,22 @@ lineage, and retract the old one. An operator maintenance step (bead v3-678)."
       (first (find-if (lambda (e) (and (equal kind (second e)) (equal world (tenth e)))) (find-entities kernel ref)))
       (form-entity kernel :kind kind :name ref :world world :lineage (list (lineage-hop (kernel-agent-id kernel) "formed")))))
 
+(defun %operator-said (kernel event-id)
+  "The text of EVENT-ID when it is a turn the operator sent, else NIL."
+  (let ((e (ignore-errors (event-by-id kernel event-id))))
+    (and e (equal "turn.received" (event-type e))
+         (equal "operator" (obj-get (obj-get (event-payload e) "origin") "principal_type"))
+         (let ((text (obj-get (event-payload e) "text"))) (and (stringp text) text)))))
+
+(defun %earlier-refusal (kernel event-id quote)
+  "Why EVENT-ID cannot carry a correction, or NIL: an earlier message is
+evidence only if the operator sent it and QUOTE is in it (Jamie, 2026-11-04)."
+  (let ((said (%operator-said kernel event-id)))
+    (cond ((null said) (format nil "Event ~a is not a message from the operator." event-id))
+          ((not (and (stringp quote) (plusp (length (string-trim " " quote)))
+                     (search (%normalise-quote quote) (%normalise-quote said))))
+           (format nil "Give quote: the operator's exact words from event ~a." event-id)))))
+
 (defun correct-add (kernel args source)
   "Record a fact the operator just told me, with their words as its evidence.
 The quote must be in the operator's turn: nothing they did not say goes in."
@@ -148,7 +164,8 @@ alias) for another name; predicate (fact_id, predicate, reason) when the fact is
 world (entity_ids, world: a work's entity id or real, reason) when something from a story was taken as real, or the
 other way round; add (subject and object: an entity id or a name, subject_kind and object_kind for a name, predicate,
 statement: the fact in one sentence, quote: the operator's own words from this turn, and image: a stored image id
-when the fact was read from a picture, such as has_appearance) when they tell me something new. Look the ids up with the knowledge tool first. Every correction is kept with its reason."
+when the fact was read from a picture, such as has_appearance) when they tell me something new. Look the ids up with the knowledge tool first. Every correction is kept with its reason.
+For something the operator said in an earlier conversation, give source_event_id (the event number search_experience shows for their message) and quote (their exact words in it): any action then rests on that message instead of this turn."
   :summary "Correct my knowledge graph."
   :available '("operator")
   :parameters (obj "type" "object"
@@ -161,15 +178,18 @@ when the fact was read from a picture, such as has_appearance) when they tell me
                                      "object" (obj "type" "string") "object_kind" (obj "type" "string")
                                      "statement" (obj "type" "string") "quote" (obj "type" "string")
                                      "image" (obj "type" "string")
+                                     "source_event_id" (obj "type" "integer")
                                      "reason" (obj "type" "string"))
                    "required" (list "action"))
   :run (lambda (kernel thought-id args)
          (let* ((thought (thought-row kernel thought-id))
-                (source (getf thought :source-event-id))
+                (earlier (obj-get args "source_event_id"))
+                (source (if (integerp earlier) earlier (getf thought :source-event-id)))
                 (action (obj-get args "action"))
                 (reason (let ((r (obj-get args "reason"))) (and (stringp r) (plusp (length (string-trim " " r))) r))))
            (handler-case
-               (cond ((not (and (equal "responding" (getf thought :origin)) source))
+               (cond ((and (integerp earlier) (%earlier-refusal kernel earlier (obj-get args "quote"))))
+                     ((not (or (integerp earlier) (and (equal "responding" (getf thought :origin)) source)))
                       "I correct my graph only when the operator points something out in our conversation.")
                      ((equal action "add") (correct-add kernel args source))
                      ((and (not (equal action "alias")) (null reason)) "Give the reason, in the operator's words where you can.")
