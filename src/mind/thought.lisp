@@ -849,6 +849,15 @@ TOOLS NIL asks for an answer with no tools offered."
 
 (defvar *call-id* nil "The id of the tool call being run.")
 
+(defun %repeated-in-response-p (calls n name arguments)
+  "True when call N of CALLS (1-based) has the NAME and ARGUMENTS of an earlier one."
+  (let ((here (%canonical-arguments arguments)))
+    (loop for call in calls
+          for i from 1 below n
+          for fn = (obj-get call "function")
+          thereis (and (equal name (obj-get fn "name"))
+                       (string= here (%canonical-arguments (obj-get fn "arguments")))))))
+
 (defun act (mind reply)
   "Run the tool calls in REPLY. Returns the tool messages that are ready; a
 sub-call's result arrives later."
@@ -877,6 +886,13 @@ sub-call's result arrives later."
                                 (setf failed t)
                                 (format nil "Not run: this response asked for ~d tool calls and at most ~d run at once. Ask again for the ones you still need, a few at a time."
                                         (length calls) most))
+                               ;; A model can loop inside one response, asking for the
+                               ;; same calls over and over: one reply posted three times,
+                               ;; one bead filed nine (Angel, 2026-11-04). The same call
+                               ;; twice in one response is run once.
+                               ((%repeated-in-response-p calls n name (obj-get fn "arguments"))
+                                (setf failed t)
+                                "Not run: the same call, with the same arguments, appears earlier in this same response, and ran there. Do not repeat it.")
                                ((not (and tool (tool-usable-p kernel tool thought)))
                                 (setf failed t)
                                 (format nil "No tool named ~a." name))

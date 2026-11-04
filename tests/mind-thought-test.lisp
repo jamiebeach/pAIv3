@@ -216,6 +216,20 @@
         (is (not (search "already made" (obj-get (first results) "content"))) "the first call is new")
         (is (search "already made this exact call" (obj-get (second results) "content")) "the same call, keys reordered, is noticed")))))
 
+(deftest the-same-call-twice-in-one-response-runs-once
+  ;; Angel, 2026-11-04: a model looping inside one response posted one reply three times.
+  (with-thinking (k)
+    (let* ((args1 (json-encode (obj "x" 1))) (args2 (json-encode (obj "x" 2)))
+           (*script* (list (obj "content" "" "tool_calls" (list (call "a" "clock" args1) (call "b" "clock" args2)
+                                                              (call "c" "clock" args1) (call "d" "clock" args1)))
+                           (obj "content" "Done.")))
+           (id (request-thought k "work" "check"))
+           (results (progn (run-until-idle k)
+                           (mapcar #'third (remove "tool_result" (thought-steps k id) :key #'first :test-not #'equal)))))
+      (is (= 2 (count-if (lambda (r) (search "noon" r)) results)) "each distinct call runs once")
+      (is (= 2 (count-if (lambda (r) (search "appears earlier in this same response" r)) results))
+          "the repeats are answered, not run"))))
+
 (deftest a-flood-of-tool-calls-runs-only-the-first-few
   (with-thinking (k)
     (let* ((*script* (list (obj "content" "" "tool_calls" (loop for i below 20 collect (call (format nil "c~d" i) "clock")))
