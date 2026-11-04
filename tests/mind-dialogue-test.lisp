@@ -80,6 +80,14 @@
       (is (= 1 (count-if (lambda (x) (search "road is fine" x)) (texts))) "even with a row between them")
       (sql-exec (kernel-db k) "UPDATE working_dialogue SET at=?1" (iso8601 (- (now) 3600)))
       (say "SYNTHETIC road is fine")
-      (is (= 2 (count-if (lambda (x) (search "road is fine" x)) (texts))) "said again an hour later, it is said again"))))
+      (is (= 2 (count-if (lambda (x) (search "road is fine" x)) (texts))) "said again an hour later, it is said again")))
+  (with-temp-kernel (k)
+    ;; Angel, Aria and Specter: measured from the kept row, not the last copy.
+    (dolist (ago '(80 40 0))
+      (receive-turn k :channel "web" :audience "operator" :speaker "Sam" :text "SYNTHETIC same")
+      (sql-exec (kernel-db k) "UPDATE working_dialogue SET at=?1 WHERE event_id=(SELECT max(event_id) FROM working_dialogue)"
+                (iso8601 (- (now) ago))))
+    (is (= 2 (count-if (lambda (x) (search "SYNTHETIC same" x)) (mapcar #'dialogue-row-text (recent-dialogue k "operator"))))
+        "copies 40 s apart: the one 80 s from the kept row is kept")))
 
 (run-suite "mind-dialogue")

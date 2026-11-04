@@ -133,8 +133,10 @@ channel and kind within *repeat-row-seconds*; NEWER maps each such key to its ti
          (key (format nil "~a|~a|~a|~a" speaker channel kind words))
          (seconds (ignore-errors (parse-iso8601 at)))
          (seen (gethash key newer)))
-    (prog1 (and seen seconds (<= (- seen seconds) *repeat-row-seconds*))
-      (when seconds (setf (gethash key newer) seconds)))))
+    (let ((repeat (and seen seconds (<= (- seen seconds) *repeat-row-seconds*))))
+      ;; The anchor stays on the kept row, so a run of copies cannot chain on.
+      (when (and seconds (not repeat)) (setf (gethash key newer) seconds))
+      repeat)))
 
 (defun recent-dialogue (kernel audience &key (token-budget 4000) (max-rows 200) before-id)
   "Most recent dialogue visible to AUDIENCE across all channels, oldest first,
