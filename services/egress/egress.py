@@ -13,6 +13,10 @@ bytes each way, seconds. In dry-run mode a request the rules would deny is
 logged as would-deny and let through, so the real traffic can be learned
 before anything is enforced.
 
+An instance checks its own coverage with `curl http://egress.check/`: through
+the proxy it answers with the caller's name and recent log lines; without the
+proxy the name does not exist, so a bypass fails instead of passing quietly.
+
     python egress.py config.json
 """
 import asyncio
@@ -48,6 +52,21 @@ def log(entry):
             f.write(json.dumps(entry) + "\n")
     except OSError as e:
         print("log failed:", e, file=sys.stderr)
+
+
+CHECK_HOST = "egress.check"
+
+
+def recent_for(client, most):
+    """The last MOST log entries for CLIENT, newest last."""
+    path = os.path.join(config["data_dir"], "egress-log.jsonl")
+    try:
+        with open(path, encoding="utf-8") as f:
+            lines = f.readlines()[-2000:]
+    except OSError:
+        return []
+    mine = [json.loads(l) for l in lines if f'"client": "{client}"' in l]
+    return [{k: e.get(k) for k in ("ts", "method", "host", "decision", "reason")} for e in mine[-most:]]
 
 
 def fetch(url, key=None):
@@ -242,6 +261,16 @@ async def handle(reader, writer):
             host, port = host.strip("[]"), int(p) if p else 80
             path = "/" + tail if slash else "/"
         entry.update({"host": host.lower(), "port": port})
+        if method != "CONNECT" and host.lower() == CHECK_HOST:
+            # An instance asking whether its traffic comes through here. Only a
+            # request through the proxy can reach this name at all, so a bypass
+            # shows as a failure, never as a false green.
+            body = json.dumps({"through_proxy": True, "client": entry["client"], "mode": config.get("mode"),
+                               "your_recent": recent_for(entry["client"], 10)}, indent=1).encode()
+            writer.write(b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: "
+                         + str(len(body)).encode() + b"\r\nConnection: close\r\n\r\n" + body)
+            entry["decision"] = "check"
+            return
         reason, addrs = await judge(host, port)
         enforce = config.get("mode") == "enforce"
         if reason:
