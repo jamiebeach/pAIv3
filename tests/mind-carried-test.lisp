@@ -86,7 +86,8 @@
     (let ((rows (funcall (gethash :carried pai-v3.mind::*slot-sources*) k '(:audience "operator") 700)))
       (is (= 2 (length rows)))
       (is (search "waiting for: real material online" (first (first rows))) "an item waiting on a condition")
-      (is (search "look again" (first (second rows)))))
+      (is (search "look again" (first (second rows))))
+      (is (search ", since " (first (first rows))) "with the day it was first carried (bead v3-rc0)"))
     (is (null (funcall (gethash :carried pai-v3.mind::*slot-sources*) k '(:audience "peer:x") 700)) "not shown to a peer")
     (is (= 1 (length (funcall (gethash :carried pai-v3.mind::*slot-sources*) k '(:audience "operator") 30))) "the budget is kept")
     (is (find-if (lambda (s) (search "certification" s))
@@ -146,5 +147,41 @@
       (is (pai-v3.mind::tool-available-p tool '(:audience "peer:aria")) "and when answering a sister on a board")
       (is (not (pai-v3.mind::tool-available-p tool '(:audience "external" :communicating t))) "but not in a thought made of outside content")
       (is (member "work" (pai-v3.mind::tool-core tool) :test #'string=) "in hand when replying, so she remembers it is there"))))
+
+(defun carried-judge (calls)
+  "A Decisions provider that finds any item saying Venture X contradicted."
+  (make-provider-profile
+   :name "affect-jev" :model "typesafe/jev-1.13" :base-url "https://openrouter.ai/api/v1" :secret "openrouter"
+   :transport (lambda (url headers body &key timeout)
+                (declare (ignore url headers timeout))
+                (incf (car calls))
+                (let* ((req (json-parse body)) (state (obj-get req "state")) (answers (obj)))
+                  (maphash (lambda (key q)
+                             (declare (ignore q))
+                             (let* ((n (parse-integer key :start 1))
+                                    (line (find-if (lambda (l) (uiop:string-prefix-p (format nil "~d. " n) l))
+                                                   (uiop:split-string state :separator '(#\Newline)))))
+                               (setf (gethash key answers)
+                                     (obj "type" "choice" "choice" (if (search "Venture X" line) "CONTRADICTED" "FINE")))))
+                           (obj-get req "questions"))
+                  (values 200 nil (json-encode (obj "model" "typesafe/jev-test" "answers" answers
+                                                    "usage" (obj "input_tokens" 10 "output_tokens" 1 "cost" 0.000001))))))))
+
+(deftest a-nights-check-puts-a-contradicted-item-to-a-thought
+  ;; Bead v3-rc0: "Thursday is the Venture X demo" stood for a day and a half
+  ;; after the operator said Thursday was the COI demo.
+  (with-carrying (k)
+    (let* ((calls (list 0))
+           (pai-v3.mind::*decision-profile* (carried-judge calls))
+           (stale (carry-add k :what "SYNTHETIC budget question" :why "Thursday is the Venture X demo" :by "self"))
+           (fresh (carry-add k :what "SYNTHETIC demo prep" :why "Thursday is the COI demo with J" :by "self"))
+           (task (cdr (assoc "carried-check" pai-v3.mind::*consolidation-tasks* :test #'equal)))
+           (result (funcall task k (list :id 1))))
+      (is (= 1 (car calls)) "one call for the whole list")
+      (is (= 1 (obj-get result "flagged")))
+      (is (obj-get (carried-item k stale) "consider_at") "the contradicted item is put to a thought")
+      (is (search "contradicted" (obj-get (carried-item k stale) "note")) "saying why")
+      (is (eq :null (obj-get (carried-item k fresh) "consider_at")) "the other is left alone")
+      (is (equal "open" (obj-get (carried-item k stale) "state")) "nothing is closed by the check itself"))))
 
 (run-suite "mind-carried")
