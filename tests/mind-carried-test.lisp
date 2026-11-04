@@ -167,6 +167,26 @@
                   (values 200 nil (json-encode (obj "model" "typesafe/jev-test" "answers" answers
                                                     "usage" (obj "input_tokens" 10 "output_tokens" 1 "cost" 0.000001))))))))
 
+(deftest a-nights-check-reads-what-the-operator-said
+  ;; Bead v3-hej: "pickleball tonight" stood after the operator said he didn't go.
+  (with-carrying (k)
+    (let* ((seen (list nil))
+           (pai-v3.mind::*decision-profile*
+             (make-provider-profile
+              :name "affect-jev" :model "typesafe/jev-1.13" :base-url "https://openrouter.ai/api/v1" :secret "openrouter"
+              :transport (lambda (url headers body &key timeout)
+                           (declare (ignore url headers timeout))
+                           (setf (car seen) (obj-get (json-parse body) "state"))
+                           (values 200 nil (json-encode (obj "model" "typesafe/jev-test" "answers" (obj)
+                                                             "usage" (obj "input_tokens" 10 "output_tokens" 1 "cost" 0.000001)))))))
+           (task (cdr (assoc "carried-check" pai-v3.mind::*consolidation-tasks* :test #'equal))))
+      (carry-add k :what "SYNTHETIC pickleball tonight" :why "He plays Thursdays" :by "self")
+      (carry-add k :what "SYNTHETIC timesheet" :why "Due Friday" :by "self")
+      (receive-turn k :channel "web" :audience "operator" :speaker "Sam" :text "SYNTHETIC skipping pickleball, too tired"
+                      :origin (obj "principal_type" "operator"))
+      (funcall task k (list :id 1))
+      (is (search "skipping pickleball" (car seen)) "what the operator said is in the check"))))
+
 (deftest a-nights-check-puts-a-contradicted-item-to-a-thought
   ;; Bead v3-rc0: "Thursday is the Venture X demo" stood for a day and a half
   ;; after the operator said Thursday was the COI demo.
