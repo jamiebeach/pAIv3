@@ -118,6 +118,10 @@ The quote must be in the operator's turn: nothing they did not say goes in."
     (unless (and (stringp statement) (plusp (length statement))) (%graph-refuse "give the fact as one plain sentence"))
     ;; Check the relation before forming anything, so a refused fact leaves no orphans.
     (flet ((kind-of (ref kind) (let ((e (and (stringp ref) (graph-entity kernel ref)))) (if e (second e) kind))))
+      (unless (assoc (obj-get args "predicate") +graph-predicates+ :test #'equal)
+        ;; An unknown name is not a kind it cannot link (bead v3-q5t).
+        (%graph-refuse "~s is not a predicate; use one of: ~{~a~^, ~}" (obj-get args "predicate")
+                       (mapcar #'first +graph-predicates+)))
       (unless (predicate-allows-p (obj-get args "predicate") (kind-of (obj-get args "subject") (obj-get args "subject_kind"))
                                   (kind-of (obj-get args "object") (obj-get args "object_kind")))
         (%graph-refuse "~a cannot link a ~a to a ~a" (obj-get args "predicate")

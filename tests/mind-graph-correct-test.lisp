@@ -131,4 +131,18 @@
         (is (search "[first-hand 2026-10-20]" text))
         (is (search "first-hand fact outranks" text))))))
 
+(deftest an-unknown-predicate-is-named-as-unknown
+  ;; Bead v3-q5t: "vendor for" was refused as if an organisation could not link to one.
+  (with-temp-kernel (k)
+    (let ((e (handler-case (progn (pai-v3.mind::admit-fact k :subject "x" :predicate "vendor for" :object "y") nil)
+               (pai-v3.mind::graph-refused (c) (pai-v3.mind::graph-refused-reason c)))))
+      (is (or (null e) (search "no entity" e)) "ends are checked first")))
+  (with-temp-kernel (k)
+    (let* ((a (form-entity k :kind "organization" :name "SYNTHETIC Co" :lineage (list (lineage-hop "beta" "formed"))))
+           (b (form-entity k :kind "organization" :name "SYNTHETIC Ltd" :lineage (list (lineage-hop "beta" "formed"))))
+           (e (handler-case (progn (pai-v3.mind::admit-fact k :subject a :predicate "vendor for" :object b) nil)
+                (pai-v3.mind::graph-refused (c) (pai-v3.mind::graph-refused-reason c)))))
+      (is (search "is not a predicate" e) "named as unknown, not as a kind it cannot link")
+      (is (search "worked_with" e) "with the names to use"))))
+
 (run-suite "mind-graph-correct")

@@ -404,6 +404,9 @@ Returns (values fact-id :admitted|:supported). Signals GRAPH-REFUSED."
   (let ((s (graph-entity kernel subject)) (o (graph-entity kernel object)))
     (unless (and s (equal "active" (fifth s))) (%graph-refuse "no entity ~a" subject))
     (unless (and o (equal "active" (fifth o))) (%graph-refuse "no entity ~a" object))
+    (unless (assoc predicate +graph-predicates+ :test #'equal)
+      ;; Not ours at all, which is not the same as a kind it cannot link (bead v3-q5t).
+      (%graph-refuse "~s is not a predicate; use one of: ~{~a~^, ~}" predicate (mapcar #'first +graph-predicates+)))
     (unless (predicate-allows-p predicate (second s) (second o))
       (%graph-refuse "~a cannot link a ~a to a ~a" predicate (second s) (second o)))
     (setf world (%check-world kernel world))

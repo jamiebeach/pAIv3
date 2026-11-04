@@ -28,7 +28,7 @@
 (define-event-type "graph.formation.done"
   :schema (("through_event_id" :integer) ("turns" :integer) ("entities_formed" :integer)
            ("entities_matched" :integer) ("facts_admitted" :integer) ("facts_supported" :integer)
-           ("dropped" :array :optional) ("model" :string)))
+           ("dropped" :array :optional) ("relaxed" :array :optional) ("model" :string)))
 
 (define-projection "graph_formation"
   :kind :inline
@@ -191,12 +191,14 @@ rest of the checks treat it like a declared, matched entity."
 formed only when a fact that uses it passes every check, so a dropped fact
 leaves nothing behind: forming entities first left v2 a graph of orphans,
 and a first recovery trial here made 47 of them.
-Returns (values entities-formed entities-matched admitted supported dropped)."
+Returns (values entities-formed entities-matched admitted supported dropped
+relaxed): RELAXED, the facts kept under related_to because their own
+predicate could not link their ends."
   (let* ((me (kernel-agent-id kernel))
          (sources (make-hash-table :test 'equal))
          (specs (make-hash-table :test 'equal))      ; ref -> (:id id) or (:new kind name aliases world)
          (formed-ids (make-hash-table :test 'equal)) ; ref -> id, once formed
-         (formed 0) (matched 0) (admitted 0) (supported 0) (dropped '()))
+         (formed 0) (matched 0) (admitted 0) (supported 0) (dropped '()) (relaxed '()))
     (dolist (turn turns)
       (setf (gethash (format nil "S~d" (first turn)) sources) turn))
     (labels ((drop (fmt &rest args) (push (apply #'format nil fmt args) dropped))
@@ -249,7 +251,20 @@ Returns (values entities-formed entities-matched admitted supported dropped)."
                ;; already in the graph, which a model may name directly.
                (s (%resolve-end kernel specs (obj-get f "subject")))
                (o (%resolve-end kernel specs (obj-get f "object")))
-               (predicate (obj-get f "predicate"))
+               (asked (obj-get f "predicate"))
+               ;; A true statement whose ends its predicate cannot link, or
+               ;; whose predicate is not one of ours, is kept under the
+               ;; last-resort related_to, in its own words, rather than lost
+               ;; (bead v3-47o: a correction was dropped this way, and the
+               ;; stale fact it corrected stood; bead v3-q5t).
+               (predicate (cond ((not (and s o)) asked)
+                                ((predicate-allows-p asked (spec-kind s) (spec-kind o)) asked)
+                                ;; Written backwards is a malformed fact, not one we lack words for.
+                                ((predicate-allows-p asked (spec-kind o) (spec-kind s)) asked)
+                                ((predicate-allows-p "related_to" (spec-kind s) (spec-kind o)) "related_to")
+                                (t asked)))
+               (told-time (let ((given (obj-get f "time")))
+                       (if (member given +temporal-characters+ :test #'equal) given "unspecified")))
                (world (world-key (obj-get f "world"))))
           (cond
             ((null source) (drop "fact ~a: no source ~a" statement (obj-get f "source")))
@@ -267,7 +282,7 @@ Returns (values entities-formed entities-matched admitted supported dropped)."
                        (list (spec-world s) (spec-world o)))
              (drop "fact ~a: its entities are not of its world" statement))
             (t (handler-case
-                   (let ((temporal (obj "character" (or (obj-get f "time") "unspecified")
+                   (let ((temporal (obj "character" told-time
                                         "occurred_at" (let ((w (obj-get f "when"))) (and (stringp w) (plusp (length w)) w))))
                          (grounding (obj "scope" (or (obj-get f "scope") "assertion")
                                          "polarity" (or (obj-get f "polarity") "positive"))))
@@ -298,9 +313,13 @@ Returns (values entities-formed entities-matched admitted supported dropped)."
                                             :world (if (consp world) (ensure (second world)) world)
                                             :lineage (list (lineage-hop me "formed")))
                        (declare (ignore id))
-                       (if (eq outcome :admitted) (incf admitted) (incf supported))))))
+                       (if (eq outcome :admitted) (incf admitted) (incf supported))
+                       (unless (equal predicate asked)
+                         (push (format nil "fact ~a: kept as related_to, since ~a cannot link a ~a to a ~a"
+                                       statement asked (spec-kind s) (spec-kind o))
+                               relaxed))))))
                  (graph-refused (c) (drop "fact ~a: ~a" statement (graph-refused-reason c)))))))))
-    (values formed matched admitted supported (reverse dropped))))
+    (values formed matched admitted supported (reverse dropped) (reverse relaxed))))
 
 ;;; The work
 
@@ -317,12 +336,13 @@ Returns (values entities-formed entities-matched admitted supported dropped)."
                            (or (ignore-errors (json-parse (obj-get (obj-get call "function") "arguments")))
                                (error 'handler-failure :class :model :reason "the formation call's arguments are not JSON"))
                            (obj "entities" nil "facts" nil))))
-        (multiple-value-bind (formed matched admitted supported dropped) (apply-formation kernel turns proposal)
+        (multiple-value-bind (formed matched admitted supported dropped relaxed) (apply-formation kernel turns proposal)
           (append! kernel "graph.formation.done"
                    (obj "through_event_id" (first (car (last turns))) "turns" (length turns)
                         "entities_formed" formed "entities_matched" matched
                         "facts_admitted" admitted "facts_supported" supported
                         "dropped" (subseq dropped 0 (min 40 (length dropped)))
+                        "relaxed" (subseq relaxed 0 (min 40 (length relaxed)))
                         "model" (provider-profile-model profile)))
           (obj "through" (first (car (last turns))) "admitted" admitted "dropped" (length dropped)))))))
 
