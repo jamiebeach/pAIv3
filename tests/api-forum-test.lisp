@@ -184,6 +184,37 @@
       (pai-v3.api::forum-set-thread a thread "operator" "Sam" :status "open")
       (is (eq :null (obj-get (pai-v3.api::forum-thread-json a thread) "resolved_by")) "a reopen clears it"))))
 
+(defun repeat-judge (level)
+  "A Decisions provider answering the forum repeat check with all weight on LEVEL (0: adds nothing)."
+  (make-provider-profile
+   :name "affect-jev" :model "typesafe/jev-1.13" :base-url "https://openrouter.ai/api/v1" :secret "openrouter"
+   :transport (lambda (url headers body &key timeout)
+                (declare (ignore url headers body timeout))
+                (let ((p (obj)))
+                  (dotimes (i 3) (setf (gethash (write-to-string i) p) (if (= i level) 1d0 0d0)))
+                  (values 200 nil (json-encode (obj "model" "typesafe/jev-test"
+                                                    "answers" (obj "repeat" (obj "type" "score" "score" level "probabilities" p))
+                                                    "usage" (obj "input_tokens" 10 "output_tokens" 1 "cost" 0.000001))))))))
+
+(deftest a-crew-reply-that-only-repeats-the-thread-is-not-posted
+  ;; Jamie, 2026-11-04: all three replied with much the same.
+  (dolist (case '((0 "dropped") (2 "sent")))
+    (with-crew (a b)
+      (let* ((pai-v3.mind::*decision-profile* (repeat-judge (first case)))
+             (thread (obj-get (pai-v3.api::forum-post a :title "SYNTHETIC ideas" :text "SYNTHETIC any ideas?"
+                                                        :author-id "operator" :author-name "Sam")
+                              "thread_id"))
+             (reflection (request-thought b "introspection" "SYNTHETIC reflection")))
+        (funcall (pai-v3.mind::tool-run (gethash "draft_forum_post" pai-v3.mind::*tools*)) b reflection
+                 (obj "text" "SYNTHETIC same again" "thread_id" thread))
+        (append! b "thought.ended" (obj "thought_id" reflection "outcome" "concluded" "summary" "Done"))
+        (pai-v3.api::speak-drafts b)
+        (let ((review (first (first (sql-rows (kernel-db b) "SELECT speaking_thought_id FROM fleet_drafts WHERE text=?1 LIMIT 1" "SYNTHETIC same again")))))
+          (funcall pai-v3.mind::*communication-answer* b (thought-row b review)
+                   "{\"decision\":\"send\",\"text\":\"SYNTHETIC same again\",\"images\":[],\"note\":\"fine\"}")
+          (is (equal (second case) (sql-value (kernel-db b) "SELECT fate FROM fleet_drafts WHERE speaking_thought_id=?1 LIMIT 1" review))
+              (format nil "judged ~d: ~a" (first case) (second case))))))))
+
 (deftest old-boards-are-brought-into-the-forum-once
   (with-crew (a b)
     (pai-v3.api::operator-post a "SYNTHETIC old post" :title "SYNTHETIC old thread")
