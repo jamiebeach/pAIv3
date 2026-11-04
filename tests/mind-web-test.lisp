@@ -81,4 +81,27 @@
     (let ((*http-get* (serve "{}" :status 402)))
       (is (search "out of credits" (pai-v3.mind::brave-search "x")) "out of credits says stop, not retry"))))
 
+(deftest fetches-keep-manners-per-host
+  ;; Jamie and Aria, 2026-11-04: record every fetch, cap each host, and never
+  ;; ask again, by any route, a host that refused.
+  (with-temp-kernel (k)
+    (let* ((*fetch-allow-private* t) (*requests* '())
+           (thought (request-thought k "introspection" "Free time. This time is yours."))
+           (run (pai-v3.mind::tool-run (gethash "web_fetch" pai-v3.mind::*tools*))))
+      (is (equal '("r.jina.ai" "www.example.org") (pai-v3.mind::fetch-hosts "https://r.jina.ai/https://www.example.org/fiction/1"))
+          "a proxied URL reaches both hosts")
+      (let ((*http-get* (serve "<p>ok</p>")))
+        (funcall run k thought (obj "url" "https://example.net/a")))
+      (is (= 1 (sql-value (kernel-db k) "SELECT count(*) FROM web_fetches WHERE host=?1 LIMIT 1" "example.net")) "every fetch is recorded")
+      (let ((*http-get* (serve "no" :status 403)))
+        (funcall run k thought (obj "url" "https://www.example.org/fiction/1")))
+      (setf *requests* '())
+      (let ((*http-get* (serve "<p>ok</p>")))
+        (is (search "refused me (403)" (funcall run k thought (obj "url" "https://www.example.org/fiction/2"))) "a refusing host is left alone")
+        (is (search "refused me" (funcall run k thought (obj "url" "https://r.jina.ai/https://www.example.org/fiction/2"))) "by any route")
+        (is (null *requests*) "and nothing is sent")
+        (change-setting k "web.fetches_per_host_hour" 2 :origin (obj "principal_type" "operator") :reason "test")
+        (funcall run k thought (obj "url" "https://example.net/b"))
+        (is (search "its limit" (funcall run k thought (obj "url" "https://example.net/c"))) "a host is read at most so often an hour")))))
+
 (run-suite "mind-web")

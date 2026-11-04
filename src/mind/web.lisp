@@ -88,29 +88,106 @@ Replaced in tests.")
          (end (and open-end (search "</title>" html :start2 open-end :test #'char-equal))))
     (and end (string-trim '(#\Space #\Newline #\Tab #\Return) (%decode-entities (subseq html (1+ open-end) end))))))
 
-(defun web-fetch (url)
-  "The readable text of URL."
+
+;;; Manners (Jamie and Aria, 2026-11-04): what looks like abuse from a host's
+;;; side is volume, retrying after a refusal, and routing around one. So every
+;;; fetch is recorded; a host is read at most web.fetches_per_host_hour times an
+;;; hour; and a host that refuses (401, 403, 429) is not asked again for a day,
+;;; by any route. A URL carried inside another (a reading proxy such as
+;;; r.jina.ai/https://example.com) counts against both hosts.
+
+(define-setting "web.fetches_per_host_hour"
+  :type :integer :min 1 :max 500 :default 20 :group "Web"
+  :description "Most web_fetch calls to one host in an hour.")
+
+(defparameter +refusal-statuses+ '(401 403 429) "Answers that mean: this host does not want me here.")
+(defparameter *refusal-hold-hours* 24)
+
+(define-event-type "web.fetched"
+  :schema (("url" :string) ("hosts" :array) ("status" :integer) ("thought_id" :integer :optional)
+           ("refused_here" :string :optional)))
+
+(define-projection "web_fetches"
+  :kind :inline
+  :consumes ("web.fetched")
+  :tables ("CREATE TABLE IF NOT EXISTS web_fetches (event_id INTEGER NOT NULL, host TEXT NOT NULL, url TEXT NOT NULL, status INTEGER NOT NULL, thought_id INTEGER, refused_here TEXT, at TEXT NOT NULL)"
+           "CREATE INDEX IF NOT EXISTS web_fetches_host_idx ON web_fetches(host,at)")
+  :reduce (lambda (db e)
+            (let ((p (event-payload e)))
+              (dolist (host (obj-get p "hosts"))
+                (sql-exec db "INSERT INTO web_fetches(event_id,host,url,status,thought_id,refused_here,at) VALUES(?1,?2,?3,?4,?5,?6,?7)"
+                          (event-id e) host (obj-get p "url") (obj-get p "status") (obj-get p "thought_id")
+                          (obj-get p "refused_here") (event-at e))))))
+
+(defun %url-host (url)
+  (let* ((start (search "://" url))
+         (rest (and start (subseq url (+ 3 start))))
+         (end (and rest (position-if (lambda (c) (member c '(#\/ #\? #\# #\:))) rest))))
+    (and rest (plusp (length rest)) (string-downcase (subseq rest 0 (or end (length rest)))))))
+
+(defun fetch-hosts (url)
+  "Every host URL reaches: its own, and any carried inside it, by a proxy."
+  (let ((hosts '()) (start 0))
+    (loop for at = (search "http" url :start2 start :test #'char-equal)
+          while at
+          do (let ((host (and (or (zerop at) (not (alpha-char-p (char url (1- at)))))
+                              (%url-host (subseq url at)))))
+               (when host (pushnew host hosts :test #'string=)))
+             (setf start (1+ at)))
+    (nreverse hosts)))
+
+(defun %fetch-refusal (kernel hosts)
+  "Why a fetch reaching HOSTS must not be sent now, or NIL."
+  (let ((db (kernel-db kernel))
+        (hour-ago (iso8601 (- (now) 3600)))
+        (hold-from (iso8601 (- (now) (* 3600 *refusal-hold-hours*)))))
+    (dolist (host hosts)
+      (let ((refused (sql-row db (format nil "SELECT status,at FROM web_fetches WHERE host=?1 AND at>=?2 AND status IN (~{~d~^,~}) ORDER BY at DESC LIMIT 1"
+                                         +refusal-statuses+)
+                              host hold-from)))
+        (when refused
+          (return (format nil "Not fetched: ~a refused me (~d) at ~a. I do not try it again, by any route, for ~d hours after a refusal."
+                          host (first refused) (or (ignore-errors (local-stamp kernel (second refused))) (second refused))
+                          *refusal-hold-hours*))))
+      (let ((count (or (sql-value db "SELECT count(*) FROM web_fetches WHERE host=?1 AND at>=?2 AND status>0 LIMIT 1" host hour-ago) 0)))
+        (when (>= count (setting kernel "web.fetches_per_host_hour"))
+          (return (format nil "Not fetched: I have read ~a ~d times in the last hour, its limit. Work with what I have, or come back to it later."
+                          host count)))))))
+
+(defun web-fetch (url &optional kernel thought-id)
+  "The readable text of URL. With KERNEL, the fetch is checked against the
+host's limits first and recorded after."
   (handler-case
       (progn
         (%check-url url)
+        (let ((hosts (fetch-hosts url)))
+          (when kernel
+            (let ((refusal (%fetch-refusal kernel hosts)))
+              (when refusal
+                (append! kernel "web.fetched" (obj "url" (subseq url 0 (min 500 (length url))) "hosts" hosts "status" 0
+                                                   "thought_id" thought-id "refused_here" (subseq refusal 0 (min 300 (length refusal)))))
+                (return-from web-fetch refusal))))
         (multiple-value-bind (body status content-type)
             (funcall *http-get* url '(("User-Agent" . "pAI/3 (personal assistant)")))
+          (when kernel
+            (append! kernel "web.fetched" (obj "url" (subseq url 0 (min 500 (length url))) "hosts" hosts "status" (or status 0)
+                                               "thought_id" thought-id)))
           (let ((body (if (> (length body) *fetch-max-chars*) (subseq body 0 *fetch-max-chars*) body)))
             (cond ((not (<= 200 status 299)) (format nil "~a answered ~d." url status))
                   ((search "html" content-type)
                    (format nil "~@[~a~%~]~a~%~%~a" (%title body) url (html-text body)))
                   ((or (search "text" content-type) (search "json" content-type) (search "xml" content-type))
                    (format nil "~a~%~%~a" url body))
-                  (t (format nil "~a is ~a, which I cannot read as text." url content-type))))))
+                  (t (format nil "~a is ~a, which I cannot read as text." url content-type)))))))
     (egress-refused (e) (egress-reason e))
     (error (e) (format nil "Could not fetch ~a: ~a" url e))))
 
 (define-tool "web_fetch"
-  :description "Read a web page as text. Long pages come back in parts."
+  :description "Read a web page as text. Long pages come back in parts. Each site has an hourly limit, and a site that refuses me is left alone for a day, by any route: I never retry around a refusal."
   :parameters (obj "type" "object"
                    "properties" (obj "url" (obj "type" "string"))
                    "required" (list "url"))
-  :run (lambda (kernel id args) (declare (ignore kernel id)) (web-fetch (obj-get args "url" ""))))
+  :run (lambda (kernel id args) (web-fetch (obj-get args "url" "") kernel id)))
 
 ;;; Brave search
 

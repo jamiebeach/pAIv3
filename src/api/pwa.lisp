@@ -219,6 +219,11 @@ becomes a stimulus (pai-v3.mind:coding-agent-message)."
                                 "repeated_queries" (mapcar (lambda (r) (obj "arguments" (clip (first r) 160) "times" (second r)))
                                                            (rows "SELECT s.arguments,count(*) FROM thought_steps s WHERE s.event_id>=?1 AND s.kind=?2 AND s.tool=?3 GROUP BY 1 HAVING count(*)>1 ORDER BY 2 DESC LIMIT 20" first-id "tool_call" "brave_search"))))))
                   ;; Spending over the last limit days (default 7).
+                  ;; Every web_fetch, newest first: what was touched and when (Jamie, 2026-11-04).
+                  ((equal what "fetches")
+                   (mapcar (lambda (r) (obj "at" (first r) "host" (second r) "status" (third r) "url" (clip (fourth r) 300)
+                                            "thought_id" (or (fifth r) :null) "refused_here" (or (sixth r) :null)))
+                           (rows "SELECT at,host,status,url,thought_id,refused_here FROM web_fetches ORDER BY at DESC LIMIT ?1" limit)))
                   ((equal what "spend") (list (pai-v3.mind::spend-report kernel :days (max 1 (min 30 limit)))))
                   ;; One stored image as a data URL (?id=), for looking at a reference image.
                   ((equal what "image")
