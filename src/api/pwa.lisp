@@ -581,16 +581,43 @@ localhost), the URL to send it to; passkeys only work at the agent's origin."
 ;;; the same words a second time. The copy is built afresh, so no id would match
 ;;; it; the same words by voice within *voice-repeat-seconds* are one turn.
 
+;;;
+;;; The copy is not always word for word: Android re-recognises the same speech
+;;; ("Yup and then after I pick her up..." then "Yep and then..."), and a new
+;;; recogniser session can hand the last turn back a minute later (Angel's
+;;; ledger, 2026-11-04). So a turn of four or more words that is nearly the
+;;; last one (*voice-similar-share* of its words) within *voice-similar-seconds*
+;;; is the same turn; a short one ("yes", "no") only when exact, within
+;;; *voice-repeat-seconds*, so a real second "yes" is never lost.
+
 (defparameter *voice-repeat-seconds* 4)
+(defparameter *voice-similar-seconds* 60)
+(defparameter *voice-similar-share* 0.8)
+(defparameter *voice-similar-min-words* 4)
 (defvar *last-voice-sends* (make-hash-table :test 'eq :weakness :key)
   "Agent -> (text universal-time receipt): the last spoken turn each agent took.")
 (defvar *voice-sends-lock* (bt:make-lock "voice sends"))
+
+(defun %spoken-words (text)
+  "TEXT's words, lowercased, without punctuation."
+  (remove "" (uiop:split-string (substitute-if #\Space (lambda (c) (not (or (alphanumericp c) (char= c #\'))))
+                                               (string-downcase text)))
+          :test #'string=))
+
+(defun voice-turns-alike-p (a b seconds)
+  "True when spoken turn B, SECONDS after A, is A again."
+  (let ((wa (%spoken-words a)) (wb (%spoken-words b)))
+    (or (and (equal wa wb) (<= seconds *voice-repeat-seconds*))
+        (and (>= (min (length wa) (length wb)) *voice-similar-min-words*)
+             (<= seconds *voice-similar-seconds*)
+             (>= (/ (length (intersection wa wb :test #'string=)) (max (length wa) (length wb)))
+                 *voice-similar-share*)))))
 
 (defun %repeated-voice-send (agent text)
   "The receipt of the turn TEXT already made, when it was spoken just now."
   (bt:with-lock-held (*voice-sends-lock*)
     (destructuring-bind (&optional said at receipt) (gethash agent *last-voice-sends*)
-      (and said (string-equal said text) (<= (- (get-universal-time) at) *voice-repeat-seconds*) receipt))))
+      (and said (voice-turns-alike-p said text (- (get-universal-time) at)) receipt))))
 
 (defun %note-voice-send (agent text receipt)
   (bt:with-lock-held (*voice-sends-lock*)

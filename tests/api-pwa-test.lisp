@@ -118,6 +118,17 @@
           (is (= 200 (pwa-post "/api/v2/send" (obj "message" "SYNTHETIC typed twice") :token token)))
           (is (= 200 (pwa-post "/api/v2/send" (obj "message" "SYNTHETIC typed twice") :token token)))
           (is (= 2 (turns "SYNTHETIC typed twice")) "typing the same thing twice is two turns"))
+        ;; Angel's ledger, 2026-11-04: re-recognised copies and a copy a minute later.
+        (is (pai-v3.api::voice-turns-alike-p "Yup and then after I pick her up I'm going to the sauna place"
+                                             "Yep and then after I pick her up I'm going to the sauna place" 1)
+            "one word re-recognised is the same turn")
+        (is (pai-v3.api::voice-turns-alike-p "Yeah didn't we fix that or didn't Claude fix it"
+                                             "Yeah didn't we fix that or didn't Claude fix it" 40)
+            "and so is the same turn handed back 40 s later")
+        (is (not (pai-v3.api::voice-turns-alike-p "Yes" "Yes" 30)) "a short answer said again is a new turn")
+        (is (not (pai-v3.api::voice-turns-alike-p "Pick up the wood after school today"
+                                                  "Then we start the sauna roof tomorrow" 5))
+            "different words are a different turn")
         (is (search "ledger head" (terminal-command k "/status")))
         (is (not (search "Not ready" (terminal-command k "/status"))))
         (pai-v3.kernel::sql-exec (kernel-db k) "UPDATE v3_projection_state SET status='needs-rebuild' WHERE name=?1" "graph")
