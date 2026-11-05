@@ -224,6 +224,11 @@ becomes a stimulus (pai-v3.mind:coding-agent-message)."
                    (mapcar (lambda (r) (obj "at" (first r) "host" (second r) "status" (third r) "url" (clip (fourth r) 300)
                                             "thought_id" (or (fifth r) :null) "refused_here" (or (sixth r) :null)))
                            (rows "SELECT at,host,status,url,thought_id,refused_here FROM web_fetches ORDER BY at DESC LIMIT ?1" limit)))
+                  ;; What the agent has changed about itself with lisp_eval: active skills
+                  ;; (re-applied at every boot) and repairs, newest first.
+                  ((equal what "self")
+                   (mapcar (lambda (r) (obj "name" (first r) "scope" (second r) "form" (clip (third r) 1500)))
+                           (ignore-errors (pai-v3.self::live-changes kernel :limit limit))))
                   ((equal what "spend") (list (pai-v3.mind::spend-report kernel :days (max 1 (min 30 limit)))))
                   ;; One stored image as a data URL (?id=), for looking at a reference image.
                   ((equal what "image")
