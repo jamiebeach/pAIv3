@@ -58,12 +58,22 @@ ROOT, or name hidden files, are refused."
         (plugin-reply "text/plain" "No such file." :status 404)
         (let ((file (merge-pathnames rel (uiop:ensure-directory-pathname root))))
           (if (probe-file file)
-              (plugin-reply (or (cdr (assoc (string-downcase (or (pathname-type file) "")) +plugin-types+ :test #'equal))
-                                "application/octet-stream")
-                            (with-open-file (in file :element-type '(unsigned-byte 8))
-                              (let ((bytes (make-array (file-length in) :element-type '(unsigned-byte 8))))
-                                (read-sequence bytes in)
-                                bytes)))
+              ;; "no-cache" makes the browser check back; the ETag lets it keep
+              ;; what it has. Without one, the avatar's 17 MB model came down
+              ;; again on every visit, slowly over a phone (operator, 2026-11-04).
+              (let ((etag (with-open-file (in file :element-type '(unsigned-byte 8))
+                            (format nil "\"~x-~x\"" (file-length in) (or (file-write-date file) 0)))))
+                (setf (hunchentoot:header-out "ETag") etag)
+                (if (equal etag (hunchentoot:header-in* :if-none-match))
+                    (plugin-reply (or (cdr (assoc (string-downcase (or (pathname-type file) "")) +plugin-types+ :test #'equal))
+                                      "application/octet-stream")
+                                  "" :status 304)
+                    (plugin-reply (or (cdr (assoc (string-downcase (or (pathname-type file) "")) +plugin-types+ :test #'equal))
+                                      "application/octet-stream")
+                                  (with-open-file (in file :element-type '(unsigned-byte 8))
+                                    (let ((bytes (make-array (file-length in) :element-type '(unsigned-byte 8))))
+                                      (read-sequence bytes in)
+                                      bytes)))))
               (plugin-reply "text/plain" "No such file." :status 404))))))
 
 (defun plugin-route (agent method path)
