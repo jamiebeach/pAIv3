@@ -293,12 +293,15 @@ once with more room (GROWN marks that second ask)."
                    (reasoned (obj-get (obj-get usage "completion_tokens_details") "reasoning_tokens"))
                    (why (format nil "empty response (finish: ~a~@[ · ~d completion tokens~]~@[, ~d reasoning~] · ~:d reasoning characters streamed)"
                                 (or finish "none") completion reasoned reasoning-chars)))
-              (if (and (not grown) (equal finish "length") (integerp completion) (integerp reasoned) (plusp completion)
-                       (>= reasoned (* 0.9 completion))
+              ;; Out of room with nothing to show: retried once with more room,
+              ;; however the tokens went. Counting only replies that were 90%
+              ;; reasoning left one that streamed its tokens under a field we do
+              ;; not read failing for good (bead v3-81b).
+              (if (and (not grown) (equal finish "length")
                        (< (provider-profile-max-tokens profile) *room-to-answer-ceiling*))
-                  ;; It thought until it ran out of room, with no answer: the allowance was too small for this task.
                   (progn
-                    (handler-case (fail :model status why) (provider-failure () nil))
+                    (handler-case (fail :model status (format nil "~a; retried with ~dx the room" why *room-to-answer-factor*))
+                      (provider-failure () nil))
                     (let ((roomier (copy-provider-profile profile)))
                       (setf (provider-profile-max-tokens roomier)
                             (min *room-to-answer-ceiling* (* *room-to-answer-factor* (provider-profile-max-tokens profile))))

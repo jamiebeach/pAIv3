@@ -51,7 +51,7 @@
           "the first attempt is still recorded as a failure")
       (is (= 6000 (spent-today k "background")) "and both attempts are billed: 2000 + 4000 microusd"))))
 
-(deftest asking-again-happens-once-and-only-for-thinking
+(deftest asking-again-happens-once-and-only-when-out-of-room
   (with-temp-kernel (k)
     (let* ((calls 0)
            (p (make-provider-profile :name "voice" :base-url "http://fake" :model "m1" :max-tokens 8192
@@ -66,9 +66,18 @@
                                      :transport (lambda (url headers body &key stream-fn timeout allow-private)
                                                   (declare (ignore url headers body stream-fn timeout allow-private))
                                                   (incf calls)
-                                                  (values 200 nil (thinking-only 50 2))))))
+                                                  (values 200 nil (thinking-only 4096 485))))))
       (signals provider-failure (complete k p (user "hi")))
-      (is (= 1 calls) "an empty answer that was not thinking is not asked again"))))
+      (is (= 2 calls) "out of room with nothing to show is asked again, however the tokens went (bead v3-81b)"))
+    (let* ((calls 0)
+           (p (make-provider-profile :name "voice" :base-url "http://fake" :model "m1" :max-tokens 8192
+                                     :transport (lambda (url headers body &key stream-fn timeout allow-private)
+                                                  (declare (ignore url headers body stream-fn timeout allow-private))
+                                                  (incf calls)
+                                                  (values 200 nil (json-encode (obj "choices" (list (obj "message" (obj "content" "") "finish_reason" "stop"))
+                                                                                    "usage" (obj "prompt_tokens" 100 "completion_tokens" 3 "cost" 0.0001))))))))
+      (signals provider-failure (complete k p (user "hi")))
+      (is (= 1 calls) "an empty answer that ended on its own is not asked again"))))
 
 (deftest a-local-server-without-a-key-is-sent-none
   (let ((local (pai-v3.mind::%profile (obj "name" "judge" "base_url" "http://127.0.0.1:1234/v1" "model" "q" "local" t)))
