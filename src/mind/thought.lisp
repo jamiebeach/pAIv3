@@ -338,9 +338,22 @@ make the re-read never stick, and the agent read it again (bead v3-qwh)."
           (cond ((member (obj-get m "tool_call_id") re-reads :test #'equal))
                 ((< kept *full-results-kept*) (incf kept))
                 ((and (stringp content) (> (length content) (+ *older-result-chars* 200)))
-                 (setf (gethash "content" m)
-                       (format nil "~a~%[An earlier result, shortened here to save space (~d characters in all). You have usually already used it; only if you need its detail now, call read_result with call_id ~a and part 0, and it will then stay whole.]"
-                               (subseq content 0 *older-result-chars*) (length content) (obj-get m "tool_call_id"))))))))))
+                 ;; What the call brought to mind came first and filled the kept
+                 ;; start, so a mail search read as no result at all (Angel,
+                 ;; 2026-11-05): an older result keeps the tool's own words.
+                 (let ((body (%without-notes content)))
+                   (setf (gethash "content" m)
+                         (if (<= (length body) (+ *older-result-chars* 200))
+                             body
+                             (format nil "~a~%[An earlier result, shortened here to save space (~d characters in all). You have usually already used it; only if you need its detail now, call read_result with call_id ~a and part 0, and it will then stay whole.]"
+                                     (subseq body 0 *older-result-chars*) (length body) (obj-get m "tool_call_id"))))))))))))
+
+(defun %without-notes (content)
+  "CONTENT without the step notes %with-notes put before the tool's result."
+  (let ((at (search (format nil "~%~%[The tool's result]~%") content)))
+    (if (and at (eql 0 (search "[Brought to mind by this call" content)))
+        (subseq content (+ at (length (format nil "~%~%[The tool's result]~%"))))
+        content)))
 
 ;;; The mind
 

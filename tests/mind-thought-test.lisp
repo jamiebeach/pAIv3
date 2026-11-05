@@ -230,6 +230,17 @@
       (is (= 2 (count-if (lambda (r) (search "appears earlier in this same response" r)) results))
           "the repeats are answered, not run"))))
 
+(deftest an-older-result-keeps-the-tools-own-words-not-its-notes
+  ;; Angel, 2026-11-05: recalled notes filled the kept start of a shortened
+  ;; mail search, so the search itself was lost.
+  (let* ((notes (make-string 1500 :initial-element #\n))
+         (result (concatenate 'string "Searched the whole mailbox of home (2)" (make-string 3000 :initial-element #\r)))
+         (old (obj "role" "tool" "tool_call_id" "c0" "content" (pai-v3.mind::%with-notes notes result)))
+         (messages (cons old (loop for i below 6 collect (obj "role" "tool" "tool_call_id" (format nil "c~d" (1+ i)) "content" "x")))))
+    (pai-v3.mind::%shorten-older-results messages)
+    (is (eql 0 (search "Searched the whole mailbox" (obj-get old "content"))) "the result's own start is kept")
+    (is (null (search "Brought to mind" (obj-get old "content"))) "and the notes are left out")))
+
 (deftest a-flood-of-tool-calls-runs-only-the-first-few
   (with-thinking (k)
     (let* ((*script* (list (obj "content" "" "tool_calls" (loop for i below 20 collect (call (format nil "c~d" i) "clock")))
