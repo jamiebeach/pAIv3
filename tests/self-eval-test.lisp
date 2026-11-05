@@ -29,6 +29,34 @@
     (ev k "(defun greet (name) (format nil \"Hi, ~a\" name))")
     (is (= 1 (length (live-changes k))) "a redefinition supersedes the older one")))
 
+(deftest a-skill-is-archived-never-deleted-and-can-come-back
+  ;; Operator, 2026-11-05: archive, not delete.
+  (with-temp-kernel (k)
+    (let ((run (lambda (args) (funcall (pai-v3.mind::tool-run (gethash "skills" *tools*)) k 1 args))))
+      (ev k "(defparameter *scratch* 42)")
+      (is (search "*SCRATCH*" (funcall run (obj "action" "list"))))
+      (is (search "Give a reason" (funcall run (obj "action" "archive" "name" "*SCRATCH*"))))
+      (is (search "Archived" (funcall run (obj "action" "archive" "name" "*SCRATCH*" "reason" "a test value"))))
+      (is (null (live-changes k)) "no longer active")
+      (is (equal '(0 0) (restore-self k)) "so not applied at boot")
+      (is (search "a test value" (funcall run (obj "action" "list"))) "but kept, with its reason")
+      (is (search "Restored" (funcall run (obj "action" "restore" "name" "*SCRATCH*"))))
+      (is (= 1 (length (live-changes k))) "and active again"))))
+
+(deftest a-skill-that-redefines-a-built-in-tool-is-archived-at-boot
+  ;; Angel's copy of mail replaced the source tool at every boot, so search
+  ;; never reached her (2026-11-05). The source wins.
+  (with-temp-kernel (k)
+    (ev k "(define-tool \"clock_copy_test\" :description \"x\" :run (lambda (k i a) (declare (ignore k i a)) \"mine\"))")
+    (ev k "(define-tool \"skills\" :description \"my own copy\" :run (lambda (k i a) (declare (ignore k i a)) \"old\"))")
+    (is (= 2 (length (live-changes k))))
+    (remhash "clock_copy_test" *tools*)                           ; as after a restart: only source tools
+    (is (equal '(1 1) (restore-self k)) "the new tool comes back; the copy of a built-in one does not")
+    (is (equal '("clock_copy_test") (mapcar #'first (live-changes k))))
+    (is (search "redefines the built-in tool skills"
+                (sql-value (kernel-db k) "SELECT reason FROM live_changes WHERE name=?1 AND status=?2 LIMIT 1" "skills" "archived"))
+        "archived with a reason the agent can read")))
+
 (defun pai-v3.mind::test-dial () 1)
 
 (deftest repairs-last-until-restart
