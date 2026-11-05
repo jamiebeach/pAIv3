@@ -88,10 +88,46 @@ defines for itself is always operator-trust and never core.")
                (:operator-trust (equal "operator" audience))
                (:operator-and-peers (or (equal "operator" audience) (peer-audience-p audience))))))))
 
+;;; Code execution and outside content do not meet in one thought (bead
+;;; v3-r2j.4, operator 2026-11-05). A crafted email or page that persuades a
+;;; thought to run code would get the whole container, its secrets with it.
+;;; So once a thought has taken outside content in, by being woken by it or by
+;;; reading it through a tool, the tools that run code are not offered for the
+;;; rest of it, nor in its sub-thoughts. Everything else stays: this narrows
+;;; v3-4u9's "flag, never block" to the one class that hands over the machine.
+
+(define-setting "safety.code_tools"
+  :type :array :default (list "lisp_eval" "shell" "install_software") :group "Safety"
+  :description "Tools that run code in my container. They are not offered in a thought that has taken in outside content.")
+(define-setting "safety.outside_content_tools"
+  :type :array :default (list "web_fetch" "brave_search" "mail" "calendar" "read_forum") :group "Safety"
+  :description "Tools whose results are outside content (mail, calendar, web, forum posts that guests can write). After one of them, a thought gets no code tools.")
+
+(defun outside-content-p (kernel thought)
+  "True when THOUGHT, or the thought it belongs to, has taken in outside
+content: woken by it, or having called a tool that brings it in."
+  (or (equal "external" (getf thought :audience))
+      (peer-audience-p (getf thought :audience))
+      (let ((tools (remove-if-not #'stringp (setting kernel "safety.outside_content_tools"))))
+        (and tools
+             (sql-value (kernel-db kernel)
+                        (format nil "SELECT 1 FROM thought_steps s JOIN thoughts t ON t.id=s.thought_id WHERE t.root_id=?1 AND s.kind='tool_call' AND s.tool IN (~{'~a'~^,~}) LIMIT 1"
+                                (mapcar (lambda (n) (remove #\' n)) tools))
+                        (or (getf thought :root-id) (getf thought :id)))))))
+
+(defun code-tool-withheld-p (kernel tool thought)
+  (and (member (tool-name tool) (setting kernel "safety.code_tools") :test #'equal)
+       (outside-content-p kernel thought)))
+
+(defparameter +code-tool-withheld+
+  "Not run: this thought has taken in outside content (mail, calendar, a web page or forum posts), and tools that run code are not offered in a thought that has. Finish what you can without it, or carry the code step to a thought of its own (carry or concern) and do it there, from your own notes rather than the outside text.")
+
 (defun tool-usable-p (kernel tool thought)
-  "TOOL is available to THOUGHT, and, if voice-only, THOUGHT answers a voice turn."
+  "TOOL is available to THOUGHT, and, if voice-only, THOUGHT answers a voice
+turn; a code tool, only while THOUGHT has taken in no outside content."
   (and (tool-available-p tool thought)
-       (or (not (tool-voice-only tool)) (%voice-turn-p kernel (getf thought :id)))))
+       (or (not (tool-voice-only tool)) (%voice-turn-p kernel (getf thought :id)))
+       (not (code-tool-withheld-p kernel tool thought))))
 
 (defun tools-for (thought)
   "Tools THOUGHT may use, in name order."
