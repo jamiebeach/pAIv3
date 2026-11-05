@@ -365,7 +365,7 @@ day's allowance. Returns how many were taken."
                                         (t "(the message has no text)"))
                                   (and files (mapcar (lambda (f) (format nil "[~d] ~a (~a, ~a)" (first f) (second f) (third f) (%size-text (fourth f)))) files))))))
                      ;; Any other action is refused, never answered as recent: a list of
-                     ;; recent mail could pass for a search that found nothing (Angel,
+                     ;; recent mail could pass for a search that found nothing (an agent,
                      ;; 2026-11-05).
                      ((not (member (obj-get args "action") '(nil "recent") :test #'equal))
                       (format nil "No mail action ~s. Use search, recent, read or attachment." (obj-get args "action")))

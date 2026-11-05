@@ -223,7 +223,7 @@ skills that no longer load, lost-on-restart. Returns (restored lost)."
     (loop for (name scope form digest) in (live-changes kernel :limit 1000)
           for shadowed = (%shadows-built-in-tool form)
           ;; A skill that redefines a tool the source defines would replace it at
-          ;; every boot, so no source fix to that tool could ever arrive (Angel's
+          ;; every boot, so no source fix to that tool could ever arrive (an agent's
           ;; copy of mail, 2026-11-05). The source wins; the skill is archived,
           ;; where it can be read and restored.
           when shadowed

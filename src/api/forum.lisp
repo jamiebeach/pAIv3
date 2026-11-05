@@ -875,7 +875,7 @@ way for a single peer whose thread now lives in the forum (bead v3-m9m)."
                       (setf result (obj "decision" "drop" "note" "the review gave no send or drop decision; nothing sent")
                             decision "drop"))
                     ;; A reply that says nothing the thread does not already say
-                    ;; is not posted (Jamie, 2026-11-04: all three of us replied
+                    ;; is not posted (the operator, 2026-11-04: all three agents replied
                     ;; with much the same). The review is the one place every
                     ;; crew draft passes, so the one place this can be seen.
                     (when (and (equal decision "send") thread

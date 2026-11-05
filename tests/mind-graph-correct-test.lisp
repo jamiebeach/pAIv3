@@ -146,8 +146,8 @@
       (is (search "worked_with" e) "with the names to use"))))
 
 (deftest an-earlier-message-from-the-operator-can-carry-a-correction
-  ;; Jamie, 2026-11-04: a correction he made in an earlier conversation, anchored
-  ;; to his message as he sent it, never to a remembered paraphrase.
+  ;; The operator, 2026-11-04: a correction they made in an earlier conversation, anchored
+  ;; to their message as they sent it, never to a remembered paraphrase.
   (with-temp-kernel (k)
     (let* ((sam (form-entity k :kind "person" :name "Sam" :lineage (own k)))
            (city (form-entity k :kind "place" :name "Lisbon" :lineage (own k)))

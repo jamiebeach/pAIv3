@@ -223,7 +223,7 @@
   ;; Operator report 2026-10-31: a fast model promised and stopped; the rule
   ;; stood only at the top. It is now the last thing in context, for every audience.
   (with-temp-kernel (k)
-    (dolist (audience '("operator" "peer:angel"))
+    (dolist (audience '("operator" "peer:nova"))
       (let* ((messages (assemble-context k "operator-turn" (list :audience audience :task "x")))
              (text (format nil "~{~a~%~}" (mapcar (lambda (m) (obj-get m "content")) messages))))
         (is (search "Never end by saying what you are about to do" text) audience)
@@ -237,7 +237,7 @@
     (flet ((context-for (mode)
              (let* ((origin (obj "principal_type" "operator" "channel" "web"))
                     (turn (progn (when mode (setf (gethash "mode" origin) mode))
-                                 (receive-turn k :channel "web" :audience "operator" :speaker "Jamie" :text "hi" :origin origin)))
+                                 (receive-turn k :channel "web" :audience "operator" :speaker "Sam" :text "hi" :origin origin)))
                     (thought (request-thought k "responding" "The operator spoke." :channel "web" :source-event-id (event-id turn)))
                     (messages (assemble-context k "operator-turn" (list :audience "operator" :task "x" :thought-id thought))))
                (format nil "~{~a~%~}" (mapcar (lambda (m) (obj-get m "content")) messages)))))
@@ -260,7 +260,7 @@
       (flet ((thought-for (mode)
                (let* ((origin (obj "principal_type" "operator" "channel" "web"))
                       (turn (progn (when mode (setf (gethash "mode" origin) mode))
-                                   (receive-turn k :channel "web" :audience "operator" :speaker "Jamie" :text "hi" :origin origin))))
+                                   (receive-turn k :channel "web" :audience "operator" :speaker "Sam" :text "hi" :origin origin))))
                  (thought-row k (request-thought k "responding" "The operator spoke." :channel "web" :source-event-id (event-id turn))))))
         (let ((tool (gethash "test_wave" pai-v3.mind::*tools*))
               (spoken (thought-for "voice")) (typed (thought-for nil)))

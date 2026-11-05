@@ -44,8 +44,8 @@
       (is (= 1 (length (live-changes k))) "and active again"))))
 
 (deftest a-skill-that-redefines-a-built-in-tool-is-archived-at-boot
-  ;; Angel's copy of mail replaced the source tool at every boot, so search
-  ;; never reached her (2026-11-05). The source wins.
+  ;; An agent's copy of mail replaced the source tool at every boot, so search
+  ;; never reached the agent (2026-11-05). The source wins.
   (with-temp-kernel (k)
     (ev k "(define-tool \"clock_copy_test\" :description \"x\" :run (lambda (k i a) (declare (ignore k i a)) \"mine\"))")
     (ev k "(define-tool \"skills\" :description \"my own copy\" :run (lambda (k i a) (declare (ignore k i a)) \"old\"))")

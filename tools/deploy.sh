@@ -1,6 +1,6 @@
 #!/bin/sh
-# Staged deploys (bead v3-r2j.7): Angel is production, so a change reaches her
-# only after Specter (dev) and Aria have run the same commit for a while with
+# Staged deploys (bead v3-r2j.7): Angel is the production agent, so a change
+# reaches it only after Specter (dev) and Aria have run the same commit for a while with
 # no new model failures.
 #
 #   tools/deploy.sh                    Specter, then Aria, each checked healthy

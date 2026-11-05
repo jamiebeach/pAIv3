@@ -113,7 +113,7 @@ lineage, and retract the old one. An operator maintenance step (bead v3-678)."
 
 (defun %earlier-refusal (kernel event-id quote)
   "Why EVENT-ID cannot carry a correction, or NIL: an earlier message is
-evidence only if the operator sent it and QUOTE is in it (Jamie, 2026-11-04)."
+evidence only if the operator sent it and QUOTE is in it (the operator, 2026-11-04)."
   (let ((said (%operator-said kernel event-id)))
     (cond ((null said) (format nil "Event ~a is not a message from the operator." event-id))
           ((not (and (stringp quote) (plusp (length (string-trim " " quote)))

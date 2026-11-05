@@ -118,9 +118,9 @@
           (is (= 200 (pwa-post "/api/v2/send" (obj "message" "SYNTHETIC typed twice") :token token)))
           (is (= 200 (pwa-post "/api/v2/send" (obj "message" "SYNTHETIC typed twice") :token token)))
           (is (= 2 (turns "SYNTHETIC typed twice")) "typing the same thing twice is two turns"))
-        ;; Angel's ledger, 2026-11-04: re-recognised copies and a copy a minute later.
-        (is (pai-v3.api::voice-turns-alike-p "Yup and then after I pick her up I'm going to the sauna place"
-                                             "Yep and then after I pick her up I'm going to the sauna place" 1)
+        ;; An agent's ledger, 2026-11-04: re-recognised copies and a copy a minute later.
+        (is (pai-v3.api::voice-turns-alike-p "Yup and then after I pick them up I'm going to the sauna place"
+                                             "Yep and then after I pick them up I'm going to the sauna place" 1)
             "one word re-recognised is the same turn")
         (is (pai-v3.api::voice-turns-alike-p "Yeah didn't we fix that or didn't Claude fix it"
                                              "Yeah didn't we fix that or didn't Claude fix it" 40)

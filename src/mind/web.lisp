@@ -94,7 +94,7 @@ Replaced in tests.")
     (and end (string-trim '(#\Space #\Newline #\Tab #\Return) (%decode-entities (subseq html (1+ open-end) end))))))
 
 
-;;; Manners (Jamie and Aria, 2026-11-04): what looks like abuse from a host's
+;;; Manners (the operator and an agent, 2026-11-04): what looks like abuse from a host's
 ;;; side is volume, retrying after a refusal, and routing around one. So every
 ;;; fetch is recorded; a host is read at most web.fetches_per_host_hour times an
 ;;; hour; and a host that refuses (401, 403, 429) is not asked again for a day,
@@ -116,7 +116,8 @@ Replaced in tests.")
   :kind :inline
   :consumes ("web.fetched")
   :tables ("CREATE TABLE IF NOT EXISTS web_fetches (event_id INTEGER NOT NULL, host TEXT NOT NULL, url TEXT NOT NULL, status INTEGER NOT NULL, thought_id INTEGER, refused_here TEXT, at TEXT NOT NULL)"
-           "CREATE INDEX IF NOT EXISTS web_fetches_host_idx ON web_fetches(host,at)")
+           "CREATE INDEX IF NOT EXISTS web_fetches_host_idx ON web_fetches(host,at)"
+           "CREATE INDEX IF NOT EXISTS web_fetches_at_idx ON web_fetches(at)")
   :reduce (lambda (db e)
             (let ((p (event-payload e)))
               (dolist (host (obj-get p "hosts"))

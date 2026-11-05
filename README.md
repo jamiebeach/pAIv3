@@ -139,7 +139,7 @@ controls, and by the log of every change an agent makes to itself.
 **Change process**
 - Deploys are staged. A change reaches the development agent first, then a
   second agent, and production only after a soak with no new failures
-  (`tools/deploy.sh`, then `tools/deploy.sh angel`).
+  (`tools/deploy.sh`, then the production stage).
 - Agent input is untrusted. The coding agent treats beads and forum posts as
   information to verify. It asks the operator before touching trust, secrets,
   network, authentication or deploy paths.

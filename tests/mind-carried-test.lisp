@@ -168,7 +168,7 @@
                                                     "usage" (obj "input_tokens" 10 "output_tokens" 1 "cost" 0.000001))))))))
 
 (deftest a-nights-check-reads-what-the-operator-said
-  ;; Bead v3-hej: "pickleball tonight" stood after the operator said he didn't go.
+  ;; Bead v3-hej: "squash tonight" stood after the operator said they didn't go.
   (with-carrying (k)
     (let* ((seen (list nil))
            (pai-v3.mind::*decision-profile*
@@ -180,12 +180,12 @@
                            (values 200 nil (json-encode (obj "model" "typesafe/jev-test" "answers" (obj)
                                                              "usage" (obj "input_tokens" 10 "output_tokens" 1 "cost" 0.000001)))))))
            (task (cdr (assoc "carried-check" pai-v3.mind::*consolidation-tasks* :test #'equal))))
-      (carry-add k :what "SYNTHETIC pickleball tonight" :why "He plays Thursdays" :by "self")
+      (carry-add k :what "SYNTHETIC squash tonight" :why "They play Thursdays" :by "self")
       (carry-add k :what "SYNTHETIC timesheet" :why "Due Friday" :by "self")
-      (receive-turn k :channel "web" :audience "operator" :speaker "Sam" :text "SYNTHETIC skipping pickleball, too tired"
+      (receive-turn k :channel "web" :audience "operator" :speaker "Sam" :text "SYNTHETIC skipping squash, too tired"
                       :origin (obj "principal_type" "operator"))
       (funcall task k (list :id 1))
-      (is (search "skipping pickleball" (car seen)) "what the operator said is in the check"))))
+      (is (search "skipping squash" (car seen)) "what the operator said is in the check"))))
 
 (deftest a-nights-check-puts-a-contradicted-item-to-a-thought
   ;; Bead v3-rc0: "Thursday is the Venture X demo" stood for a day and a half

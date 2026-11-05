@@ -217,7 +217,7 @@
         (is (search "already made this exact call" (obj-get (second results) "content")) "the same call, keys reordered, is noticed")))))
 
 (deftest the-same-call-twice-in-one-response-runs-once
-  ;; Angel, 2026-11-04: a model looping inside one response posted one reply three times.
+  ;; An agent, 2026-11-04: a model looping inside one response posted one reply three times.
   (with-thinking (k)
     (let* ((args1 (json-encode (obj "x" 1))) (args2 (json-encode (obj "x" 2)))
            (*script* (list (obj "content" "" "tool_calls" (list (call "a" "clock" args1) (call "b" "clock" args2)
@@ -231,7 +231,7 @@
           "the repeats are answered, not run"))))
 
 (deftest an-older-result-keeps-the-tools-own-words-not-its-notes
-  ;; Angel, 2026-11-05: recalled notes filled the kept start of a shortened
+  ;; An agent, 2026-11-05: recalled notes filled the kept start of a shortened
   ;; mail search, so the search itself was lost.
   (let* ((notes (make-string 1500 :initial-element #\n))
          (result (concatenate 'string "Searched the whole mailbox of home (2)" (make-string 3000 :initial-element #\r)))
@@ -557,7 +557,7 @@ the operator spoke of bed; anything else says nothing of the operator."
                                                     "usage" (obj "input_tokens" 10 "output_tokens" 1 "cost" 0.000001))))))))
 
 (deftest a-reply-that-states-the-operators-state-unsupported-is-written-again
-  ;; Bead v3-568: "Goodnight, Jamie" from a sign-off, when he was up for another hour.
+  ;; Bead v3-568: "Goodnight" from a sign-off, when they were up for another hour.
   (with-thinking (k)
     (let* ((calls (list 0))
            (pai-v3.mind::*decision-profile* (grounding-judge :calls calls))
@@ -591,13 +591,13 @@ the operator spoke of bed; anything else says nothing of the operator."
                                                     "usage" (obj "input_tokens" 10 "output_tokens" 1 "cost" 0.000001))))))))
 
 (deftest a-trivial-turn-is-answered-without-a-model-call
-  ;; Jamie and Angel, 2026-11-04: "Thank you Angel" needs no thought.
+  ;; The operator and an agent, 2026-11-04: "Thank you Nova" needs no thought.
   (with-thinking (k)
     (let* ((pai-v3.mind::*decision-profile* (kind-judge "THANKS"))
            (*script* (list (obj "content" "Glad to help.") (obj "content" "SHOULD NOT BE SAID"))))
       (operator-turn k "SYNTHETIC can you check the weather for me")
       (run-until-idle k)
-      (let ((id (operator-turn k "Thank you Angel")))
+      (let ((id (operator-turn k "Thank you Nova")))
         (run-until-idle k)
         (is (= 0 (getf (thought-row k id) :model-calls)) "no model call")
         (is (equal "ended" (getf (thought-row k id) :status)))

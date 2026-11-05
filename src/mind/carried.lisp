@@ -254,7 +254,7 @@ then, and may not be now (bead v3-rc0)."
                                         items))
                         "I am not carrying anything."))))))))
 
-;;; A night's look across them (bead v3-rc0; Jamie, 2026-11-04): items written
+;;; A night's look across them (bead v3-rc0; the operator, 2026-11-04): items written
 ;;; on different days can repeat or contradict each other, and the stale one
 ;;; goes on steering every turn. One Decisions call compares each open item with
 ;;; the rest; one it finds repeated or contradicted is not changed or closed
@@ -274,8 +274,8 @@ then, and may not be now (bead v3-rc0)."
                               (loop for i in items for n from 1
                                     collect (format nil "~d. (since ~a) ~a — ~a" n (%carried-since kernel i)
                                                     (obj-get i "what") (obj-get i "why")))
-                              ;; News that undoes an item (bead v3-hej, fix 2): "pickleball
-                              ;; tonight" after the operator said he didn't go.
+                              ;; News that undoes an item (bead v3-hej, fix 2): "squash
+                              ;; tonight" after the operator said they didn't go.
                               (ignore-errors (operator-said-since kernel (iso8601 (- (now) 86400)) :most 20)))))
          (loop for n from 1 to (length items)
                do (setf (gethash (format nil "i~2,'0d" n) questions)

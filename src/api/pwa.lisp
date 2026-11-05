@@ -219,7 +219,7 @@ becomes a stimulus (pai-v3.mind:coding-agent-message)."
                                 "repeated_queries" (mapcar (lambda (r) (obj "arguments" (clip (first r) 160) "times" (second r)))
                                                            (rows "SELECT s.arguments,count(*) FROM thought_steps s WHERE s.event_id>=?1 AND s.kind=?2 AND s.tool=?3 GROUP BY 1 HAVING count(*)>1 ORDER BY 2 DESC LIMIT 20" first-id "tool_call" "brave_search"))))))
                   ;; Spending over the last limit days (default 7).
-                  ;; Every web_fetch, newest first: what was touched and when (Jamie, 2026-11-04).
+                  ;; Every web_fetch, newest first: what was touched and when (the operator, 2026-11-04).
                   ((equal what "fetches")
                    (mapcar (lambda (r) (obj "at" (first r) "host" (second r) "status" (third r) "url" (clip (fourth r) 300)
                                             "thought_id" (or (fifth r) :null) "refused_here" (or (sixth r) :null)))
@@ -588,8 +588,8 @@ localhost), the URL to send it to; passkeys only work at the agent's origin."
 
 ;;;
 ;;; The copy is not always word for word: Android re-recognises the same speech
-;;; ("Yup and then after I pick her up..." then "Yep and then..."), and a new
-;;; recogniser session can hand the last turn back a minute later (Angel's
+;;; ("Yup and then after I pick them up..." then "Yep and then..."), and a new
+;;; recogniser session can hand the last turn back a minute later (an agent's
 ;;; ledger, 2026-11-04). So a turn of four or more words that is nearly the
 ;;; last one (*voice-similar-share* of its words) within *voice-similar-seconds*
 ;;; is the same turn; a short one ("yes", "no") only when exact, within

@@ -82,7 +82,7 @@
       (is (search "out of credits" (pai-v3.mind::brave-search "x")) "out of credits says stop, not retry"))))
 
 (deftest fetches-keep-manners-per-host
-  ;; Jamie and Aria, 2026-11-04: record every fetch, cap each host, and never
+  ;; The operator and an agent, 2026-11-04: record every fetch, cap each host, and never
   ;; ask again, by any route, a host that refused.
   (with-temp-kernel (k)
     (let* ((*fetch-allow-private* t) (*requests* '())

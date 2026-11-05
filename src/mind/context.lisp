@@ -102,7 +102,7 @@ render audited content safe for every audience. Unreviewed sources default to op
 
 ;; The one rule most often missed, placed last, nearest the moment of answering:
 ;; a fast model weighs the end of a prompt most (operator report 2026-10-31,
-;; Angel's "On it, writing chapter two now" with nothing written). The same
+;; An agent's "On it, writing chapter two now" with nothing written). The same
 ;; rule stands at the top of the instructions (initiative.lisp); here it is
 ;; repeated where it is read last.
 (defparameter +voice-rule+

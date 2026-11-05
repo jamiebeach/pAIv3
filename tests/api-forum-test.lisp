@@ -197,7 +197,7 @@
                                                     "usage" (obj "input_tokens" 10 "output_tokens" 1 "cost" 0.000001))))))))
 
 (deftest a-crew-reply-that-only-repeats-the-thread-is-not-posted
-  ;; Jamie, 2026-11-04: all three replied with much the same.
+  ;; The operator, 2026-11-04: all three replied with much the same.
   (dolist (case '((0 "dropped") (2 "sent")))
     (with-crew (a b)
       (let* ((pai-v3.mind::*decision-profile* (repeat-judge (first case)))

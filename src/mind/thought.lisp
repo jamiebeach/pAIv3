@@ -192,7 +192,7 @@ model-failed; DETAIL is an object of content-free counts and labels, plus a
 short preview of tool input. Never recorded; live only.")
 
 ;; Besides the operator's live view, plugins may listen to every thought's
-;; activity (an avatar showing what she is doing in quiet time). Live only, like
+;; activity (an avatar showing what it is doing in quiet time). Live only, like
 ;; the hook; a listener that fails is skipped.
 (defvar *activity-listeners* '()
   "Functions (lambda (thought kind detail)) called with every thought's activity.")
@@ -339,7 +339,7 @@ make the re-read never stick, and the agent read it again (bead v3-qwh)."
                 ((< kept *full-results-kept*) (incf kept))
                 ((and (stringp content) (> (length content) (+ *older-result-chars* 200)))
                  ;; What the call brought to mind came first and filled the kept
-                 ;; start, so a mail search read as no result at all (Angel,
+                 ;; start, so a mail search read as no result at all (an agent,
                  ;; 2026-11-05): an older result keeps the tool's own words.
                  (let ((body (%without-notes content)))
                    (setf (gethash "content" m)
@@ -911,7 +911,7 @@ sub-call's result arrives later."
                                         (length calls) most))
                                ;; A model can loop inside one response, asking for the
                                ;; same calls over and over: one reply posted three times,
-                               ;; one bead filed nine (Angel, 2026-11-04). The same call
+                               ;; one bead filed nine (an agent, 2026-11-04). The same call
                                ;; twice in one response is run once.
                                ((%repeated-in-response-p calls n name (obj-get fn "arguments"))
                                 (setf failed t)

@@ -1,8 +1,8 @@
 (in-package #:pai-v3.mind)
 
-;;; The fast path for trivial turns (Angel's idea, from Jamie's car chat,
+;;; The fast path for trivial turns (an agent's idea, from a talk with the operator,
 ;;; 2026-11-04; the crew forum thread "Fast-path for trivial turns"). "Thank
-;;; you Angel" or "ok" does not need the model. A responding thought's first
+;;; you" or "ok" does not need the model. A responding thought's first
 ;;; step asks, for a short operator turn only, one Decisions judgment what
 ;;; kind of turn it is; a thanks or an acknowledgement is answered from the
 ;;; agent's own lines or with an emoji, and the thought ends without a model
