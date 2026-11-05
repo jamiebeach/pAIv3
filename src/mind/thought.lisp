@@ -342,12 +342,18 @@ make the re-read never stick, and the agent read it again (bead v3-qwh)."
 
 (defstruct mind kernel thought work)
 
+(defvar *fast-path-hook* nil
+  "(lambda (mind)) or NIL: answers a trivial turn without a model call and
+returns true, or returns NIL to let the thought go on (fastpath.lisp).")
+
 (defun think (mind messages)
   "The mind. MESSAGES is the argument folded through the recursion."
   (cond ((awaiting-p messages)
          (unless (answer-lost-calls (mind-kernel mind) (mind-thought mind) messages)
            (wait mind)))
         ((spent-p mind) (rest-here mind messages))
+        ;; A trivial operator turn may be answered without a model call (fastpath.lisp).
+        ((and *fast-path-hook* (ignore-errors (funcall *fast-path-hook* mind))) nil)
         (t (let ((reply (consult mind (%with-low-allowance-note mind messages))))
              (cond ((obj-get reply "tool_calls")
                     (recur mind (append messages (list reply) (act mind reply))))

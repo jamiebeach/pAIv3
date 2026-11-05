@@ -23,7 +23,8 @@
            ("text" :string)
            ("in_reply_to" :integer :optional)
            ("interrupted" :boolean :optional)    ; partial reply kept (EXT-3)
-           ("interim" :boolean :optional))      ; said between steps; the turn goes on
+           ("interim" :boolean :optional)       ; said between steps; the turn goes on
+           ("canned" :boolean :optional))       ; answered without a thought (fastpath.lisp)
   :max-bytes 131072)
 
 (define-event-type "notice.posted"
@@ -92,10 +93,11 @@ channel adapter; it is stored, never inferred from TEXT."
     (when (and semantic *received-turn-hook*) (funcall *received-turn-hook* kernel event))
     event))
 
-(defun deliver-reply (kernel &key channel audience text in-reply-to interrupted interim)
+(defun deliver-reply (kernel &key channel audience text in-reply-to interrupted interim canned)
   (append! kernel "reply.delivered"
            (obj "channel" channel "audience" audience "text" text
-                "in_reply_to" in-reply-to "interrupted" (and interrupted t) "interim" (and interim t))
+                "in_reply_to" in-reply-to "interrupted" (and interrupted t) "interim" (and interim t)
+                "canned" (and canned t))
            :caused-by in-reply-to))
 
 (defun post-notice (kernel &key channel audience text (importance "normal"))

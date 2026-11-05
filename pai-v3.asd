@@ -27,6 +27,7 @@
                  (:file "llm")
                  (:file "tools")
                  (:file "thought")
+                 (:file "fastpath")
                  (:file "persona")
                  (:file "initiative")
                  (:file "context")
