@@ -24,7 +24,11 @@
   ;; responding and work match v2's 30 model calls per run of the mind.
   '(("responding"    :operator   30           300000    2)
     ("work"          :work       30           400000    3)
-    ("noticing"      :concern    6            60000     1)
+    ;; A scheduled reminder that wakes a thought runs as noticing, and the
+    ;; morning brief (gather, two searches, images, save, deliver) never fit
+    ;; in 6: it ran out at 7 on 2026-11-05 and the guards rebuilt it twice.
+    ;; A ceiling, not a target: a mail notice still uses two or three.
+    ("noticing"      :concern    20           200000    1)
     ;; A concern's run matches v2's 30; its lifetime is capped across runs.
     ("concern"       :concern    30           300000    2)
     ;; One run of a work item; v2 capped a run at 12 steps.
