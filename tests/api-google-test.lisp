@@ -195,6 +195,24 @@
 
 ;;; What is attached (a message of only attachments read as empty, and looked like a fault)
 
+(deftest the-whole-mailbox-can-be-searched
+  ;; Bead v3-6jl: "is there an email about the check-in?" answered by paging and
+  ;; eyeballing, and a message that was there was reported as not there.
+  (with-google (k)
+    (connect k)
+    (setf *asked* '())
+    (let* ((thought (request-thought k "responding" "find the check-in email" :audience "operator"))
+           (said (funcall (pai-v3.mind::tool-run (gethash "mail" *tools*)) k thought (obj "action" "search" "query" "algebra check-in"))))
+      (is (search "Searched the whole mailbox of home (3) for \"algebra check-in\"" said) "it says what it searched")
+      (is (search "About new1" said) "and lists what matches, with sender and subject")
+      (is (search "id new1, account home" said) "with the id to read it by")
+      (is (equal "algebra check-in"
+                 (quri:url-decode (subseq (second (find "/gmail/v1/users/me/messages" *asked* :key #'first :test #'string=))
+                                          2 (search "&" (second (find "/gmail/v1/users/me/messages" *asked* :key #'first :test #'string=))))))
+          "the query goes to Gmail's own search")
+      (is (search "Give query" (funcall (pai-v3.mind::tool-run (gethash "mail" *tools*)) k thought (obj "action" "search")))
+          "a search needs words"))))
+
 (deftest a-message-of-only-attachments-says-so-and-a-picture-can-be-opened
   (with-google (k)
     (connect k)
