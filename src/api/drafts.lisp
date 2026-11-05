@@ -26,6 +26,7 @@
   :tables ("CREATE TABLE IF NOT EXISTS fleet_drafts (draft_id TEXT PRIMARY KEY, thought_id INTEGER NOT NULL, peer_id TEXT NOT NULL, thread_id TEXT, reply_to TEXT, intent TEXT NOT NULL, text TEXT NOT NULL, why TEXT, state TEXT NOT NULL DEFAULT 'open', fate TEXT, note TEXT, created_at TEXT NOT NULL, source_event_id INTEGER NOT NULL UNIQUE, speaking_thought_id INTEGER, retries INTEGER NOT NULL DEFAULT 0)"
            "CREATE INDEX IF NOT EXISTS fleet_drafts_state_idx ON fleet_drafts(state,created_at)"
            "CREATE INDEX IF NOT EXISTS fleet_drafts_thought_idx ON fleet_drafts(thought_id)"
+           "CREATE INDEX IF NOT EXISTS fleet_drafts_reply_idx ON fleet_drafts(reply_to)"
            "CREATE INDEX IF NOT EXISTS fleet_drafts_speaking_idx ON fleet_drafts(speaking_thought_id)")
   :entity (lambda (e) (obj-get (event-payload e) "draft_id"))
   :reduce

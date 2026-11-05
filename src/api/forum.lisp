@@ -87,6 +87,7 @@
            "CREATE INDEX IF NOT EXISTS forum_messages_thread_idx ON forum_messages(thread_id,ts)"
            "CREATE INDEX IF NOT EXISTS forum_messages_event_idx ON forum_messages(event_id)"
            "CREATE INDEX IF NOT EXISTS forum_messages_author_idx ON forum_messages(author_id,ts)"
+           "CREATE INDEX IF NOT EXISTS forum_messages_reply_idx ON forum_messages(reply_to)"
            "CREATE TABLE IF NOT EXISTS forum_reactions (msg_id TEXT NOT NULL, by_id TEXT NOT NULL, emoji TEXT NOT NULL, by_name TEXT NOT NULL, thread_id TEXT NOT NULL, ts INTEGER NOT NULL, PRIMARY KEY(msg_id,by_id,emoji))"
            "CREATE INDEX IF NOT EXISTS forum_reactions_thread_idx ON forum_reactions(thread_id)")
   :reduce #'%reduce-forum)
@@ -790,6 +791,31 @@ came from, or NIL when it was made here."
                    (when (>= (or (sql-value (kernel-db kernel) "SELECT count(*) FROM fleet_drafts WHERE thought_id=?1 LIMIT 1" root-id) 0)
                              (setting kernel "fleet.drafts_per_reflection"))
                      (%board-refuse "at most ~d drafts in one reflection" (setting kernel "fleet.drafts_per_reflection")))
+                   ;; What I already have on the way is a fact to look up, not a
+                   ;; repeat for the review to judge (operator, 2026-11-05: agents
+                   ;; should remember they replied). One response once carried nine
+                   ;; drafts into one thread, and two wakes answered one message twice.
+                   (let ((mine (and thread-id
+                                    (sql-row (kernel-db kernel)
+                                             "SELECT draft_id,text FROM fleet_drafts WHERE thought_id=?1 AND thread_id=?2 LIMIT 1"
+                                             root-id thread-id)))
+                         (answering (and reply-to
+                                         (sql-row (kernel-db kernel)
+                                                  "SELECT draft_id,text FROM fleet_drafts WHERE reply_to=?1 AND state IN ('open','ready','speaking') LIMIT 1"
+                                                  reply-to)))
+                         (replied (and reply-to
+                                       (sql-row (kernel-db kernel)
+                                                "SELECT msg_id,text FROM forum_messages WHERE reply_to=?1 AND author_id=?2 LIMIT 1"
+                                                reply-to me))))
+                     (when replied
+                       (%board-refuse "I already replied to that message as ~a: ~a"
+                                      (first replied) (subseq (second replied) 0 (min 200 (length (second replied))))))
+                     (when mine
+                       (%board-refuse "this thought already drafted ~a for that thread, which says: ~a. Put everything in one post"
+                                      (first mine) (subseq (second mine) 0 (min 200 (length (second mine))))))
+                     (when answering
+                       (%board-refuse "draft ~a already answers that message and is on its way: ~a"
+                                      (first answering) (subseq (second answering) 0 (min 200 (length (second answering)))))))
                    (let ((id (format nil "d-~(~36r~)-~(~36r~)" (now) (random (expt 36 3)))))
                      (append-batch! kernel
                                     (list (list "fleet.draft.made"

@@ -152,6 +152,34 @@
         (is (equal '("SYNTHETIC any ideas?" "SYNTHETIC a garden") (texts a thread)) "it reached the other sister")
         (is (equal "sent" (sql-value (kernel-db b) "SELECT fate FROM fleet_drafts WHERE speaking_thought_id=?1 LIMIT 1" review)))))))
 
+(deftest what-i-already-said-or-have-on-the-way-is-looked-up-not-judged
+  ;; 2026-11-05: one response drafted nine times into one thread, and two wakes
+  ;; answered one message twice. Each is a fact the draft tool can see.
+  (with-crew (a b)
+    (let* ((thread (obj-get (pai-v3.api::forum-post a :title "SYNTHETIC ideas" :text "SYNTHETIC any ideas?"
+                                                      :author-id "operator" :author-name "Sam")
+                            "thread_id"))
+           (asked (obj-get (first (obj-get (pai-v3.api::forum-thread-json b thread) "messages")) "msg_id"))
+           (draft (pai-v3.mind::tool-run (gethash "draft_forum_post" pai-v3.mind::*tools*)))
+           (first-wake (request-thought b "introspection" "SYNTHETIC first wake"))
+           (second-wake (request-thought b "introspection" "SYNTHETIC second wake")))
+      (is (search "left for the crew forum"
+                  (funcall draft b first-wake (obj "text" "SYNTHETIC a garden" "thread_id" thread "reply_to" asked))))
+      (is (search "already drafted" (funcall draft b first-wake (obj "text" "SYNTHETIC a garden, again" "thread_id" thread)))
+          "one thought, one post per thread")
+      (is (search "already answers that message"
+                  (funcall draft b second-wake (obj "text" "SYNTHETIC a garden, reworded" "thread_id" thread "reply_to" asked)))
+          "another wake sees the draft on its way")
+      (append! b "thought.ended" (obj "thought_id" first-wake "outcome" "concluded" "summary" "Done"))
+      (pai-v3.api::speak-drafts b)
+      (let ((review (first (first (sql-rows (kernel-db b) "SELECT id FROM thoughts WHERE audience=?1 ORDER BY id DESC LIMIT 1" "peer:crew")))))
+        (funcall pai-v3.mind::*communication-answer* b (thought-row b review)
+                 "{\"decision\":\"send\",\"text\":\"SYNTHETIC a garden\",\"images\":[],\"note\":\"fine\"}"))
+      (is (search "already replied to that message"
+                  (funcall draft b (request-thought b "introspection" "SYNTHETIC later wake")
+                           (obj "text" "SYNTHETIC a garden, later" "thread_id" thread "reply_to" asked)))
+          "and once it is sent, a later wake sees the post"))))
+
 (deftest a-draft-whose-thread-was-resolved-meanwhile-is-dropped-not-retried
   ;; Bead v3-z16: the review raised "that thread is resolved" and was retried.
   (with-crew (a b)
