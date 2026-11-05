@@ -211,7 +211,9 @@
                                           2 (search "&" (second (find "/gmail/v1/users/me/messages" *asked* :key #'first :test #'string=))))))
           "the query goes to Gmail's own search")
       (is (search "Give query" (funcall (pai-v3.mind::tool-run (gethash "mail" *tools*)) k thought (obj "action" "search")))
-          "a search needs words"))))
+          "a search needs words")
+      (is (search "No mail action \"find\"" (funcall (pai-v3.mind::tool-run (gethash "mail" *tools*)) k thought (obj "action" "find" "query" "x")))
+          "an unknown action is refused, never answered as recent mail"))))
 
 (deftest a-message-of-only-attachments-says-so-and-a-picture-can-be-opened
   (with-google (k)

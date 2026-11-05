@@ -346,6 +346,11 @@ day's allowance. Returns how many were taken."
                                         (files "(no text in the message itself)")
                                         (t "(the message has no text)"))
                                   (and files (mapcar (lambda (f) (format nil "[~d] ~a (~a, ~a)" (first f) (second f) (third f) (%size-text (fourth f)))) files))))))
+                     ;; Any other action is refused, never answered as recent: a list of
+                     ;; recent mail could pass for a search that found nothing (Angel,
+                     ;; 2026-11-05).
+                     ((not (member (obj-get args "action") '(nil "recent") :test #'equal))
+                      (format nil "No mail action ~s. Use search, recent, read or attachment." (obj-get args "action")))
                      ;; recent: the newest LIMIT, after skipping INDEX of them, so older
                      ;; mail can be paged back to (bead v3-rh3).
                      (t (let* ((limit (max 1 (min 20 (or (obj-get args "limit") 10))))
