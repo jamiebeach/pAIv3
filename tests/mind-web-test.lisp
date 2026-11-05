@@ -104,4 +104,12 @@
         (funcall run k thought (obj "url" "https://example.net/b"))
         (is (search "its limit" (funcall run k thought (obj "url" "https://example.net/c"))) "a host is read at most so often an hour")))))
 
+(deftest a-proxied-request-leaves-resolving-to-the-proxy
+  ;; Bead v3-r2j.1: inside a network with no route out, a local lookup cannot
+  ;; answer; the proxy resolves and refuses private addresses itself.
+  (is (equal "no-such-host.invalid" (check-outbound-url "https://no-such-host.invalid/x" :proxied "http://a@proxy:3128"))
+      "a name is not looked up here when proxied")
+  (signals egress-refused (check-outbound-url "http://10.1.2.3/" :proxied "http://a@proxy:3128"))
+  (signals egress-refused (check-outbound-url "https://no-such-host.invalid/x")))
+
 (run-suite "mind-web")

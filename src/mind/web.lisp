@@ -27,7 +27,8 @@ Replaced in tests.")
 
 (defun %check-url (url)
   "Refuse early, with the transport's own rule, before anything is sent."
-  (check-outbound-url url :allow-private *fetch-allow-private*)
+  (check-outbound-url url :allow-private *fetch-allow-private*
+                          :proxied (and (not *fetch-allow-private*) (pai-v3.kernel::%egress-proxy)))
   url)
 
 ;;; HTML to text

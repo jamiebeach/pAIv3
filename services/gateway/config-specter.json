@@ -1,0 +1,6 @@
+{"routes": {"8090": "pai-specter:8090",
+            "8091": "realhost:8091", "8092": "realhost:8092",
+            "8765": "realhost:8765", "8766": "realhost:8766", "8767": "realhost:8767",
+            "8773": "realhost:8773", "8774": "realhost:8774",
+            "1234": "realhost:1234", "11434": "realhost:11434",
+            "8470": "realhost:8470", "8880": "realhost:8880", "3128": "realhost:3128"}}

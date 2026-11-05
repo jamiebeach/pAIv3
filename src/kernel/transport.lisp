@@ -45,14 +45,29 @@ Installed by the trust module; signals EGRESS-REFUSED.")
         (and (= a 192) (= b 168))
         (and (= a 100) (<= 64 b 127)))))
 
-(defun check-outbound-url (url &key allow-private)
-  "Signal EGRESS-REFUSED unless URL may be requested. Returns the host."
+(defun %dotted-quad (host)
+  "HOST's four octets when it is an IPv4 literal, else NIL."
+  (let ((parts (uiop:split-string host :separator ".")))
+    (and (= 4 (length parts))
+         (every (lambda (p) (and (plusp (length p)) (every #'digit-char-p p) (<= (parse-integer p) 255))) parts)
+         (coerce (mapcar #'parse-integer parts) 'vector))))
+
+(defun check-outbound-url (url &key allow-private proxied)
+  "Signal EGRESS-REFUSED unless URL may be requested. Returns the host.
+PROXIED: the request leaves through the egress proxy, which resolves the name
+and refuses private addresses itself; inside a container on a network with no
+route out, a local lookup could not answer (bead v3-r2j.1)."
   (let* ((uri (handler-case (quri:uri url) (error () (%refuse "~a is not an address." url))))
          (scheme (quri:uri-scheme uri))
          (host (quri:uri-host uri)))
     (unless (member scheme '("http" "https") :test #'equalp)
       (%refuse "Only http and https can be requested, not ~a." (or scheme "that")))
     (unless (plusp (length host)) (%refuse "~a has no host." url))
+    (when (and proxied (not allow-private))
+      (let ((quad (%dotted-quad host)))
+        (when (or (find #\: host) (and quad (%private-octets-p quad)))
+          (%refuse "~a is on a private network; only the public web is reachable." host)))
+      (return-from check-outbound-url (string-downcase host)))
     (unless allow-private
       (when (find #\: host)
         (%refuse "~a is on a private network; only the public web is reachable." host))
@@ -79,7 +94,8 @@ goes through it.")
 final-url); with STREAM, body is a stream the caller closes. Network
 failures signal; HTTP error statuses are returned, not signalled."
   (loop repeat (1+ max-redirects)
-        do (let ((host (check-outbound-url url :allow-private allow-private)))
+        do (let ((host (check-outbound-url url :allow-private allow-private
+                                                :proxied (and (not allow-private) (%egress-proxy)))))
              (multiple-value-bind (sent-headers sent-body secret-p)
                  (funcall *egress-guard* url host headers body)
                (multiple-value-bind (out status response-headers)
