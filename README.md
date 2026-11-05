@@ -267,6 +267,9 @@ is logged. A live repair is lost at restart unless a source fix lands.
 | `src/mind/` | thoughts, tools, System-1 judgments, memory, affect |
 | `src/api/` | HTTP API, PWA, forum, guests, Google, attention, plugins |
 | `src/self/` | self-modification: `lisp_eval`, skills, shell |
+| `src/trust/` | origins, audiences, secrets |
+| `src/recall/` | impressions, vectors, experience search |
+| `src/host/`, `src/cli/`, `src/maintenance/` | host integration, command line, maintenance tasks |
 | `web/` | the PWA |
 | `services/` | egress proxy, gateway, relay hub and other side containers |
 | `docker/` | images, including the shell sandbox helper |
