@@ -160,7 +160,7 @@
       (values nil "nothing open is carried as that")))
 
 (defun carry-close (kernel id state note)
-  (cond ((not (member state '("done" "dropped") :test #'equal)) (values nil "state is done or dropped"))
+  (cond ((not (member state '("done" "dropped") :test #'equal)) (values nil "state must be \"done\" or \"dropped\""))
         ((not (%carry-open-p kernel id)) (values nil "nothing open is carried as that"))
         (t (append! kernel "carried.closed" (obj "id" id "state" state "note" (and note (subseq note 0 (min 600 (length note))))))
            (values id nil))))
@@ -229,6 +229,10 @@ then, and may not be now (bead v3-rc0)."
                   (cond ((and id why-not) (format nil "Already carrying that as ~a." id))
                         (id (format nil "Carrying ~a." id))
                         (t (format nil "Not done: ~a." why-not)))))
+               ;; A state sent with revise was dropped while the reply said "Updated",
+               ;; so an item read as closed that was still open (bead v3-a8u).
+               ((and (string= action "revise") (obj-get args "state"))
+                "Not done: revise does not change an item's state; use action close with state done or dropped.")
                ((string= action "revise")
                 (multiple-value-bind (id why-not)
                     (carry-revise kernel (or id "") :what (obj-get args "what") :why (obj-get args "why")

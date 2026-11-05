@@ -71,6 +71,17 @@
    (is (search "Closed" (carry-tool k "external" "noticing"
          (obj "action" "close" "id" id "state" "done")))))))
 
+(deftest a-state-is-never-silently-dropped
+  ;; Bead v3-a8u: revise with a state said "Updated" and left the item open, and
+  ;; close's parameter error read like the item's own status.
+  (with-carrying (k)
+    (let ((id (carry-add k :what "SYNTHETIC item" :why "x" :by "operator")))
+      (let ((said (carry-tool k "operator" "responding" (obj "action" "revise" "id" id "state" "done" "note" "n"))))
+        (is (search "use action close" said))
+        (is (null (search "Updated" said))))
+      (is (search "must be" (carry-tool k "operator" "responding" (obj "action" "close" "id" id "state" "finished"))))
+      (is (search "Closed" (carry-tool k "operator" "responding" (obj "action" "close" "id" id "state" "done")))))))
+
 (deftest who-added-an-item-is-recorded
   (with-carrying (k)
     (carry-tool k "operator" "responding" (obj "action" "add" "what" "Told to me" "why" "The operator asked"))
