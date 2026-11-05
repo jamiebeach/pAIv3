@@ -27,6 +27,7 @@ import os
 import socket
 import sys
 import time
+import urllib.parse
 import urllib.request
 
 # Host lists come from the config ("host_lists": [{"name", "url",
@@ -69,13 +70,42 @@ def recent_for(client, most):
     return [{k: e.get(k) for k in ("ts", "method", "host", "decision", "reason")} for e in mine[-most:]]
 
 
-def fetch(url, key=None):
+def fetch(url, key=None, body=None):
     headers = {"User-Agent": "pai-egress/1 (blocklist refresh)"}
     if key:
         headers["Auth-Key"] = key
-    req = urllib.request.Request(url, headers=headers)
+    req = urllib.request.Request(url, headers=headers, data=body.encode() if body else None)
     with urllib.request.urlopen(req, timeout=60) as r:
         return r.read().decode("utf-8", "replace")
+
+
+# abuse.ch's bulk host files are gone (410); its APIs answer with a free
+# Auth-Key. Each kind turns one API answer into (hosts, ip addresses).
+def urlhaus_api(text):
+    hosts = set()
+    for u in json.loads(text).get("urls") or []:
+        h = urllib.parse.urlparse(u.get("url") or "").hostname
+        if h:
+            hosts.add(h.lower())
+    return hosts, set()
+
+
+def threatfox_api(text):
+    hosts, ips = set(), set()
+    for ioc in json.loads(text).get("data") or []:
+        kind, value = ioc.get("ioc_type"), ioc.get("ioc") or ""
+        if kind == "domain":
+            hosts.add(value.lower().rstrip("."))
+        elif kind == "url":
+            h = urllib.parse.urlparse(value).hostname
+            if h:
+                hosts.add(h.lower())
+        elif kind == "ip:port":
+            ips.add(value.rsplit(":", 1)[0].strip("[]"))
+    return hosts, ips
+
+
+API_KINDS = {"urlhaus_api": urlhaus_api, "threatfox_api": threatfox_api}
 
 
 def load_lists():
@@ -85,11 +115,11 @@ def load_lists():
     lists_dir = os.path.join(config["data_dir"], "lists")
     os.makedirs(lists_dir, exist_ok=True)
 
-    def cached(name, url_list, key=None):
+    def cached(name, url_list, key=None, body=None):
         path = os.path.join(lists_dir, name)
         for url in url_list:
             try:
-                text = fetch(url, key)
+                text = fetch(url, key, body)
                 with open(path, "w", encoding="utf-8") as f:
                     f.write(text)
                 return text
@@ -109,12 +139,29 @@ def load_lists():
             except OSError as e:
                 print(f"list {name}: no key ({e})", file=sys.stderr)
         n = 0
-        for line in cached(name, [spec["url"]], key).splitlines():
-            parts = line.split("#", 1)[0].split()
-            if len(parts) >= 2:
-                hosts[parts[1].lower().rstrip(".")] = name
-                n += 1
+        text = cached(name, [spec["url"]], key, spec.get("body"))
+        if spec.get("kind") in API_KINDS:
+            try:
+                found, ips = API_KINDS[spec["kind"]](text) if text else (set(), set())
+            except ValueError as e:
+                print(f"list {name}: unreadable answer ({e})", file=sys.stderr)
+                found, ips = set(), set()
+            for h in found:
+                hosts[h] = name
+            for ip in ips:
+                try:
+                    nets.append(ipaddress.ip_network(ip))
+                except ValueError:
+                    pass
+            n = len(found) + len(ips)
+        else:
+            for line in text.splitlines():
+                parts = line.split("#", 1)[0].split()
+                if len(parts) >= 2:
+                    hosts[parts[1].lower().rstrip(".")] = name
+                    n += 1
         counts[name] = n
+    listed_ips = len(nets)
     text = cached("spamhaus-drop", DROP_URLS)
     for line in text.splitlines():
         cidr = None
@@ -131,7 +178,7 @@ def load_lists():
                 nets.append(ipaddress.ip_network(cidr, strict=False))
             except ValueError:
                 pass
-    counts["spamhaus-drop"] = len(nets)
+    counts["spamhaus-drop"] = len(nets) - listed_ips
     denied_hosts, drop_nets = hosts, nets
     log({"ts": time.time(), "event": "lists", "counts": counts})
     print("lists loaded:", counts, flush=True)

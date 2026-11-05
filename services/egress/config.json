@@ -1,1 +1,4 @@
-{"port": 3128, "mode": "dry-run", "data_dir": "/data"}
+{"port": 3128, "mode": "dry-run", "data_dir": "/data",
+ "host_lists": [
+   {"name": "urlhaus", "kind": "urlhaus_api", "url": "https://urlhaus-api.abuse.ch/v1/urls/recent/limit/1000/", "auth_key_file": "/keys/abusech.key"},
+   {"name": "threatfox", "kind": "threatfox_api", "url": "https://threatfox-api.abuse.ch/api/v1/", "body": "{\"query\":\"get_iocs\",\"days\":7}", "auth_key_file": "/keys/abusech.key"}]}
