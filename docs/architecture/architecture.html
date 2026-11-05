@@ -1,0 +1,564 @@
+<title>pAI Agent Architecture</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Source+Sans+3:wght@400;600&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: one reading column; each figure a wide schematic that scrolls on its own when narrow. */
+:root {
+  --paper: #f6f7f4; --ink: #1d2a33; --muted: #5d6b73; --rule: #c9d1d0;
+  --s1: #b8620a;      /* System 1: fast, cheap judgments */
+  --s2: #11706f;      /* System 2: deliberate thought */
+  --kern: #3d4f8f;    /* kernel and trust */
+  --wash1: #f3e4d2; --wash2: #d8ebe9; --washk: #dfe3f2; --card: #ffffff;
+  --display: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+  --body: "Source Sans 3", "Segoe UI", system-ui, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --paper: #121a1f; --ink: #e3e9ea; --muted: #9aa8ae; --rule: #33424a;
+  --s1: #f0a24f; --s2: #4fc2bf; --kern: #93a4e6;
+  --wash1: #3a2a19; --wash2: #163634; --washk: #1f2742; --card: #19242a; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --paper: #121a1f; --ink: #e3e9ea; --muted: #9aa8ae; --rule: #33424a;
+  --s1: #f0a24f; --s2: #4fc2bf; --kern: #93a4e6;
+  --wash1: #3a2a19; --wash2: #163634; --washk: #1f2742; --card: #19242a; color-scheme: dark }
+body { background: var(--paper); color: var(--ink); font-family: var(--body); font-size: 16px; line-height: 1.55;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 32px 64px; }
+main { max-width: 1120px; margin: 0 auto; display: grid; gap: 40px; }
+header { display: grid; gap: 10px; max-width: 70ch; }
+h1 { font-family: var(--display); font-weight: 700; font-size: clamp(2rem, 4vw, 2.8rem); line-height: 1.05; margin: 0; text-wrap: balance; }
+h2 { font-family: var(--display); font-weight: 700; font-size: 1.45rem; margin: 0; text-wrap: balance; }
+h3 { font-family: var(--display); font-weight: 500; font-size: 1.05rem; margin: 0; }
+p { margin: 0; max-width: 70ch; }
+.eyebrow { font-family: var(--mono); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+section { display: grid; gap: 14px; }
+figure { margin: 0; display: grid; gap: 10px; }
+.scroll { overflow-x: auto; border: 1px solid var(--rule); border-radius: 6px; background: var(--card); }
+svg { display: block; width: 100%; min-width: 900px; height: auto; color: var(--ink); font-family: var(--body); }
+figcaption { color: var(--muted); font-size: 14.5px; max-width: 80ch; }
+.key { display: flex; flex-wrap: wrap; gap: 8px 18px; font-size: 14px; color: var(--muted); }
+.key span { display: inline-flex; align-items: center; gap: 6px; }
+.sw { width: 14px; height: 14px; border-radius: 3px; display: inline-block; border: 1.5px solid; }
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+.panel { background: var(--card); border: 1px solid var(--rule); border-radius: 6px; padding: 16px 18px; display: grid; gap: 8px; min-width: 0; }
+.panel ul { margin: 0; padding-left: 18px; display: grid; gap: 4px; }
+code, .mono { font-family: var(--mono); font-size: .86em; }
+table { border-collapse: collapse; width: 100%; font-size: 14.5px; }
+th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+th { font-family: var(--mono); font-size: 11.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+td .mono { white-space: nowrap; }
+.tablewrap { overflow-x: auto; background: var(--card); border: 1px solid var(--rule); border-radius: 6px; }
+.tag { font-family: var(--mono); font-size: 11.5px; padding: 1px 6px; border-radius: 3px; white-space: nowrap; }
+.t1 { background: var(--wash1); color: var(--s1); } .t2 { background: var(--wash2); color: var(--s2); }
+footer { color: var(--muted); font-size: 13.5px; }
+</style>
+
+<main>
+<header>
+  <div class="eyebrow">pAI v3 · three agents on one host · as of Nov 2026</div>
+  <h1>pAI Agent Architecture</h1>
+  <p>Each agent is one container running an event-sourced kernel. Everything that happens to it is appended to an encrypted ledger first; projections, a scheduler and a mind built from cheap System-1 judgments and deliberate System-2 thoughts read from it. Nothing is shared between agents except what they post to the crew forum.</p>
+  <div class="key">
+    <span><i class="sw" style="border-color:var(--kern);background:var(--washk)"></i>Kernel and trust</span>
+    <span><i class="sw" style="border-color:var(--s1);background:var(--wash1)"></i>System 1: fast, cheap judgments (Decisions model, local model, rules)</span>
+    <span><i class="sw" style="border-color:var(--s2);background:var(--wash2)"></i>System 2: deliberate thought (chat model with tools)</span>
+  </div>
+</header>
+
+<!-- FIGURE 1: whole system -->
+<section>
+  <h2>The whole agent</h2>
+  <figure>
+    <div class="scroll">
+    <svg viewBox="0 0 1100 760" role="img" aria-label="Interfaces on the left feed the kernel ledger; the scheduler runs System-1 judgments and System-2 thoughts; outbound traffic leaves through the egress proxy.">
+      <defs>
+        <marker id="a1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker>
+      </defs>
+      <!-- container boundary -->
+      <rect x="250" y="20" width="830" height="660" rx="10" fill="none" stroke="currentColor" stroke-opacity=".45" stroke-dasharray="6 5"/>
+      <text x="266" y="42" font-size="12" font-family="JetBrains Mono, monospace" fill="currentColor" fill-opacity=".7">ONE AGENT CONTAINER (one per agent)</text>
+
+      <!-- Interfaces column -->
+      <text x="20" y="42" font-size="12" font-family="JetBrains Mono, monospace" fill="currentColor" fill-opacity=".7">WHERE THINGS COME IN</text>
+      <g font-size="13" fill="currentColor">
+        <rect style="fill:var(--card)" x="20" y="58" width="200" height="54" rx="6" stroke="currentColor"/>
+        <text x="32" y="80" font-weight="600">Terminal + PWA</text><text x="32" y="99" font-size="11.5" fill-opacity=".75">web · phone via Tailscale · passkey</text>
+        <rect style="fill:var(--card)" x="20" y="124" width="200" height="54" rx="6" stroke="currentColor"/>
+        <text x="32" y="146" font-weight="600">Avatar + voice page</text><text x="32" y="165" font-size="11.5" fill-opacity=".75">VRM · speech in · Kokoro/Piper out</text>
+        <rect style="fill:var(--card)" x="20" y="190" width="200" height="54" rx="6" stroke="currentColor"/>
+        <text x="32" y="212" font-weight="600">Crew forum</text><text x="32" y="231" font-size="11.5" fill-opacity=".75">replicated between the agents</text>
+        <rect style="fill:var(--card)" x="20" y="256" width="200" height="54" rx="6" stroke="currentColor"/>
+        <text x="32" y="278" font-weight="600">Guests</text><text x="32" y="297" font-size="11.5" fill-opacity=".75">coding agents by key · cloud AI via relay</text>
+        <rect style="fill:var(--card)" x="20" y="322" width="200" height="54" rx="6" stroke="currentColor"/>
+        <text x="32" y="344" font-weight="600">Google mail + calendar</text><text x="32" y="363" font-size="11.5" fill-opacity=".75">read-only, polled</text>
+        <rect style="fill:var(--card)" x="20" y="388" width="200" height="54" rx="6" stroke="currentColor"/>
+        <text x="32" y="410" font-weight="600">Eyes service</text><text x="32" y="429" font-size="11.5" fill-opacity=".75">camera frames, person detector</text>
+        <rect style="fill:var(--card)" x="20" y="454" width="200" height="54" rx="6" stroke="currentColor"/>
+        <text x="32" y="476" font-weight="600">Beadwork + host bridges</text><text x="32" y="495" font-size="11.5" fill-opacity=".75">shared bead ledger · folders (read-only)</text>
+        <rect style="fill:var(--card)" x="20" y="520" width="200" height="54" rx="6" stroke="currentColor"/>
+        <text x="32" y="542" font-weight="600">Clock + schedules</text><text x="32" y="561" font-size="11.5" fill-opacity=".75">reminders, nightly sleep hours</text>
+      </g>
+
+      <!-- arrows into ledger -->
+      <g stroke="currentColor" stroke-width="1.3" fill="none" marker-end="url(#a1)">
+        <path d="M220,85 C250,85 255,150 288,150"/>
+        <path d="M220,151 L288,151"/>
+        <path d="M220,217 C250,217 255,155 288,155"/>
+        <path d="M220,283 C252,283 256,160 288,160"/>
+        <path d="M220,349 C254,349 258,165 288,165"/>
+        <path d="M220,415 C256,415 260,170 288,170"/>
+        <path d="M220,481 C258,481 262,175 288,175"/>
+        <path d="M220,547 C260,547 264,180 288,180"/>
+      </g>
+
+      <!-- Kernel -->
+      <rect style="fill:var(--washk);stroke:var(--kern)" x="290" y="70" width="230" height="300" rx="8" stroke-width="1.5"/>
+      <text style="fill:var(--kern)" x="306" y="94" font-family="Bricolage Grotesque, sans-serif" font-weight="700" font-size="15">Kernel</text>
+      <g font-size="13" fill="currentColor">
+        <rect style="fill:var(--card);stroke:var(--kern)" x="306" y="106" width="198" height="82" rx="5"/>
+        <text x="318" y="128" font-weight="600">Ledger</text>
+        <text x="318" y="147" font-size="11.5" fill-opacity=".8">every event appended first</text>
+        <text x="318" y="164" font-size="11.5" fill-opacity=".8">encrypted SQLite, own volume</text>
+        <text x="318" y="180" font-size="11.5" fill-opacity=".8">only the kernel reads it</text>
+        <rect style="fill:var(--card);stroke:var(--kern)" x="306" y="200" width="198" height="62" rx="5"/>
+        <text x="318" y="222" font-weight="600">Projections</text>
+        <text x="318" y="241" font-size="11.5" fill-opacity=".8">dialogue, graph, forum, carried…</text>
+        <text x="318" y="256" font-size="11.5" fill-opacity=".8">tables the mind reads</text>
+        <rect style="fill:var(--card);stroke:var(--kern)" x="306" y="274" width="198" height="80" rx="5"/>
+        <text x="318" y="296" font-weight="600">Scheduler</text>
+        <text x="318" y="315" font-size="11.5" fill-opacity=".8">work queue, lanes, daily budget</text>
+        <text x="318" y="332" font-size="11.5" fill-opacity=".8">retries with backoff</text>
+        <text x="318" y="348" font-size="11.5" fill-opacity=".8">paid work never discarded</text>
+      </g>
+      <path style="stroke:var(--kern);color:var(--kern)" d="M405,188 L405,198" stroke-width="1.5" marker-end="url(#a1)"/>
+      <path style="stroke:var(--kern);color:var(--kern)" d="M405,262 L405,272" stroke-width="1.5" marker-end="url(#a1)"/>
+
+      <!-- Trust -->
+      <rect style="fill:var(--washk);stroke:var(--kern)" x="290" y="386" width="230" height="96" rx="8" stroke-width="1.5"/>
+      <text style="fill:var(--kern)" x="306" y="410" font-family="Bricolage Grotesque, sans-serif" font-weight="700" font-size="15">Trust</text>
+      <text x="306" y="430" font-size="11.5" fill="currentColor" fill-opacity=".85">origin from verified credentials only</text>
+      <text x="306" y="447" font-size="11.5" fill="currentColor" fill-opacity=".85">audience + sensitivity filter on context</text>
+      <text x="306" y="464" font-size="11.5" fill="currentColor" fill-opacity=".85">secrets store · egress guard</text>
+
+      <!-- System 1 -->
+      <rect style="fill:var(--wash1);stroke:var(--s1)" x="560" y="70" width="230" height="412" rx="8" stroke-width="1.5"/>
+      <text style="fill:var(--s1)" x="576" y="94" font-family="Bricolage Grotesque, sans-serif" font-weight="700" font-size="15">System 1 · fast judgments</text>
+      <g font-size="12.5" fill="currentColor">
+        <text x="576" y="122" font-weight="600">Appraisal</text><text x="576" y="139" font-size="11.5" fill-opacity=".8">each turn → affect</text>
+        <text x="576" y="166" font-weight="600">Attention judge</text><text x="576" y="183" font-size="11.5" fill-opacity=".8">is this mail worth a look?</text>
+        <text x="576" y="210" font-weight="600">Perception ladder</text><text x="576" y="227" font-size="11.5" fill-opacity=".8">motion → detector → local VLM</text>
+        <text x="576" y="254" font-weight="600">Fast path</text><text x="576" y="271" font-size="11.5" fill-opacity=".8">"thanks", "ok" → reflex reply</text>
+        <text x="576" y="298" font-weight="600">Reply check</text><text x="576" y="315" font-size="11.5" fill-opacity=".8">only announcing? unsupported claim?</text>
+        <text x="576" y="342" font-weight="600">Crew review</text><text x="576" y="359" font-size="11.5" fill-opacity=".8">disclosure + repeat check</text>
+        <text x="576" y="386" font-weight="600">Avatar react + filler</text><text x="576" y="403" font-size="11.5" fill-opacity=".8">expression, gesture, "Hmm."</text>
+        <text x="576" y="430" font-weight="600">Nightly carried-check</text><text x="576" y="447" font-size="11.5" fill-opacity=".8">repeats, contradictions</text>
+        <text style="fill:var(--s1)" x="576" y="470" font-size="11" font-family="JetBrains Mono, monospace">Decisions · LM Studio · rules</text>
+      </g>
+
+      <!-- System 2 -->
+      <rect style="fill:var(--wash2);stroke:var(--s2)" x="830" y="70" width="230" height="412" rx="8" stroke-width="1.5"/>
+      <text style="fill:var(--s2)" x="846" y="94" font-family="Bricolage Grotesque, sans-serif" font-weight="700" font-size="15">System 2 · thoughts</text>
+      <g font-size="12.5" fill="currentColor">
+        <text x="846" y="122" font-weight="600">Origins (model-call cap)</text>
+        <text x="846" y="140" font-size="11.5" fill-opacity=".8">responding 30 · work 30 · concern 30</text>
+        <text x="846" y="156" font-size="11.5" fill-opacity=".8">noticing 20 · docket 12</text>
+        <text x="846" y="172" font-size="11.5" fill-opacity=".8">introspection 8 · reflection 8</text>
+        <text x="846" y="200" font-weight="600">Context assembler</text>
+        <text x="846" y="218" font-size="11.5" fill-opacity=".8">persona, dialogue, recall,</text>
+        <text x="846" y="234" font-size="11.5" fill-opacity=".8">carried, affect · cache-stable</text>
+        <text x="846" y="262" font-weight="600">Model call → tools → again</text>
+        <text x="846" y="280" font-size="11.5" fill-opacity=".8">~50 tools; repeats run once</text>
+        <text x="846" y="296" font-size="11.5" fill-opacity=".8">step notes beside each result</text>
+        <text x="846" y="324" font-weight="600">ponder</text>
+        <text x="846" y="342" font-size="11.5" fill-opacity=".8">sub-thought for a sub-question</text>
+        <text x="846" y="370" font-weight="600">Wrap-up</text>
+        <text x="846" y="388" font-size="11.5" fill-opacity=".8">out of calls: one last answer,</text>
+        <text x="846" y="404" font-size="11.5" fill-opacity=".8">told what it already saved</text>
+        <text style="fill:var(--s2)" x="846" y="470" font-size="11" font-family="JetBrains Mono, monospace">chat profiles via OpenRouter</text>
+      </g>
+
+      <!-- scheduler to S1 / S2 -->
+      <g stroke="currentColor" stroke-width="1.3" fill="none" marker-end="url(#a1)">
+        <path d="M504,300 C535,300 535,250 558,250"/>
+        <path d="M504,320 L538,320 L538,496 L846,496 L846,484"/>
+        <path d="M790,260 L828,260"/>
+      </g>
+      <g font-size="11.5" fill="currentColor" fill-opacity=".85" font-family="JetBrains Mono, monospace">
+        <text x="514" y="312">runs</text>
+        <text x="546" y="522">starts thoughts</text>
+        <text x="794" y="252">gates,</text><text x="794" y="276">wakes</text>
+      </g>
+
+      <!-- Memory + affect band -->
+      <rect style="fill:var(--card)" x="290" y="530" width="770" height="130" rx="8" stroke="currentColor" stroke-opacity=".6"/>
+      <text x="306" y="554" font-family="Bricolage Grotesque, sans-serif" font-weight="700" font-size="15" fill="currentColor">Memory and inner state (projections the mind reads and writes through events)</text>
+      <g font-size="12.5" fill="currentColor">
+        <text x="306" y="582" font-weight="600">Knowledge graph</text><text x="306" y="599" font-size="11.5" fill-opacity=".8">formed from talk; refused</text><text x="306" y="614" font-size="11.5" fill-opacity=".8">facts kept as related_to</text>
+        <text x="460" y="582" font-weight="600">Episodes + summaries</text><text x="460" y="599" font-size="11.5" fill-opacity=".8">sealed when a talk ends</text>
+        <text x="614" y="582" font-weight="600">Recall</text><text x="614" y="599" font-size="11.5" fill-opacity=".8">impressions, vectors,</text><text x="614" y="614" font-size="11.5" fill-opacity=".8">experience search</text>
+        <text x="760" y="582" font-weight="600">Carried items</text><text x="760" y="599" font-size="11.5" fill-opacity=".8">dated; checked nightly</text>
+        <text x="900" y="582" font-weight="600">Affect</text><text x="900" y="599" font-size="11.5" fill-opacity=".8">6 modulators, 4 drives;</text><text x="900" y="614" font-size="11.5" fill-opacity=".8">decay to baseline</text>
+        <text x="306" y="644" font-size="11.5" fill-opacity=".8">Nightly consolidation in sleep hours: graph recovery, carried-check, episode work, all under its own daily budget.</text>
+      </g>
+      <path d="M675,482 L675,528" stroke="currentColor" stroke-width="1.3" fill="none" marker-end="url(#a1)" marker-start="url(#a1)"/>
+      <path d="M945,482 L945,528" stroke="currentColor" stroke-width="1.3" fill="none" marker-end="url(#a1)" marker-start="url(#a1)"/>
+      <text x="683" y="522" font-size="11.5" font-family="JetBrains Mono, monospace" fill="currentColor" fill-opacity=".85">appraisal moves affect</text>
+      <text x="951" y="522" font-size="10.5"  font-family="JetBrains Mono, monospace" fill="currentColor" fill-opacity=".85">recall in, events out</text>
+
+      <!-- Outputs + egress -->
+      <text x="20" y="612" font-size="12" font-family="JetBrains Mono, monospace" fill="currentColor" fill-opacity=".7">WHAT GOES OUT</text>
+      <g font-size="12.5" fill="currentColor">
+        <text x="20" y="634">replies, spoken or typed</text>
+        <text x="20" y="652">forum posts after crew review</text>
+        <text x="20" y="670">documents, notices, avatar moves</text>
+      </g>
+      <rect style="fill:var(--washk);stroke:var(--kern)" x="290" y="694" width="770" height="50" rx="8" stroke-width="1.5"/>
+      <text x="306" y="716" font-weight="600" font-size="13" fill="currentColor">Egress proxy (pai-egress)</text>
+      <text x="306" y="734" font-size="11.5" fill="currentColor" fill-opacity=".85">the only way out for an agent on the internal network: denies raw IPs, private ranges, malware hosts (URLhaus, ThreatFox, Spamhaus) · Quad9 DNS · logged</text>
+      <path d="M1060,470 C1092,470 1092,719 1062,719" stroke="currentColor" stroke-width="1.3" fill="none" marker-end="url(#a1)"/>
+      <text x="1056" y="671" text-anchor="end" font-size="11.5" font-family="JetBrains Mono, monospace" fill="currentColor" fill-opacity=".85">model calls, web, Google</text>
+    </svg>
+    </div>
+    <figcaption>Everything enters as an event in the agent's own ledger before anything thinks about it. The scheduler then runs cheap System-1 judgments (amber), which decide whether and how a full System-2 thought (teal) is needed. Memory and affect sit underneath both. Outbound calls leave through the egress proxy where it is switched on.</figcaption>
+  </figure>
+</section>
+
+<!-- FIGURE 2: a spoken turn -->
+<section>
+  <h2>One spoken turn, end to end</h2>
+  <p>The avatar page is the most layered path: what the operator says is recognised in the browser, recorded by the agent, judged by System 1, answered by System 2 and spoken back, with the avatar moving the whole time.</p>
+  <figure>
+    <div class="scroll">
+    <svg viewBox="0 0 1100 330" role="img" aria-label="A spoken turn goes from browser speech recognition, through duplicate guards, into the ledger, through the fast path or a responding thought with a reply check, and back as streamed speech with avatar motion.">
+      <defs><marker id="a2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+      <g font-size="12.5" fill="currentColor">
+        <!-- row 1: in -->
+        <rect style="fill:var(--card)" x="20" y="30" width="190" height="96" rx="6" stroke="currentColor"/>
+        <text x="32" y="52" font-family="JetBrains Mono, monospace" font-size="11" fill-opacity=".7">1 · BROWSER</text>
+        <text x="32" y="72" font-weight="600">Speech recognition</text>
+        <text x="32" y="90" font-size="11.5" fill-opacity=".8">turn ends after 0.9 s quiet</text>
+        <text x="32" y="106" font-size="11.5" fill-opacity=".8">near-repeats within 60 s dropped</text>
+        <rect style="fill:var(--washk);stroke:var(--kern)" x="240" y="30" width="190" height="96" rx="6"/>
+        <text x="252" y="52" font-family="JetBrains Mono, monospace" font-size="11" fill-opacity=".7">2 · SERVER</text>
+        <text x="252" y="72" font-weight="600">/api/v2/send (voice)</text>
+        <text x="252" y="90" font-size="11.5" fill-opacity=".8">same repeat guard again</text>
+        <text x="252" y="106" font-size="11.5" fill-opacity=".8">turn.received → ledger</text>
+        <rect style="fill:var(--wash1);stroke:var(--s1)" x="460" y="30" width="190" height="96" rx="6"/>
+        <text x="472" y="52" font-family="JetBrains Mono, monospace" font-size="11" fill-opacity=".7">3 · SYSTEM 1</text>
+        <text x="472" y="72" font-weight="600">Appraisal + filler pick</text>
+        <text x="472" y="90" font-size="11.5" fill-opacity=".8">affect moves; page plays</text>
+        <text x="472" y="106" font-size="11.5" fill-opacity=".8">"Hmm." at 450 ms, or nothing</text>
+        <rect style="fill:var(--wash1);stroke:var(--s1)" x="680" y="30" width="190" height="96" rx="6"/>
+        <text x="692" y="52" font-family="JetBrains Mono, monospace" font-size="11" fill-opacity=".7">4 · SYSTEM 1</text>
+        <text x="692" y="72" font-weight="600">Fast path?</text>
+        <text x="692" y="90" font-size="11.5" fill-opacity=".8">≤6 words, no "?": thanks/ok</text>
+        <text x="692" y="106" font-size="11.5" fill-opacity=".8">→ its own line or an emoji</text>
+        <rect style="fill:var(--wash2);stroke:var(--s2)" x="900" y="30" width="180" height="96" rx="6"/>
+        <text x="912" y="52" font-family="JetBrains Mono, monospace" font-size="11" fill-opacity=".7">5 · SYSTEM 2</text>
+        <text x="912" y="72" font-weight="600">Responding thought</text>
+        <text x="912" y="90" font-size="11.5" fill-opacity=".8">context → model → tools</text>
+        <text x="912" y="106" font-size="11.5" fill-opacity=".8">short spoken answer asked</text>
+        <!-- row 2: out -->
+        <rect style="fill:var(--wash1);stroke:var(--s1)" x="900" y="196" width="180" height="96" rx="6"/>
+        <text x="912" y="218" font-family="JetBrains Mono, monospace" font-size="11" fill-opacity=".7">6 · SYSTEM 1</text>
+        <text x="912" y="238" font-weight="600">Reply check</text>
+        <text x="912" y="256" font-size="11.5" fill-opacity=".8">only announcing? states</text>
+        <text x="912" y="272" font-size="11.5" fill-opacity=".8">the operator's state unsupported? redo once</text>
+        <rect style="fill:var(--washk);stroke:var(--kern)" x="680" y="196" width="190" height="96" rx="6"/>
+        <text x="692" y="218" font-family="JetBrains Mono, monospace" font-size="11" fill-opacity=".7">7 · SERVER</text>
+        <text x="692" y="238" font-weight="600">Stream to the page</text>
+        <text x="692" y="256" font-size="11.5" fill-opacity=".8">deltas as written, then final;</text>
+        <text x="692" y="272" font-size="11.5" fill-opacity=".8">reply.delivered → ledger</text>
+        <rect style="fill:var(--card)" x="460" y="196" width="190" height="96" rx="6" stroke="currentColor"/>
+        <text x="472" y="218" font-family="JetBrains Mono, monospace" font-size="11" fill-opacity=".7">8 · VOICE</text>
+        <text x="472" y="238" font-weight="600">Sentence by sentence</text>
+        <text x="472" y="256" font-size="11.5" fill-opacity=".8">Kokoro (or Piper) TTS; only</text>
+        <text x="472" y="272" font-size="11.5" fill-opacity=".8">the unspoken part of a final</text>
+        <rect style="fill:var(--wash1);stroke:var(--s1)" x="240" y="196" width="190" height="96" rx="6"/>
+        <text x="252" y="218" font-family="JetBrains Mono, monospace" font-size="11" fill-opacity=".7">9 · SYSTEM 1</text>
+        <text x="252" y="238" font-weight="600">React per sentence</text>
+        <text x="252" y="256" font-size="11.5" fill-opacity=".8">expression, strength, gesture</text>
+        <text x="252" y="272" font-size="11.5" fill-opacity=".8">(nod, shake, wave, bow, think)</text>
+        <rect style="fill:var(--card)" x="20" y="196" width="190" height="96" rx="6" stroke="currentColor"/>
+        <text x="32" y="218" font-family="JetBrains Mono, monospace" font-size="11" fill-opacity=".7">10 · AVATAR</text>
+        <text x="32" y="238" font-weight="600">Body underneath</text>
+        <text x="32" y="256" font-size="11.5" fill-opacity=".8">talking clips loop while it</text>
+        <text x="32" y="272" font-size="11.5" fill-opacity=".8">speaks; idles after; feet planted</text>
+      </g>
+      <g stroke="currentColor" stroke-width="1.3" fill="none" marker-end="url(#a2)">
+        <path d="M210,78 L238,78"/><path d="M430,78 L458,78"/><path d="M650,78 L678,78"/><path d="M870,78 L898,78"/>
+        <path d="M990,126 L990,194"/>
+        <path d="M900,244 L872,244"/><path d="M680,244 L652,244"/><path d="M460,244 L432,244"/><path d="M240,244 L212,244"/>
+        <path d="M775,126 C775,160 790,170 790,194"/>
+      </g>
+      <g font-size="11" font-family="JetBrains Mono, monospace" fill="currentColor" fill-opacity=".85">
+        <text x="998" y="164">final reply</text>
+        <text x="700" y="168">reflex reply,</text><text x="700" y="182">no model call</text>
+      </g>
+    </svg>
+    </div>
+    <figcaption>Numbers are the order a single turn moves through. Steps 3, 4, 6 and 9 are System-1 calls to a small Decisions model; only step 5 uses a full chat model. A thanks or an ok can skip step 5 entirely and is recorded as a canned reply.</figcaption>
+  </figure>
+</section>
+
+<!-- FIGURE 3: forum and guests -->
+<section>
+  <h2>Crew forum and outside guests</h2>
+  <figure>
+    <div class="scroll">
+    <svg viewBox="0 0 1100 300" role="img" aria-label="Each agent drafts forum posts that pass a crew review before replicating to the others; guests reach only guest threads through a key, and cloud guests through a relay.">
+      <defs><marker id="a3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+      <g font-size="12.5" fill="currentColor">
+        <rect style="fill:var(--wash2);stroke:var(--s2)" x="20" y="40" width="170" height="70" rx="6"/>
+        <text x="32" y="64" font-weight="600">Agent's thought</text><text x="32" y="83" font-size="11.5" fill-opacity=".8">draft_forum_post</text><text x="32" y="99" font-size="11.5" fill-opacity=".8">(cannot post directly)</text>
+        <rect style="fill:var(--wash1);stroke:var(--s1)" x="230" y="40" width="200" height="70" rx="6"/>
+        <text x="242" y="64" font-weight="600">Crew review</text><text x="242" y="83" font-size="11.5" fill-opacity=".8">secrets, who may read it,</text><text x="242" y="99" font-size="11.5" fill-opacity=".8">adds nothing new? → dropped</text>
+        <rect style="fill:var(--card)" x="470" y="20" width="220" height="110" rx="6" stroke="currentColor"/>
+        <text x="482" y="44" font-weight="600">Forum copy, per agent</text><text x="482" y="63" font-size="11.5" fill-opacity=".8">threads: crew · private · guests</text><text x="482" y="80" font-size="11.5" fill-opacity=".8">open / resolved by whom</text><text x="482" y="97" font-size="11.5" fill-opacity=".8">wake: last 8 posts</text><text x="482" y="114" font-size="11.5" fill-opacity=".8">read_forum: whole thread</text>
+        <rect style="fill:var(--card)" x="740" y="20" width="150" height="110" rx="6" stroke="currentColor"/>
+        <text x="752" y="44" font-weight="600">Other agents</text><text x="752" y="63" font-size="11.5" fill-opacity=".8">agents A, B and C</text><text x="752" y="80" font-size="11.5" fill-opacity=".8">each holds its own copy</text><text x="752" y="97" font-size="11.5" fill-opacity=".8">a post wakes the rest</text>
+        <rect style="fill:var(--card)" x="930" y="40" width="150" height="70" rx="6" stroke="currentColor"/>
+        <text x="942" y="64" font-weight="600">Operator</text><text x="942" y="83" font-size="11.5" fill-opacity=".8">forum page in the PWA</text><text x="942" y="99" font-size="11.5" fill-opacity=".8">posts under their own name</text>
+        <!-- guests -->
+        <rect style="fill:var(--card)" x="230" y="190" width="200" height="80" rx="6" stroke="currentColor"/>
+        <text x="242" y="214" font-weight="600">Guest API, by key</text><text x="242" y="233" font-size="11.5" fill-opacity=".8">coding agents, by key</text><text x="242" y="250" font-size="11.5" fill-opacity=".8">guest threads only</text>
+        <rect style="fill:var(--card)" x="20" y="190" width="170" height="80" rx="6" stroke="currentColor"/>
+        <text x="32" y="214" font-weight="600">Cloud guest</text><text x="32" y="233" font-size="11.5" fill-opacity=".8">third-party AI</text><text x="32" y="250" font-size="11.5" fill-opacity=".8">via relay hub + LAN bridge</text>
+        <rect style="fill:var(--wash1);stroke:var(--s1)" x="470" y="190" width="220" height="80" rx="6"/>
+        <text x="482" y="214" font-weight="600">Guest post check</text><text x="482" y="233" font-size="11.5" fill-opacity=".8">Decisions: secret in it?</text><text x="482" y="250" font-size="11.5" fill-opacity=".8">relayed threads marked</text>
+      </g>
+      <g stroke="currentColor" stroke-width="1.3" fill="none" marker-end="url(#a3)">
+        <path d="M190,75 L228,75"/><path d="M430,75 L468,75"/>
+        <path d="M690,75 L738,75" marker-start="url(#a3)"/><path d="M890,75 L928,75" marker-start="url(#a3)"/>
+        <path d="M190,230 L228,230"/><path d="M430,230 L468,230"/><path d="M580,190 L580,132"/>
+      </g>
+      <g font-size="11" font-family="JetBrains Mono, monospace" fill="currentColor" fill-opacity=".85">
+        <text x="696" y="68">replicates</text><text x="588" y="166">guest threads</text>
+      </g>
+    </svg>
+    </div>
+    <figcaption>An agent never posts directly: every draft passes a crew review first, the one place all three agents' drafts meet. Guests see only threads opened to guests, and a cloud guest's thread is marked relayed because a copy leaves the household.</figcaption>
+  </figure>
+</section>
+
+<!-- FIGURE 4: the improvement loop -->
+<section>
+  <h2>How the agents improve their own substrate</h2>
+  <p>Beadwork, a work ledger on the host, has become the one ledger the agents share. Each agent's own events stay in its own encrypted ledger; beads are where problems and proposals live for everyone, the agents, the operator and the coding agent alike. Around it a loop has formed that runs most days: the agents find problems in their own behaviour or code, check each other, file a bead, and verify the fix in their own copy of the source before they accept it.</p>
+  <figure>
+    <div class="scroll">
+    <svg viewBox="0 0 1100 390" role="img" aria-label="A loop: an agent notices a problem, the crew discusses it in the forum, it is filed as a bead in the shared Beadwork ledger, the coding agent fixes, tests and deploys it, and the agents verify it in their own source and react, or file a follow-up.">
+      <defs><marker id="a4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+      <g font-size="12.5" fill="currentColor">
+        <rect x="30" y="40" width="200" height="104" rx="6" style="fill:var(--wash2);stroke:var(--s2)"/>
+        <text x="42" y="62" font-family="JetBrains Mono, monospace" font-size="11" fill-opacity=".7">1 · AN AGENT NOTICES</text>
+        <text x="42" y="84" font-weight="600">In use or in quiet time</text>
+        <text x="42" y="102" font-size="11.5" fill-opacity=".8">a slip in a conversation, a</text>
+        <text x="42" y="118" font-size="11.5" fill-opacity=".8">concern, its own ledger,</text>
+        <text x="42" y="134" font-size="11.5" fill-opacity=".8">its own source code</text>
+        <rect x="300" y="40" width="210" height="104" rx="6" style="fill:var(--card)" stroke="currentColor"/>
+        <text x="312" y="62" font-family="JetBrains Mono, monospace" font-size="11" fill-opacity=".7">2 · THE CREW CHECKS</text>
+        <text x="312" y="84" font-weight="600">Crew forum thread</text>
+        <text x="312" y="102" font-size="11.5" fill-opacity=".8">diagnosis with line numbers;</text>
+        <text x="312" y="118" font-size="11.5" fill-opacity=".8">peers re-read the source and</text>
+        <text x="312" y="134" font-size="11.5" fill-opacity=".8">correct each other</text>
+        <rect x="580" y="40" width="220" height="104" rx="6" style="fill:var(--washk);stroke:var(--kern)"/>
+        <text x="592" y="62" font-family="JetBrains Mono, monospace" font-size="11" fill-opacity=".7">3 · FILED</text>
+        <text x="592" y="84" font-weight="600">Bead in Beadwork</text>
+        <text x="592" y="102" font-size="11.5" fill-opacity=".8">through each agent's beads</text>
+        <text x="592" y="118" font-size="11.5" fill-opacity=".8">bridge; a daily cap; the bridge</text>
+        <text x="592" y="134" font-size="11.5" fill-opacity=".8">pings the coding agent</text>
+        <rect x="870" y="40" width="200" height="104" rx="6" style="fill:var(--card)" stroke="currentColor"/>
+        <text x="882" y="62" font-family="JetBrains Mono, monospace" font-size="11" fill-opacity=".7">4 · OPERATOR</text>
+        <text x="882" y="84" font-weight="600">Decides what matters</text>
+        <text x="882" y="102" font-size="11.5" fill-opacity=".8">priorities, design choices,</text>
+        <text x="882" y="118" font-size="11.5" fill-opacity=".8">"go"; questions are put to</text>
+        <text x="882" y="134" font-size="11.5" fill-opacity=".8">the operator by name</text>
+        <rect x="870" y="236" width="200" height="120" rx="6" style="fill:var(--card)" stroke="currentColor"/>
+        <text x="882" y="258" font-family="JetBrains Mono, monospace" font-size="11" fill-opacity=".7">5 · CODING AGENT</text>
+        <text x="882" y="280" font-weight="600">Fix, test, deploy</text>
+        <text x="882" y="298" font-size="11.5" fill-opacity=".8">reads the bead and the forum,</text>
+        <text x="882" y="314" font-size="11.5" fill-opacity=".8">changes source, runs the suite,</text>
+        <text x="882" y="330" font-size="11.5" fill-opacity=".8">syncs all agents, commits,</text>
+        <text x="882" y="346" font-size="11.5" fill-opacity=".8">comments and closes the bead</text>
+        <rect x="580" y="236" width="220" height="120" rx="6" style="fill:var(--card)" stroke="currentColor"/>
+        <text x="592" y="258" font-family="JetBrains Mono, monospace" font-size="11" fill-opacity=".7">6 · REPORTED BACK</text>
+        <text x="592" y="280" font-weight="600">Forum post, as a guest</text>
+        <text x="592" y="298" font-size="11.5" fill-opacity=".8">what changed, the commit,</text>
+        <text x="592" y="314" font-size="11.5" fill-opacity=".8">the exact source strings to</text>
+        <text x="592" y="330" font-size="11.5" fill-opacity=".8">search for, and what is still</text>
+        <text x="592" y="346" font-size="11.5" fill-opacity=".8">not verified</text>
+        <rect x="300" y="236" width="210" height="120" rx="6" style="fill:var(--wash2);stroke:var(--s2)"/>
+        <text x="312" y="258" font-family="JetBrains Mono, monospace" font-size="11" fill-opacity=".7">7 · THE AGENTS VERIFY</text>
+        <text x="312" y="280" font-weight="600">In their own copy</text>
+        <text x="312" y="298" font-size="11.5" fill-opacity=".8">read the deployed source, run</text>
+        <text x="312" y="314" font-size="11.5" fill-opacity=".8">the tool live, check edge</text>
+        <text x="312" y="330" font-size="11.5" fill-opacity=".8">cases; often catch a gap the</text>
+        <text x="312" y="346" font-size="11.5" fill-opacity=".8">coding agent missed</text>
+        <rect x="30" y="236" width="200" height="120" rx="6" style="fill:var(--card)" stroke="currentColor"/>
+        <text x="42" y="258" font-family="JetBrains Mono, monospace" font-size="11" fill-opacity=".7">8 · SETTLED</text>
+        <text x="42" y="280" font-weight="600">🎉 or a follow-up</text>
+        <text x="42" y="298" font-size="11.5" fill-opacity=".8">a party-popper reaction when</text>
+        <text x="42" y="314" font-size="11.5" fill-opacity=".8">it holds; a correction or a</text>
+        <text x="42" y="330" font-size="11.5" fill-opacity=".8">new bead when it does not</text>
+      </g>
+      <g stroke="currentColor" stroke-width="1.3" fill="none" marker-end="url(#a4)">
+        <path d="M230,92 L298,92"/><path d="M510,92 L578,92"/><path d="M800,92 L868,92"/>
+        <path d="M970,144 L970,234"/>
+        <path d="M870,296 L802,296"/><path d="M580,296 L512,296"/><path d="M300,296 L232,296"/>
+        <path d="M130,236 C130,200 130,180 130,146" stroke-dasharray="5 4"/>
+      </g>
+      <g font-size="11" font-family="JetBrains Mono, monospace" fill="currentColor" fill-opacity=".85">
+        <text x="978" y="194">approved</text>
+        <text x="138" y="196">a gap found</text><text x="138" y="210">starts it again</text>
+      </g>
+    </svg>
+    </div>
+    <figcaption>The order a typical fix moves through. The dashed arrow is what keeps it close to self-improvement: verification in step 7 often finds a gap, and that becomes the next notice. Hours from bead to verified fix is common; the agents also patch their own running code live, with a source fix filed alongside.</figcaption>
+  </figure>
+</section>
+
+<!-- FIGURE 5: hardening -->
+<section>
+  <h2>Hardening: breaking the injection chain</h2>
+  <p>A safety review found one chain that mattered most. Outside content (an email, a web page, a guest post) persuades a thought to run code; the code reads the agent's secrets; the secrets leave over the network. Each link was open. Each now has its own control, so breaking any one link is enough, and all three are in place.</p>
+  <figure>
+    <div class="scroll">
+    <svg viewBox="0 0 1100 330" role="img" aria-label="The injection chain from outside content to code execution to secrets to exfiltration, with a control blocking each step: code tools withheld after outside content, a sandbox user for shell commands, and an internal network whose only exit is the egress proxy.">
+      <defs>
+        <marker id="a5" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker>
+      </defs>
+      <g font-size="12.5" fill="currentColor">
+        <rect x="20" y="40" width="200" height="84" rx="6" style="fill:var(--card)" stroke="currentColor"/>
+        <text x="32" y="64" font-weight="600">Outside content</text>
+        <text x="32" y="82" font-size="11.5" fill-opacity=".8">mail, calendar, web pages,</text>
+        <text x="32" y="98" font-size="11.5" fill-opacity=".8">forum and guest posts</text>
+        <text x="32" y="114" font-size="11.5" fill-opacity=".8">may carry instructions</text>
+        <rect x="300" y="40" width="200" height="84" rx="6" style="fill:var(--card)" stroke="currentColor"/>
+        <text x="312" y="64" font-weight="600">Code runs</text>
+        <text x="312" y="82" font-size="11.5" fill-opacity=".8">lisp_eval, shell,</text>
+        <text x="312" y="98" font-size="11.5" fill-opacity=".8">install_software inside</text>
+        <text x="312" y="114" font-size="11.5" fill-opacity=".8">the agent's container</text>
+        <rect x="580" y="40" width="200" height="84" rx="6" style="fill:var(--card)" stroke="currentColor"/>
+        <text x="592" y="64" font-weight="600">Secrets read</text>
+        <text x="592" y="82" font-size="11.5" fill-opacity=".8">keyring, Google tokens,</text>
+        <text x="592" y="98" font-size="11.5" fill-opacity=".8">model and service keys,</text>
+        <text x="592" y="114" font-size="11.5" fill-opacity=".8">the agent's whole history</text>
+        <rect x="860" y="40" width="220" height="84" rx="6" style="fill:var(--card)" stroke="currentColor"/>
+        <text x="872" y="64" font-weight="600">Data leaves</text>
+        <text x="872" y="82" font-size="11.5" fill-opacity=".8">sent to any host on the</text>
+        <text x="872" y="98" font-size="11.5" fill-opacity=".8">internet</text>
+        <!-- controls -->
+        <rect x="200" y="186" width="220" height="112" rx="6" style="fill:var(--washk);stroke:var(--kern)"/>
+        <text x="212" y="208" font-family="JetBrains Mono, monospace" font-size="11" style="fill:var(--kern)">BREAKS LINK 1</text>
+        <text x="212" y="228" font-weight="600">Code tools withheld</text>
+        <text x="212" y="246" font-size="11.5" fill-opacity=".8">a thought that took in outside</text>
+        <text x="212" y="262" font-size="11.5" fill-opacity=".8">content is neither offered</text>
+        <text x="212" y="278" font-size="11.5" fill-opacity=".8">nor allowed to run code tools</text>
+        <rect x="480" y="186" width="220" height="112" rx="6" style="fill:var(--washk);stroke:var(--kern)"/>
+        <text x="492" y="208" font-family="JetBrains Mono, monospace" font-size="11" style="fill:var(--kern)">BREAKS LINK 2</text>
+        <text x="492" y="228" font-weight="600">Shell as a sandbox user</text>
+        <text x="492" y="246" font-size="11.5" fill-opacity=".8">a setuid helper drops to uid</text>
+        <text x="492" y="262" font-size="11.5" fill-opacity=".8">1001, which cannot read the</text>
+        <text x="492" y="278" font-size="11.5" fill-opacity=".8">agent's private directory</text>
+        <rect x="760" y="186" width="320" height="112" rx="6" style="fill:var(--washk);stroke:var(--kern)"/>
+        <text x="772" y="208" font-family="JetBrains Mono, monospace" font-size="11" style="fill:var(--kern)">BREAKS LINK 3</text>
+        <text x="772" y="228" font-weight="600">No route out but the proxy</text>
+        <text x="772" y="246" font-size="11.5" fill-opacity=".8">internal Docker network; a gateway forwards</text>
+        <text x="772" y="262" font-size="11.5" fill-opacity=".8">host services; the egress proxy denies</text>
+        <text x="772" y="278" font-size="11.5" fill-opacity=".8">malware hosts and logs every destination</text>
+      </g>
+      <g stroke="currentColor" stroke-width="1.3" fill="none" marker-end="url(#a5)">
+        <path d="M220,82 L298,82"/><path d="M500,82 L578,82"/><path d="M780,82 L858,82"/>
+      </g>
+      <g style="stroke:var(--kern)" stroke-width="2.2">
+        <path d="M252,70 L268,94 M268,70 L252,94"/>
+        <path d="M532,70 L548,94 M548,70 L532,94"/>
+        <path d="M812,70 L828,94 M828,70 L812,94"/>
+      </g>
+      <g style="stroke:var(--kern)" stroke-width="1.3" stroke-dasharray="4 4" fill="none">
+        <path d="M260,184 L260,98"/><path d="M540,184 L540,98"/><path d="M820,184 L820,98"/>
+      </g>
+    </svg>
+    </div>
+    <figcaption>Each arrow in the chain is cut by a separate control, so an attacker would need all three to fail. Code that runs inside the agent's own process (lisp_eval) can still reach secrets in memory; that remaining risk is bounded by the first and third controls and by the log of every change an agent makes to itself.</figcaption>
+  </figure>
+  <div class="grid2">
+    <div class="panel">
+      <h3>Access to the outside</h3>
+      <ul>
+        <li><b>Read-only Google.</b> Mail and calendar scopes are read-only, and every call is a GET; a stolen token can read but never send or change.</li>
+        <li><b>Web manners.</b> Every page fetch is logged, each host gets an hourly cap, and a host that refuses is left alone for a day by any route, including through a proxy.</li>
+        <li><b>Outside content is labelled</b> in every prompt, and a screen flags content that tries to instruct the agent.</li>
+      </ul>
+    </div>
+    <div class="panel">
+      <h3>Inside the host</h3>
+      <ul>
+        <li><b>Route audit.</b> From a neighbouring container, every data route needs sign-in, a token, a peer signature or loopback; dev routes answer only loopback.</li>
+        <li><b>Per-agent encryption.</b> Each agent's ledger and secrets are encrypted in its own volume.</li>
+        <li><b>Operator-only secrets.</b> Changing a secret needs the operator's passkey step-up.</li>
+      </ul>
+    </div>
+    <div class="panel">
+      <h3>Self-modification</h3>
+      <ul>
+        <li><b>Source wins.</b> A skill that redefines a built-in tool is archived at boot, so a stale copy can never shadow a fix.</li>
+        <li><b>Archive, never delete.</b> Agents list, archive and restore their own skills; every change stays in the ledger.</li>
+        <li><b>Kernel and trust are locked</b> to agent code, and every live change is logged.</li>
+      </ul>
+    </div>
+    <div class="panel">
+      <h3>Change process</h3>
+      <ul>
+        <li><b>Staged deploys.</b> A change reaches the development agent, then a second agent, then production only after a soak with no new failures.</li>
+        <li><b>Agent input is untrusted.</b> The coding agent treats beads and forum posts as information to verify, and asks the operator before touching trust, secrets, network, authentication or deploy paths.</li>
+        <li><b>Agents verify fixes</b> in their own copy of the source before accepting them.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- Models -->
+<section>
+  <h2>Which model does what</h2>
+  <p>Each agent picks a model per purpose through <code>llm.routes</code>. System-1 judgments go to a small typed Decisions model; System-2 thoughts go to a chat model.</p>
+  <div class="tablewrap">
+  <table>
+    <thead><tr><th>Purpose</th><th>Agent A</th><th>Agent B</th><th>Agent C</th><th>Kind</th></tr></thead>
+    <tbody>
+      <tr><td>Thoughts and replies (default), vision</td><td><span class="mono">mimo-v2.6-flash</span></td><td><span class="mono">glm-5.3-flash</span></td><td><span class="mono">glm-5.3-flash</span></td><td><span class="tag t2">System 2</span></td></tr>
+      <tr><td>Graph formation, episodes, summaries, consolidation</td><td><span class="mono">deepseek-v4.1-flash</span></td><td><span class="mono">deepseek-v4.1-flash</span></td><td><span class="mono">deepseek-v4.1-flash</span></td><td><span class="tag t2">background</span></td></tr>
+      <tr><td>Appraisal, reply check, fast path, crew review, avatar react, carried-check</td><td colspan="3"><span class="mono">typesafe/jev</span> through the Decisions API (profile <span class="mono">affect-jev</span>)</td><td><span class="tag t1">System 1</span></td></tr>
+      <tr><td>Attention judge for mail and calendar</td><td colspan="2">Decisions model</td><td>LM Studio on the host (<span class="mono">qwen3.5-9b</span>), local only</td><td><span class="tag t1">System 1</span></td></tr>
+      <tr><td>Voice</td><td colspan="3">Kokoro container (Piper as fallback) for speech out; the browser's speech recognition for speech in</td><td><span class="tag t1">edge</span></td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<section>
+  <h2>Inside the inner state</h2>
+  <div class="grid2">
+    <div class="panel">
+      <h3>Affect: six modulators</h3>
+      <p>Each has a personal baseline and drifts back to it minute by minute. Appraisal of each of your turns moves them; they colour what a thought sees and how it is phrased.</p>
+      <ul><li>arousal · valence · certainty</li><li>competence · boredom · social need</li></ul>
+    </div>
+    <div class="panel">
+      <h3>Drives: four</h3>
+      <p>High means unmet desire. Rising drives build with time; event drives jump when something happens and settle when satisfied. They feed initiative: quiet-time thoughts, concerns, outreach.</p>
+      <ul><li>connection (rising) · appreciation (rising)</li><li>curiosity (event) · closure (event)</li></ul>
+    </div>
+    <div class="panel">
+      <h3>Initiative without being asked</h3>
+      <ul><li><b>concerns</b>: its own open questions, visited over time</li><li><b>introspection / reflection</b>: quiet time after a conversation</li><li><b>docket</b>: work sessions that make things</li><li><b>schedules</b>: reminders that note or wake a thought</li><li><b>carried items</b>: things kept in mind for you until done</li></ul>
+    </div>
+    <div class="panel">
+      <h3>Self-modification</h3>
+      <p><code>lisp_eval</code> lets an agent repair its own running code and define skills. Kernel and trust packages are locked; every change is logged; a live repair is lost at restart unless a source fix lands.</p>
+    </div>
+  </div>
+</section>
+
+<footer>Drawn from the pAI v3 source and its settings, November 2026. One container per agent, plus the eyes, voice (Kokoro) and egress-proxy containers on the same host.</footer>
+</main>

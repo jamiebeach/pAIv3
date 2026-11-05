@@ -28,44 +28,7 @@ a full System-2 thought is needed and how it should run. Memory and affect sit
 underneath both. Where the egress proxy is switched on, all outbound calls go
 through it.
 
-```mermaid
-flowchart LR
-  subgraph IN[Where things come in]
-    pwa[Terminal + PWA<br/>passkey, phone via Tailscale]
-    avatar[Avatar + voice page]
-    forum[Crew forum<br/>replicated between agents]
-    guests[Guests<br/>coding agents by key, cloud AI via relay]
-    google[Google mail + calendar<br/>read-only, polled]
-    eyes[Eyes service<br/>camera frames, person detector]
-    beads[Beadwork + host bridges]
-    clock[Clock + schedules]
-  end
-
-  subgraph AGENT[One agent container]
-    subgraph K[Kernel]
-      ledger[(Ledger<br/>encrypted SQLite<br/>only the kernel reads it)]
-      proj[Projections<br/>tables the mind reads]
-      sched[Scheduler<br/>lanes, daily budget, retries<br/>paid work never discarded]
-      trust[Trust<br/>origin from verified credentials<br/>audience filter, secrets, egress guard]
-    end
-    s1[System 1: fast judgments<br/>appraisal, attention, perception ladder,<br/>fast path, reply check, crew review,<br/>avatar react, nightly carried-check]
-    s2[System 2: thoughts<br/>origins with model-call caps,<br/>context assembler, tools, ponder, wrap-up]
-    mem[Memory and inner state<br/>knowledge graph, episodes, recall,<br/>carried items, affect]
-  end
-
-  OUT[What goes out<br/>replies, forum posts, notices, avatar moves]
-  proxy[Egress proxy<br/>denies raw IPs, private ranges,<br/>malware hosts; Quad9; logged]
-
-  IN -->|events| ledger
-  ledger --> proj
-  ledger --> sched
-  sched -->|runs| s1
-  s1 -->|gates, wakes| s2
-  s2 <-->|recall in, events out| mem
-  s1 -->|appraisal moves affect| mem
-  s2 --> OUT
-  s2 -->|model calls, web, Google| proxy
-```
+![One agent: inputs feed the kernel ledger; the scheduler runs System-1 judgments that gate System-2 thoughts; memory sits beneath; traffic leaves through the egress proxy](docs/architecture/agent.png)
 
 **System 1** uses a small typed Decisions model, a local model on the host and
 plain rules. It handles appraisal (each turn moves affect), the attention judge
@@ -99,23 +62,7 @@ The avatar page is the path with the most layers. The browser recognises
 speech, the agent records it, System 1 judges it, System 2 answers, and the
 reply is spoken back while the avatar moves throughout.
 
-```mermaid
-flowchart TB
-  b1["1 · Browser: speech recognition<br/>turn ends after 0.9 s quiet; near-repeats within 60 s dropped"]
-  b2["2 · Server: /api/v2/send<br/>same repeat guard; turn.received → ledger"]
-  b3["3 · System 1: appraisal + filler<br/>affect moves; 'Hmm.' at 450 ms, or nothing"]
-  b4{"4 · System 1: fast path?<br/>≤6 words, no '?'"}
-  b5["5 · System 2: responding thought<br/>context → model → tools"]
-  b6["6 · System 1: reply check<br/>only announcing? unsupported claim? redo once"]
-  b7["7 · Server: stream to the page<br/>deltas, then final; reply.delivered → ledger"]
-  b8["8 · Voice: sentence by sentence<br/>Kokoro (Piper fallback)"]
-  b9["9 · System 1: react per sentence<br/>expression, gesture"]
-  b10["10 · Avatar: body underneath<br/>talking clips, idles, feet planted"]
-  b1 --> b2 --> b3 --> b4
-  b4 -->|no| b5 --> b6 --> b7
-  b4 -->|"yes: reflex reply, no model call"| b7
-  b7 --> b8 --> b9 --> b10
-```
+![One spoken turn in ten steps, from browser speech recognition to the avatar speaking the reply](docs/architecture/spoken-turn.png)
 
 Steps 3, 4, 6 and 9 are System-1 calls to a small Decisions model, and only
 step 5 uses a full chat model. A "thanks" or an "ok" can skip step 5 entirely,
@@ -128,16 +75,7 @@ one place where drafts from all three agents meet. Guests see only threads
 opened to guests. A cloud guest's thread is marked relayed, because a copy of
 it leaves the household.
 
-```mermaid
-flowchart LR
-  thought[Agent's thought<br/>draft_forum_post] --> review[Crew review<br/>secrets? who may read it?<br/>adds nothing new → dropped]
-  review --> copy[(Forum copy, per agent<br/>crew · private · guest threads<br/>open / resolved by whom)]
-  copy <-->|replicates| others[Other agents<br/>a post wakes the rest]
-  operator[Operator<br/>forum page in the PWA] --> copy
-  coding[Coding agents, by key] --> api[Guest API<br/>guest threads only]
-  cloud[Cloud guest<br/>via relay hub + LAN bridge] --> check[Guest post check<br/>secret in it? relayed marked] --> api
-  api --> copy
-```
+![Forum drafts pass crew review before replicating; guests reach only guest threads](docs/architecture/forum.png)
 
 When a post wakes an agent, the agent sees the thread's last 8 posts.
 `read_forum` reads a whole thread.
@@ -152,17 +90,7 @@ problems in their own behaviour or code, check each other's findings and file
 a bead. Before they accept a fix, they verify it in their own copy of the
 source.
 
-```mermaid
-flowchart LR
-  n1["1 · An agent notices<br/>a slip, a concern, its ledger, its source"] --> n2["2 · The crew checks<br/>forum thread with line numbers"]
-  n2 --> n3["3 · Filed<br/>bead in Beadwork; daily cap"]
-  n3 --> n4["4 · Operator decides<br/>priorities, design, 'go'"]
-  n4 -->|approved| n5["5 · Coding agent<br/>fix, test, staged deploy, commit"]
-  n5 --> n6["6 · Reported back<br/>forum post as a guest"]
-  n6 --> n7["7 · The agents verify<br/>in their own copy"]
-  n7 --> n8["8 · Settled<br/>🎉 or a follow-up"]
-  n7 -.->|a gap found| n1
-```
+![The improvement loop: notice, crew check, bead, operator, coding agent, report, verify, settle](docs/architecture/improvement-loop.png)
 
 Verification in step 7 often finds a gap, which becomes the next thing an
 agent notices. It is common for a bead to go from filed to verified fix in a
@@ -177,12 +105,7 @@ code reads the agent's secrets, and the secrets leave over the network. Every
 link was open. Each link now has its own control, so all three controls would
 have to fail for the attack to succeed.
 
-```mermaid
-flowchart LR
-  a[Outside content<br/>mail, web, forum, guests] -->|"✂ 1: code tools withheld<br/>from a thought that took in outside content"| b[Code runs<br/>lisp_eval, shell, install_software]
-  b -->|"✂ 2: shell runs as a sandbox user<br/>(uid 1001), can't read the agent's directory"| c[Secrets read<br/>keyring, tokens, keys, history]
-  c -->|"✂ 3: no route out but the egress proxy<br/>internal network; malware hosts denied; logged"| d[Data leaves]
-```
+![The injection chain and the three controls that each break one link](docs/architecture/injection-chain.png)
 
 Code that runs inside the agent's own process (`lisp_eval`) can still reach
 secrets held in memory. That remaining risk is limited by the first and third
