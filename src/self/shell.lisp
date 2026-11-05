@@ -39,6 +39,22 @@
           (namestring (merge-pathnames ".local/tools/bin/" root))
           (namestring (merge-pathnames ".local/bin/" root))))
 
+(defparameter *sandbox-helper* #p"/usr/local/bin/pai-sandbox"
+  "Setuid helper that runs a command as uid 1001, which cannot read the
+agent's own directory. Shell commands go through it when it is installed.")
+
+(defun %share-workspace (root)
+  "Give the workspace to the sandbox group, group-writable, new files inheriting
+the group, so the sandbox user and I both work in it; once, when it is not yet.
+My own directory, with the keyring and secrets, stays mine alone."
+  (when (probe-file *sandbox-helper*)
+    (let ((dir (string-right-trim "/" (namestring root))))
+      (unless (equal "sandbox" (ignore-errors (string-trim '(#\Space #\Newline)
+                                                            (uiop:run-program (list "stat" "-c" "%G" dir) :output :string))))
+        (ignore-errors
+         (uiop:run-program (list "sh" "-c" "chgrp -R sandbox \"$1\" && chmod -R g+rwX \"$1\" && find \"$1\" -type d -exec chmod g+s {} +" "share" dir)
+                           :ignore-error-status t))))))
+
 (defun run-shell (kernel command &key seconds)
   "Run COMMAND with bash in the workspace. Returns the exit code and output as text."
   (let ((root (%shell-root kernel))
@@ -50,11 +66,15 @@
           ((zerop (length (string-trim '(#\Space #\Tab #\Newline) command))) "Give a command.")
           (t
            (ensure-directories-exist root)
+           (%share-workspace root)
            (handler-case
                (sb-ext:with-timeout (+ seconds 5)
                  (multiple-value-bind (out err code)
                      (uiop:run-program
                       (append
+                       ;; As the sandbox user when the image has the helper, so
+                       ;; the command cannot read my keyring or secrets (bead v3-r2j.5).
+                       (and (probe-file *sandbox-helper*) (list (namestring *sandbox-helper*)))
                        (list "timeout" "--signal=TERM" "--kill-after=2s" (format nil "~ds" seconds)
                              "env" "-i" (format nil "HOME=~a" (namestring root))
                              (format nil "PATH=~a" (%shell-path root)) "LANG=C.UTF-8"

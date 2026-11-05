@@ -65,7 +65,9 @@
         (ensure-directories-exist path)
         (with-open-file (o path :direction :output :if-exists :supersede)
           (format o "#!/bin/sh~%echo mamba \"$@\"~%mkdir -p $HOME/.local/tools/bin~%printf '#!/bin/sh~%echo synthetic-tool~%' > $HOME/.local/tools/bin/synthtool~%chmod +x $HOME/.local/tools/bin/synthtool~%"))
-        (shell-tool k "chmod +x .local/bin/micromamba"))
+        ;; Made executable here, not through the shell: the shell runs as the
+        ;; sandbox user, and only a file's owner may change its mode.
+        (uiop:run-program (list "chmod" "+x" path)))
       (is (search "Name 1 to 10" (funcall install "install" "rm -rf /")) "only package names")
       (let ((said (funcall install "install" "python=3.12" "git")))
         (is (search "create -y -q -p" said) "the first install makes the environment")
@@ -73,5 +75,18 @@
         (is (search "Installed: python=3.12 git" said)))
       (is (search "install -y -q -p" (funcall install "install" "ffmpeg")) "later ones add to it")
       (is (search "synthetic-tool" (shell-tool k "synthtool")) "my shell finds what I installed"))))
+
+(deftest a-shell-command-cannot-read-my-own-directory
+  ;; Bead v3-r2j.5: the keyring and secrets are mine alone, never my shell's.
+  (with-workspace (k root)
+    (when (and root (probe-file pai-v3.self::*sandbox-helper*))
+      (let ((mine (format nil "/tmp/pai-own-~d/" (random 100000000))))
+        (ensure-directories-exist mine)
+        (with-open-file (o (format nil "~akeyring.json" mine) :direction :output :if-exists :supersede)
+          (write-string "SYNTHETIC-KEY" o))
+        (uiop:run-program (list "chmod" "700" mine))
+        (let ((said (shell-tool k (format nil "cat ~akeyring.json; id -u" mine))))
+          (is (null (search "SYNTHETIC-KEY" said)) "the shell cannot read it")
+          (is (search "1001" said) "because it runs as the sandbox user"))))))
 
 (run-suite "self-shell")

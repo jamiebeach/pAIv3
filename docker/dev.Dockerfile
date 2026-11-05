@@ -9,6 +9,11 @@ ARG SQLITE3MC_SHA256=4125f8ff275ea953dabb3289331b20a0e76d4fc060f57148f4a5df3bf3b
 RUN apt-get update     && apt-get install -y --no-install-recommends ca-certificates curl unzip gcc libc6-dev     && rm -rf /var/lib/apt/lists/*
 RUN set -eu;     curl -fsSL -o /tmp/mc.zip "https://github.com/utelle/SQLite3MultipleCiphers/releases/download/v${SQLITE3MC_VERSION}/sqlite3mc-${SQLITE3MC_VERSION}-sqlite-${SQLITE_VERSION}-amalgamation.zip";     echo "${SQLITE3MC_SHA256}  /tmp/mc.zip" | sha256sum -c -;     mkdir /tmp/mc && cd /tmp/mc && unzip -q /tmp/mc.zip;     gcc -O2 -fPIC -shared -DSQLITE_THREADSAFE=1 -DSQLITE_ENABLE_FTS5 -DSQLITE_DQS=0         sqlite3mc_amalgamation.c -o /tmp/libsqlite3mc.so -lpthread -ldl -lm
 
+FROM debian:bookworm-slim@sha256:7b140f374b289a7c2befc338f42ebe6441b7ea838a042bbd5acbfca6ec875818 AS sandbox
+RUN apt-get update && apt-get install -y --no-install-recommends gcc libc6-dev && rm -rf /var/lib/apt/lists/*
+COPY docker/pai-sandbox.c /tmp/pai-sandbox.c
+RUN gcc -O2 -Wall -o /tmp/pai-sandbox /tmp/pai-sandbox.c
+
 FROM debian:bookworm-slim@sha256:7b140f374b289a7c2befc338f42ebe6441b7ea838a042bbd5acbfca6ec875818
 
 RUN apt-get update \
@@ -35,7 +40,14 @@ COPY --from=sqlite3mc /tmp/libsqlite3mc.so /opt/pai/lib/libsqlite3mc.so
 ENV PAI_SQLITE_LIBRARY=/opt/pai/lib/libsqlite3mc.so
 
 RUN useradd --create-home --uid 1000 --shell /bin/bash v3 \
-    && chown -R v3:v3 /opt/quicklisp
+    && chown -R v3:v3 /opt/quicklisp \
+    && groupadd --gid 1001 sandbox \
+    && useradd --uid 1001 --gid 1001 --no-create-home --shell /bin/bash sandbox \
+    && usermod -aG sandbox v3
+# The shell sandbox helper (bead v3-r2j.5): an agent's shell commands drop to
+# uid 1001 through it, so they cannot read the agent's keyring or secrets.
+COPY --from=sandbox /tmp/pai-sandbox /usr/local/bin/pai-sandbox
+RUN chown root:root /usr/local/bin/pai-sandbox && chmod 4755 /usr/local/bin/pai-sandbox
 ENV PAI_QUICKLISP_SETUP=/opt/quicklisp/setup.lisp
 WORKDIR /v3
 USER v3
