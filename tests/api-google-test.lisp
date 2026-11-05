@@ -155,6 +155,28 @@
       (is (not (pai-v3.mind::tool-available-p (gethash "shell" *tools*) '(:audience "external" :communicating t))) "no shell for outside content")
       (is (not (pai-v3.mind::tool-available-p (gethash "lisp_eval" *tools*) '(:audience "external" :communicating t)))))))
 
+(deftest a-cancelled-event-is-brought-up-not-just-dropped
+  ;; Bead v3-luk: a round-robin called off by the studio just vanished.
+  (with-google (k)
+    (connect k)
+    (change-setting k "notifications.policy" (obj "quiet_hours" (obj "enabled" :false "start_minute" 0 "end_minute" 0)) :origin *operator*)
+    (pai-v3.api::poll-google k :force t)
+    (setf *calendar-cancelled* t)
+    (unwind-protect
+         (progn
+           (pai-v3.api::poll-google k :force t)
+           (is (equal '("Dentist" "2026-10-17T10:00:00Z")
+                      (sql-row (kernel-db k) "SELECT summary,start_at FROM calendar_cancellations WHERE account=?1 AND id=?2 LIMIT 1" "home" "ev1"))
+               "the cancellation is kept with its title and time")
+           ;; The fake Dentist is in the past by now; an upcoming one, called off:
+           (append! k "calendar.cancelled" (obj "account" "home" "event_id" "ev9" "summary" "SYNTHETIC round-robin"
+                                                "start" (iso8601 (+ (now) (* 20 3600)))))
+           (pai-v3.api::poll-google k :force t)
+           (let ((latest (sql-value (kernel-db k) "SELECT reason FROM thoughts WHERE origin=?1 ORDER BY id DESC LIMIT 1" "noticing")))
+             (is (search "CANCELLED: SYNTHETIC round-robin" latest) "an upcoming one is brought to a thought")
+             (is (null (search "CANCELLED: Dentist" latest)) "a past one is not")))
+      (setf *calendar-cancelled* nil))))
+
 ;;; More than one account (operator request 2026-10-18)
 
 (deftest every-connected-account-is-read-and-shown

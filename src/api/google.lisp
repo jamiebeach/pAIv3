@@ -56,7 +56,23 @@
 (define-event-type "calendar.seen"
   :schema (("account" :string) ("event_id" :string) ("summary" :string) ("start" :string) ("end" :string)
            ("location" :string :optional) ("updated" :string)))
-(define-event-type "calendar.cancelled" :schema (("account" :string) ("event_id" :string)))
+(define-event-type "calendar.cancelled" :schema (("account" :string) ("event_id" :string)
+                                                 ("summary" :string :optional) ("start" :string :optional)))
+
+;;; A cancellation is something to notice, not only a row to drop (bead
+;;; v3-luk): the studio called off a round-robin, a colleague cancelled one
+;;; meeting of a series, and the event just vanished from the agent's
+;;; calendar. Each cancellation of an event the agent had seen is kept here,
+;;; with its title and time, for the attention watch to bring up.
+(define-projection "calendar_cancellations"
+  :kind :inline :consumes ("calendar.cancelled")
+  :tables ("CREATE TABLE IF NOT EXISTS calendar_cancellations (event_id INTEGER PRIMARY KEY, account TEXT NOT NULL, id TEXT NOT NULL, summary TEXT, start_at TEXT, at TEXT NOT NULL)"
+           "CREATE INDEX IF NOT EXISTS calendar_cancellations_account_idx ON calendar_cancellations(account,event_id)")
+  :reduce (lambda (db e)
+            (let ((p (event-payload e)))
+              (sql-exec db "INSERT OR IGNORE INTO calendar_cancellations(event_id,account,id,summary,start_at,at) VALUES(?1,?2,?3,?4,?5,?6)"
+                        (event-id e) (obj-get p "account") (obj-get p "event_id")
+                        (obj-get p "summary") (obj-get p "start") (event-at e)))))
 (define-event-type "external.digested" :schema (("account" :string) ("through_event_id" :integer)))
 
 (define-projection "external"
@@ -183,9 +199,11 @@ day's allowance. Returns how many were taken."
       (let ((id (obj-get ev "id")) (updated (obj-get ev "updated" "")))
         ;; A cancelled event is asked for so its stale row can go (bead v3-ehm).
         (if (equal "cancelled" (obj-get ev "status"))
-            (when (sql-value (kernel-db kernel) "SELECT 1 FROM calendar_events WHERE account=?1 AND id=?2 LIMIT 1" account id)
-              (append! kernel "calendar.cancelled" (obj "account" account "event_id" id))
-              (incf changed))
+            (let ((row (sql-row (kernel-db kernel) "SELECT summary,start_at FROM calendar_events WHERE account=?1 AND id=?2 LIMIT 1" account id)))
+              (when row
+                (append! kernel "calendar.cancelled" (obj "account" account "event_id" id
+                                                          "summary" (first row) "start" (second row)))
+                (incf changed)))
         (unless (equal updated (sql-value (kernel-db kernel) "SELECT updated FROM calendar_events WHERE account=?1 AND id=?2 LIMIT 1" account id))
           (flet ((when-of (k) (let ((o (obj-get ev k))) (or (obj-get o "dateTime") (obj-get o "date") ""))))
             (append! kernel "calendar.seen"

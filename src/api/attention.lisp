@@ -167,7 +167,10 @@ one thought; record the pass. Quiet hours hold everything back."
          (quiet (%quiet-now-p kernel policy))
          (mail (sql-rows db "SELECT id,sender,subject,snippet,event_id FROM mail_items WHERE account=?1 AND event_id>?2 ORDER BY event_id LIMIT 30" account digested))
          (events (sql-rows db "SELECT id,summary,start_at,end_at,location,event_id FROM calendar_events WHERE account=?1 AND event_id>?2 ORDER BY event_id LIMIT 30" account digested))
-         (through (reduce #'max (append (mapcar #'fifth mail) (mapcar #'sixth events)) :initial-value digested))
+         (cancelled (ignore-errors
+                     (sql-rows db "SELECT id,summary,start_at,event_id FROM calendar_cancellations WHERE account=?1 AND event_id>?2 ORDER BY event_id LIMIT 30" account digested)))
+         (through (reduce #'max (append (mapcar #'fifth mail) (mapcar #'sixth events) (mapcar #'fourth cancelled))
+                          :initial-value digested))
          (day (%local-day kernel))
          (day-start (and (not quiet) (eq t (obj-get (obj-get policy "quiet_hours") "enabled"))
                          (null (sql-value db "SELECT 1 FROM attention_stream WHERE reason=?1 AND day=?2 LIMIT 1" "day-start" day))
@@ -195,6 +198,19 @@ one thought; record the pass. Quiet hours hold everything back."
                               :overlaps (%overlapping kernel account id start end))
             (push (obj "kind" "calendar" "ref" id "score" score "why" why "meaning" summary
                        "text" (format nil "~a at ~a~@[ (~a)~]" summary start location))
+                  items)))))
+    ;; An event called off (bead v3-luk) matters as much as one moved.
+    (dolist (c cancelled)
+      (destructuring-bind (id summary start event-id) c
+        (declare (ignore event-id))
+        (let* ((at (and start (%event-time start zone)))
+               (hours (and at (/ (- at (now)) 3600.0))))
+          (when (and hours (> hours 0))
+            (push (obj "kind" "calendar" "ref" id
+                       "score" (cond ((< hours 48) 80) ((< hours 168) 50) (t 30))
+                       "why" (list "cancelled")
+                       "meaning" (format nil "cancelled ~a" (or summary ""))
+                       "text" (format nil "CANCELLED: ~a (was ~a)" (or summary "(no title)") start))
                   items)))))
     (setf items (nreverse items))
     (%weigh-meaning kernel items threshold)
