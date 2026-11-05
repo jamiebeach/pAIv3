@@ -121,7 +121,13 @@ sees."
                                                      (obj "referenceImages" (mapcar (lambda (r) (image-data-url kernel r)) references))))
                                              task))))
              (let* ((answer (ignore-errors (json-parse body)))
-                    (result (and (hash-table-p answer) (first (obj-get answer "data"))))
+                    ;; The entry that carries the image, not merely the first: with
+                    ;; reference images the answer can hold other entries before
+                    ;; it, and taking the first threw away a made and paid-for
+                    ;; image as "not made" (bead v3-bwg).
+                    (result (and (hash-table-p answer)
+                                 (find-if (lambda (d) (and (hash-table-p d) (stringp (obj-get d "imageBase64Data"))))
+                                          (obj-get answer "data"))))
                     (data (and result (obj-get result "imageBase64Data"))))
                (if (not (and (eql status 200) (stringp data)))
                    (%image-refusal status

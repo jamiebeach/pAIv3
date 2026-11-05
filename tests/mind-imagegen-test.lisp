@@ -32,6 +32,18 @@
         (is (search (format nil "](/api/v2/images/~a)" id) said) "and the reply can show it"))
       (is (< 0.0039 (pai-v3.mind::images-spent-today k) 0.0041)))))
 
+(deftest the-image-is-found-wherever-it-is-in-the-answer
+  ;; Bead v3-bwg: an answer with another entry before the image read as
+  ;; "not made (HTTP 200)", and the paid-for image was thrown away.
+  (with-temp-kernel (k)
+    (let* ((*sent* '())
+           (pai-v3.mind::*image-post*
+             (runware :answer (obj "data" (list (obj "taskType" "imageUpload" "imageUUID" "SYNTHETIC-ref")
+                                               (obj "taskType" "imageInference" "imageBase64Data" +png-b64+ "cost" 0.019)))))
+           (said (pai-v3.mind::generate-image k nil "a portrait from a reference")))
+      (is (search "Made image" said) "the image is kept, not reported as not made")
+      (is (null (search "not made" said))))))
+
 (deftest image-making-stops-at-the-daily-budget
   (with-temp-kernel (k)
     (change-setting k "images.generation_daily_usd" 0.01d0 :origin *operator*)
