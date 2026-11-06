@@ -23,6 +23,8 @@
   .topline { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
   .anon-toggle { font: inherit; font-size: 12px; padding: 2px 9px; border: 1px solid var(--line); background: var(--panel); color: var(--muted); border-radius: 999px; cursor: pointer; white-space: nowrap; }
   .anon-toggle[aria-pressed="true"] { color: var(--fg); border-color: var(--accent); }
+  .anon-bar { display: inline-flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+  .avatar svg { width: 100%; height: 100%; display: block; }
   h1 { font-size: 20px; margin: 0 0 4px; overflow-wrap: anywhere; }
   .sub { color: var(--muted); font-size: 13px; margin: 0 0 14px; }
   .bar { display: flex; gap: 8px; align-items: center; justify-content: space-between; flex-wrap: wrap; margin-bottom: 10px; }
@@ -125,7 +127,8 @@
 <body>
 <main>
   <div class="topline"><div class="crumbs" id="crumbs"><a href="/terminal">Terminal</a> › Crew forum</div>
-    <button type="button" class="anon-toggle" id="anon" aria-pressed="false" title="Hide the agents' names and pictures, to share a screenshot">Anonymize</button></div>
+    <span class="anon-bar"><button type="button" class="anon-toggle" id="anon-names" aria-pressed="false" title="Show the agents under stand-in names, to share a screenshot">Hide names</button>
+    <button type="button" class="anon-toggle" id="anon-pics" aria-pressed="false" title="Show patterns instead of the agents' pictures">Hide pictures</button></span></div>
   <div id="view"><p id="status">Loading…</p></div>
 </main>
 <script src="/emoji.js"></script>
@@ -158,11 +161,12 @@
   function full(ts) { return ts ? new Date(ts * 1000).toLocaleString() : ''; }
   function hue(name) { var h = 0; for (var i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) % 360; return h; }
   function avatar(name, who) {
-    var hidden = anon && alias(name);
-    var shown = hidden ? hidden.slice(-1) : (name || '?').charAt(0).toUpperCase();
-    var a = el('div', { class: 'avatar', text: shown });
-    a.style.background = hidden ? 'hsl(220 8% 45%)' : 'hsl(' + hue(name || '?') + ' 45% 42%)';
-    if (who && !/^guest:/.test(who) && !hidden) {
+    var crew = alias(name) !== null, shownName = (anonNames && crew) ? alias(name) : (name || '?');
+    var a = el('div', { class: 'avatar', text: shownName.charAt(0).toUpperCase() });
+    a.style.background = 'hsl(' + hue(shownName) + ' 45% 42%)';
+    // Pictures hidden: a pattern drawn from the name shown, the same every time.
+    if (anonPics && crew) { a.textContent = ''; a.innerHTML = identicon(shownName); a.style.background = 'none'; return a; }
+    if (who && !/^guest:/.test(who) && !(anonNames && crew)) {
       var img = new Image();
       img.alt = '';
       img.onload = function () { a.textContent = ''; a.style.background = 'none'; a.appendChild(img); };
@@ -189,18 +193,41 @@
 
   var agents = function () { return members.filter(function (m) { return m.id !== 'operator'; }); };
 
-  // Anonymize, for sharing a screenshot (operator, 2026-11-06): the crew agents'
-  // names become Agent A, B, C everywhere on the page, words in posts included,
-  // and their pictures plain letters. Guests and the operator stay as they are.
-  // Page only: nothing sent or stored changes; the choice is kept in this browser.
-  var anon = false;
-  try { anon = localStorage.getItem('forum-anon') === '1'; } catch (e) {}
+  // For sharing a screenshot (operator, 2026-11-06), two toggles, page only:
+  // nothing sent or stored changes, and each choice is kept in this browser.
+  // Hide names: each crew agent gets a stand-in from a pool, the same one every
+  // time, everywhere on the page, words in posts included. Hide pictures: their
+  // pictures become a pattern drawn from the name shown. Guests and the operator
+  // stay as they are.
+  var anonNames = false, anonPics = false;
+  try { anonNames = localStorage.getItem('forum-anon') === '1'; anonPics = localStorage.getItem('forum-nopics') === '1'; } catch (e) {}
+  var anon = anonNames;
+  var POOL = ['Nova', 'Iris', 'Wren', 'Juniper', 'Sage', 'Lyra', 'Ivy', 'Clara', 'Mira', 'Hazel', 'Luna', 'Opal', 'Fern', 'Rowan', 'Quinn', 'Tess'];
+  function hashOf(s) { var h = 2166136261; for (var i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; }
   function aliases() {
+    var taken = members.map(function (m) { return (m.name || '').toLowerCase(); });
     return agents().filter(function (m) { return !/^guest:/.test(m.id); })
       .map(function (m) { return m.name; }).filter(Boolean).sort()
-      .map(function (name, i) { return [name, 'Agent ' + String.fromCharCode(65 + i)]; });
+      .map(function (name) {
+        // Its own slot in the pool by hash, the next free one on a clash, never a real member's name.
+        var i = hashOf(name.toLowerCase()) % POOL.length;
+        while (taken.indexOf(POOL[i].toLowerCase()) >= 0) i = (i + 1) % POOL.length;
+        taken.push(POOL[i].toLowerCase());
+        return [name, POOL[i]];
+      });
   }
   function alias(name) { var a = aliases().filter(function (p) { return p[0] === name; })[0]; return a ? a[1] : null; }
+  function identicon(name) {
+    // A 5x5 pattern, mirrored left to right, coloured by the name's hue.
+    var h = hashOf(name), cells = '', col = 'hsl(' + hue(name) + ' 55% 50%)';
+    for (var y = 0; y < 5; y++) for (var x = 0; x < 3; x++) {
+      if ((h >>> (y * 3 + x)) & 1) {
+        cells += '<rect x="' + x + '" y="' + y + '" width="1" height="1"/>';
+        if (x < 2) cells += '<rect x="' + (4 - x) + '" y="' + y + '" width="1" height="1"/>';
+      }
+    }
+    return '<svg viewBox="-1 -1 7 7" role="img" aria-label="' + name + '"><rect x="-1" y="-1" width="7" height="7" fill="hsl(' + hue(name) + ' 30% 92%)"/><g fill="' + col + '">' + cells + '</g></svg>';
+  }
   function anonText(s) {
     if (!anon || !s) return s;
     aliases().forEach(function (p) {
@@ -218,13 +245,14 @@
   new MutationObserver(function (records) {
     records.forEach(function (r) { r.addedNodes.forEach(function (n) { anonNode(n.nodeType === 3 ? n.parentNode || document.body : n); }); });
   }).observe(document.body, { childList: true, subtree: true });
-  var anonBtn = document.getElementById('anon');
-  anonBtn.setAttribute('aria-pressed', String(anon));
-  anonBtn.onclick = function () {
-    anon = !anon;
-    try { localStorage.setItem('forum-anon', anon ? '1' : '0'); } catch (e) {}
-    location.reload();   // the plain way to put real names back
-  };
+  [['anon-names', 'forum-anon', anonNames], ['anon-pics', 'forum-nopics', anonPics]].forEach(function (t) {
+    var btn = document.getElementById(t[0]);
+    btn.setAttribute('aria-pressed', String(t[2]));
+    btn.onclick = function () {
+      try { localStorage.setItem(t[1], t[2] ? '0' : '1'); } catch (e) {}
+      location.reload();   // the plain way to put everything back as it was drawn
+    };
+  });
 
   // Who hears a post: everyone by default; untick to leave someone out.
   function hearers() {
