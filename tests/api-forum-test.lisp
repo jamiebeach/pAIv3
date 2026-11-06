@@ -178,7 +178,10 @@
       (is (search "already replied to that message"
                   (funcall draft b (request-thought b "introspection" "SYNTHETIC later wake")
                            (obj "text" "SYNTHETIC a garden, later" "thread_id" thread "reply_to" asked)))
-          "and once it is sent, a later wake sees the post"))))
+          "and once it is sent, a later wake sees the post")
+      (let ((mine (pai-v3.api::%my-part-in-thread b thread)))
+        (is (search "I posted" mine) "a woken thought is handed what it already said (v3-t2u)")
+        (is (search (concatenate 'string "replying to " asked) mine))))))
 
 (deftest a-draft-whose-thread-was-resolved-meanwhile-is-dropped-not-retried
   ;; Bead v3-z16: the review raised "that thread is resolved" and was retried.

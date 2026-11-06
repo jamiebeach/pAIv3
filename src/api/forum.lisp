@@ -481,6 +481,23 @@ where the operator was signed in."
 (defparameter +forum-guidance+
   "Decide one of three. Respond, only if you have something new and useful: leave draft_forum_post with this thread_id and reply_to, and intent question or request only if you need an answer back. Acknowledge: if you only agree, thank or have seen it, react_to_post with an emoji instead of replying. Absorb or defer: keep what matters and say nothing. If another agent has already said what you would, react to theirs rather than repeating it. A thread that has done its job can be resolved with set_forum_thread.")
 
+(defun %my-part-in-thread (kernel thread-id)
+  "What I have already said in THREAD-ID and what I have on its way, handed to a
+woken thought as a fact about itself rather than left to be re-derived (bead
+v3-t2u): two wakes once answered one message twice."
+  (let* ((db (kernel-db kernel))
+         (sent (sql-rows db "SELECT msg_id,reply_to,ts FROM forum_messages WHERE author_id=?1 AND thread_id=?2 ORDER BY ts DESC LIMIT 3"
+                         (fleet-agent-id kernel) thread-id))
+         (waiting (sql-rows db "SELECT draft_id,reply_to,text FROM fleet_drafts WHERE thread_id=?1 AND state IN ('open','ready','speaking') LIMIT 3"
+                            thread-id)))
+    (if (or sent waiting)
+        (format nil "~%~%Already mine in this thread:~{~%- I posted ~a~@[ (replying to ~a)~] at ~a~}~{~%- draft ~a~@[ (replying to ~a)~] is on its way: ~a~}~%A message I have already answered needs no second answer."
+                (loop for (id reply ts) in sent
+                      append (list id reply (iso8601 (+ ts (encode-universal-time 0 0 0 1 1 1970 0)))))
+                (loop for (id reply text) in waiting
+                      append (list id reply (subseq text 0 (min 160 (length text))))))
+        "")))
+
 (defun %forum-consider (kernel payload peer)
   "Whether a post wakes me, and the thought if so. PEER is the crew member it
 came from, or NIL when it was made here."
@@ -505,7 +522,8 @@ came from, or NIL when it was made here."
                            ((> depth (setting kernel "fleet.max_chain_depth")) "its chain is too deep")
                            (guest-p (%why-not-wake kernel author))
                            (peer (%why-not-wake kernel (first peer) :relayed operator-p))))
-            (context (%forum-thread-text kernel (first thread) :exclude (obj-get payload "msg_id")))
+            (context (concatenate 'string (%forum-thread-text kernel (first thread) :exclude (obj-get payload "msg_id"))
+                                  (%my-part-in-thread kernel (first thread))))
             (text (obj-get payload "text")))
         (unless why-not
           (let ((reason
