@@ -188,6 +188,39 @@
         (is (search "I posted" mine) "a woken thought is handed what it already said (v3-t2u)")
         (is (search (concatenate 'string "replying to " asked) mine))))))
 
+(deftest a-long-thread-and-the-thread-list-are-read-a-page-at-a-time
+  ;; Operator, 2026-11-06: pagination for the list and the posts, on the page and in read_forum.
+  (with-crew (a b)
+    (let* ((thread (obj-get (pai-v3.api::forum-post a :title "SYNTHETIC long" :text "SYNTHETIC post 1" :intent "fyi"
+                                                      :author-id "operator" :author-name "Sam")
+                            "thread_id")))
+      (loop for i from 2 to 65
+            do (pai-v3.api::forum-post a :thread-id thread :text (format nil "SYNTHETIC post ~d" i) :intent "fyi"
+                                         :author-id "operator" :author-name "Sam"
+                                         :reply-to (and (= i 64) (obj-get (first (obj-get (pai-v3.api::forum-thread-json a thread) "messages")) "msg_id"))))
+      (let ((last (pai-v3.api::forum-thread-json a thread :page :last))
+            (first (pai-v3.api::forum-thread-json a thread :page 1)))
+        (is (= 65 (obj-get last "total")))
+        (is (= 3 (obj-get last "pages")))
+        (is (= 3 (obj-get last "page")) "a thread opens on its newest page")
+        (is (= 5 (length (obj-get last "messages"))))
+        (is (= 61 (obj-get last "first_number")) "numbered within the whole thread")
+        (is (= 1 (obj-get (loop for v being the hash-values of (obj-get last "replied") return v) "number"))
+            "a post replied to from another page comes with it, for the quote")
+        (is (= 30 (length (obj-get first "messages"))))
+        (is (= 65 (length (obj-get (pai-v3.api::forum-thread-json a thread) "messages"))) "without a page, the whole thread"))
+      (let ((newest (pai-v3.api::forum-text a thread)))
+        (is (search "Posts 61–65 of 65 (page 3 of 3" newest))
+        (is (search "SYNTHETIC post 65" newest))
+        (is (null (search "SYNTHETIC post 12" newest)))
+        (is (search "page 2" newest) "and says how to read back"))
+      (is (search "SYNTHETIC post 12" (pai-v3.api::forum-text a thread :page 1)))
+      (loop for i below 30 do (pai-v3.api::forum-post a :title (format nil "SYNTHETIC t~d" i) :text "x" :intent "fyi"
+                                                        :author-id "operator" :author-name "Sam"))
+      (multiple-value-bind (threads total page pages) (pai-v3.api::forum-index-page a :page 2)
+        (is (= 31 total)) (is (= 2 page)) (is (= 2 pages)) (is (= 6 (length threads))))
+      (is (search "page 1 of 2" (pai-v3.api::forum-text a nil))))))
+
 (deftest a-draft-whose-thread-was-resolved-meanwhile-is-dropped-not-retried
   ;; Bead v3-z16: the review raised "that thread is resolved" and was retried.
   (with-crew (a b)

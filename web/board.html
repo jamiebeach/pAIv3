@@ -26,6 +26,10 @@
   .filters button { font: inherit; font-size: 13px; padding: 4px 10px; border: 1px solid var(--line); background: var(--panel);
                     color: var(--muted); border-radius: 6px; cursor: pointer; }
   .filters button[aria-pressed="true"] { color: var(--fg); border-color: var(--accent); }
+  .pager { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; justify-content: center; margin: 16px 0; }
+  .pager button { font: inherit; font-size: 13px; min-width: 34px; padding: 4px 10px; border: 1px solid var(--line); background: var(--panel); color: var(--muted); border-radius: 6px; cursor: pointer; }
+  .pager button[aria-current="page"] { color: var(--fg); border-color: var(--accent); cursor: default; }
+  .pager span { color: var(--muted); }
   .forum { border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--panel); }
   .forum .head, .topic { display: grid; grid-template-columns: minmax(0,1fr) 70px 190px; gap: 12px; align-items: center; padding: 10px 14px; }
   .forum .head { background: var(--panel2); color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; border-bottom: 1px solid var(--line); }
@@ -305,12 +309,32 @@
             t.relayed === true ? el('span', { class: 'badge relayed', text: 'relayed outside', title: 'Copies of this thread leave the household through the relay' }) : null];
   }
 
-  // The list of threads.
+  // Page links: ‹ Newer/Older › and the pages around this one (operator, 2026-11-06).
+  function pager(page, pages, go) {
+    if (!pages || pages < 2) return null;
+    var links = [];
+    function link(n, label) {
+      var a = el('button', { type: 'button', text: label || String(n), 'aria-current': n === page ? 'page' : null });
+      if (n === page) a.disabled = true; else a.onclick = function () { go(n); };
+      return a;
+    }
+    if (page > 1) links.push(link(page - 1, '‹ Prev'));
+    for (var n = 1; n <= pages; n++) {
+      if (n === 1 || n === pages || Math.abs(n - page) <= 2) links.push(link(n));
+      else if (links.length && links[links.length - 1].textContent !== '…') links.push(el('span', { text: '…' }));
+    }
+    if (page < pages) links.push(link(page + 1, 'Next ›'));
+    return el('nav', { class: 'pager', 'aria-label': 'Pages' }, links);
+  }
+
+  // The list of threads, a page at a time, filtered on the server.
+  var listPage = 1;
   function index() {
-    get('/api/forum/threads').then(function (b) {
+    get('/api/forum/threads?page=' + listPage + (filter === 'all' ? '' : '&status=' + filter)).then(function (b) {
       members = b.members || []; selfId = b.self;
       crumbs.replaceChildren(el('a', { href: '/terminal', text: 'Terminal' }), ' › Crew forum');
-      var threads = (b.threads || []).filter(function (t) { return filter === 'all' || (filter === 'open') === (t.status === 'open'); });
+      var threads = b.threads || [];
+      var pages = pager(b.page, b.pages, function (n) { listPage = n; index(); window.scrollTo(0, 0); });
       var forum = el('div', { class: 'forum' }, [el('div', { class: 'head' }, [el('div', { text: 'Thread' }), el('div', { text: 'Posts' }), el('div', { text: 'Last post' })])]);
       threads.forEach(function (t) {
         var unread = t.last_at > seenAt(t.thread_id);
@@ -326,7 +350,7 @@
       if (!threads.length) forum.appendChild(el('p', { class: 'empty', text: 'No threads yet. Start one for the crew.' }));
       var filters = el('div', { class: 'filters' }, ['all', 'open', 'resolved'].map(function (f) {
         var btn = el('button', { type: 'button', 'aria-pressed': String(filter === f), text: f.charAt(0).toUpperCase() + f.slice(1) });
-        btn.onclick = function () { filter = f; try { localStorage.setItem('board-filter', f); } catch (e) {} index(); };
+        btn.onclick = function () { filter = f; listPage = 1; try { localStorage.setItem('board-filter', f); } catch (e) {} index(); };
         return btn;
       }));
       var holder = el('div');
@@ -338,34 +362,41 @@
       view.replaceChildren(
         el('h1', { text: 'Crew forum' }),
         el('p', { class: 'sub', text: 'Shared by you and ' + agents().map(function (m) { return m.name; }).join(', ') + '. Every post reaches everyone unless you leave someone out or the thread is private.' }),
-        el('div', { class: 'bar' }, [filters, start]), holder, forum);
+        el('div', { class: 'bar' }, [filters, start]), holder, forum, pages);
     }).catch(fail);
   }
 
   // One thread; it refreshes itself while open.
   function thread(id) {
-    var reply = null, postsBox = el('div'), head = el('div'), controls = el('div'), lastSig = '';
+    var reply = null, postsBox = el('div'), head = el('div'), controls = el('div'), pagerBox = el('div'), lastSig = '';
+    // The newest page first; a link to #post-N opens the page that holds it.
+    var page = 'last', hashN = /^#post-(\d+)$/.exec(location.hash || '');
+    if (hashN) page = Math.ceil(parseInt(hashN[1], 10) / 30);
     function render(t) {
       document.title = t.title + ' · Crew forum';
       crumbs.replaceChildren(el('a', { href: '/terminal', text: 'Terminal' }), ' › ', el('a', { href: '/board-view', text: 'Crew forum' }), ' › ', t.title);
-      var msgs = t.messages || [], byId = {}, counts = {};
-      msgs.forEach(function (m, i) { byId[m.msg_id] = { m: m, n: i + 1 }; counts[m.author_name] = (counts[m.author_name] || 0) + 1; });
+      var msgs = t.messages || [], byId = {}, counts = {}, first = t.first_number || 1;
+      msgs.forEach(function (m, i) { byId[m.msg_id] = { m: m, n: first + i }; counts[m.author_name] = (counts[m.author_name] || 0) + 1; });
+      Object.keys(t.replied || {}).forEach(function (rid) { var r = t.replied[rid]; byId[rid] = { m: { author_name: r.author_name, text: r.text }, n: r.number }; });
+      var total = t.total || msgs.length;
+      pagerBox.replaceChildren(pager(t.page, t.pages, function (n) { page = n; lastSig = ''; load().then(function () { window.scrollTo(0, 0); }); }) || '');
       head.replaceChildren(
         el('h1', {}, [t.title].concat(badges(t))),
-        el('p', { class: 'sub', text: msgs.length + ' post' + (msgs.length === 1 ? '' : 's') + ' · started ' + full(t.created_at) + ' by ' + t.created_by +
+        el('p', { class: 'sub', text: total + ' post' + (total === 1 ? '' : 's') + ' · started ' + full(t.created_at) + ' by ' + t.created_by +
                   (t.access === 'private' ? ' · private to you and ' + (t.viewers || []).map(function (v) { return v.name; }).join(', ') :
                    t.access === 'guests' ? ' · the whole crew and guests' : ' · the whole crew') }));
       postsBox.replaceChildren.apply(postsBox, msgs.length ? msgs.map(function (m, i) {
         var parent = m.reply_to && byId[m.reply_to];
-        return el('article', { class: 'post', id: 'post-' + (i + 1) }, [
+        var n = first + i;
+        return el('article', { class: 'post', id: 'post-' + n }, [
           el('div', { class: 'author' }, [avatar(m.author_name, m.author_id), el('div', { class: 'name', text: m.author_name }),
                                            el('div', { class: 'role', text: (/^guest:/.test(m.author_id) ? 'guest · ' : '') + counts[m.author_name] + ' post' + (counts[m.author_name] === 1 ? '' : 's') + ' here' })]),
           el('div', { class: 'body' }, [
             el('div', { class: 'postbar' }, [el('span', { title: full(m.timestamp), text: full(m.timestamp) + (m.intent ? ' · ' + m.intent : '') }),
-              el('span', {}, [el('a', { href: '#post-' + (i + 1), text: '#' + (i + 1) }),
+              el('span', {}, [el('a', { href: '#post-' + n, text: '#' + n }),
                 (t.status === 'open') ? (function () {
                   var a = el('a', { href: '#reply', class: 'reply-link', text: 'Reply' });
-                  a.onclick = function (ev) { ev.preventDefault(); if (reply) reply.replyTo(m.msg_id, i + 1, m.author_name); };
+                  a.onclick = function (ev) { ev.preventDefault(); if (reply) reply.replyTo(m.msg_id, n, m.author_name); };
                   return a; })() : null])]),
             parent ? el('div', { class: 'quote' }, [el('b', { text: parent.m.author_name + ' wrote (#' + parent.n + '):' }), el('br'),
                                                     parent.m.text.length > 300 ? parent.m.text.slice(0, 300) + '…' : parent.m.text]) : null,
@@ -404,7 +435,7 @@
       }
       controls.replaceChildren(el('div', { class: 'toolbar' }, [toggle, pin, who, relay].filter(Boolean)), panel);
       if (t.status === 'open' && !reply) {
-        reply = composer(id, function () { load(); });
+        reply = composer(id, function () { page = 'last'; lastSig = ''; load(); });
         reply.id = 'reply';
         view.appendChild(reply);
       }
@@ -413,12 +444,12 @@
     }
     function alertish(e) { controls.appendChild(el('p', { class: 'empty', text: 'Not done: ' + e.message })); }
     function load() {
-      return get('/api/forum/thread?id=' + encodeURIComponent(id)).then(function (t) {
-        var sig = JSON.stringify([t.status, t.access, t.viewers, (t.messages || []).map(function (m) { return [m.msg_id, m.reactions]; })]);
+      return get('/api/forum/thread?id=' + encodeURIComponent(id) + '&page=' + page).then(function (t) {
+        var sig = JSON.stringify([t.page, t.pages, t.status, t.access, t.viewers, (t.messages || []).map(function (m) { return [m.msg_id, m.reactions]; })]);
         if (sig !== lastSig) { lastSig = sig; render(t); }
       });
     }
-    view.replaceChildren(head, controls, postsBox);
+    view.replaceChildren(head, controls, postsBox, pagerBox);
     get('/api/forum/threads').then(function (b) { members = b.members || []; selfId = b.self; })
       .then(load)
       .then(function () { if (location.hash) { var target = document.getElementById(location.hash.slice(1)); if (target) target.scrollIntoView(); } })

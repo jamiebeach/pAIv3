@@ -577,8 +577,45 @@ came from, or NIL when it was made here."
     (mapcar (lambda (g) (obj "emoji" (car g) "count" (length (cdr g)) "names" (mapcar #'car (cdr g)) "by_ids" (mapcar #'cdr (cdr g))))
             groups)))
 
-(defun forum-thread-json (kernel thread-id &key (member "operator"))
+(defparameter *forum-posts-per-page* 30 "Posts on one page of a thread, on the page and in read_forum.")
+(defparameter *forum-threads-per-page* 25 "Threads on one page of the forum's list.")
+
+(defun %page-of (page total per)
+  "(values page pages start) for PAGE (1-based; :last or NIL for the last) of TOTAL items, PER a page."
+  (let* ((pages (max 1 (ceiling total per)))
+         (page (if (integerp page) (max 1 (min pages page)) pages)))
+    (values page pages (* (1- page) per))))
+
+(defun forum-thread-json (kernel thread-id &key (member "operator") page)
+  "THREAD-ID as JSON for MEMBER: every post, or with PAGE (a number, or :last) one page of
+*forum-posts-per-page*, numbered within the whole thread (operator, 2026-11-06: pagination)."
   (let ((th (forum-thread kernel thread-id)))
+    (when (and th (forum-visible-p th member) page)
+      (let* ((db (kernel-db kernel))
+             (ids (mapcar #'first (sql-rows db "SELECT msg_id FROM forum_messages WHERE thread_id=?1 ORDER BY ts,event_id LIMIT 5000" thread-id)))
+             (total (length ids)))
+        (multiple-value-bind (page pages start) (%page-of page total *forum-posts-per-page*)
+          (let* ((rows (sql-rows db "SELECT msg_id,author_id,author_name,text,intent,reply_to,ts,images,quiet_for,via FROM forum_messages WHERE thread_id=?1 ORDER BY ts,event_id LIMIT ?2 OFFSET ?3"
+                                 thread-id *forum-posts-per-page* start))
+                 (here (mapcar #'first rows))
+                 (outside (remove-duplicates (loop for r in rows for reply = (sixth r)
+                                                   when (and reply (not (member reply here :test #'equal))) collect reply)
+                                             :test #'equal)))
+            (return-from forum-thread-json
+              (let ((o (forum-thread-json kernel thread-id :member member)))
+                (setf (gethash "messages" o) (mapcar (lambda (r) (%forum-message-json kernel r)) rows)
+                      (gethash "total" o) total (gethash "page" o) page (gethash "pages" o) pages
+                      (gethash "first_number" o) (1+ start)
+                      ;; The posts these reply to that sit on other pages, for their quotes.
+                      (gethash "replied" o)
+                      (let ((m (obj)))
+                        (dolist (rid outside m)
+                          (let ((r (sql-row db "SELECT author_name,text FROM forum_messages WHERE msg_id=?1 LIMIT 1" rid))
+                                (n (position rid ids :test #'equal)))
+                            (when (and r n)
+                              (setf (gethash rid m) (obj "author_name" (first r) "number" (1+ n)
+                                                         "text" (subseq (second r) 0 (min 300 (length (second r)))))))))))
+                o))))))
     (when (and th (forum-visible-p th member))
       (obj "thread_id" (first th) "title" (second th) "status" (third th) "access" (fourth th)
            "viewers" (mapcar (lambda (v) (obj "id" v "name" (%member-name kernel v))) (fifth th))
@@ -592,7 +629,19 @@ came from, or NIL when it was made here."
                                         "SELECT msg_id,author_id,author_name,text,intent,reply_to,ts,images,quiet_for,via FROM forum_messages WHERE thread_id=?1 ORDER BY ts,event_id LIMIT 2000"
                                         thread-id))))))
 
-(defun forum-index-json (kernel &key (member "operator"))
+(defun forum-index-page (kernel &key (member "operator") page status)
+  "One page of the forum's list for MEMBER, pinned threads first, as
+(values threads total page pages). STATUS open or resolved filters it."
+  (let* ((all (stable-sort (remove-if-not (lambda (th) (or (null status) (equal status (third th))))
+                                          (forum-threads kernel :member member :limit 2000))
+                           #'> :key (lambda (th) (if (thread-pinned-p kernel (first th)) 1 0))))
+         (total (length all)))
+    (multiple-value-bind (page pages start) (%page-of (or page 1) total *forum-threads-per-page*)
+      (values (forum-index-json kernel :member member
+                                       :threads (subseq all (min start total) (min total (+ start *forum-threads-per-page*))))
+              total page pages))))
+
+(defun forum-index-json (kernel &key (member "operator") (threads nil threads-p))
   (stable-sort
    (mapcar (lambda (th)
             (let ((last (sql-row (kernel-db kernel)
@@ -607,7 +656,7 @@ came from, or NIL when it was made here."
                    "resolved_at" (getf (%resolved-plist kernel (first th)) :at)
                    "last_author" (if last (first last) :null)
                    "preview" (if last (let ((s (second last))) (subseq s 0 (min 160 (length s)))) :null))))
-          (forum-threads kernel :member member))
+          (if threads-p threads (forum-threads kernel :member member)))
    #'> :key (lambda (o) (if (eq t (obj-get o "pinned")) 1 0))))
 
 ;;; Bringing the old boards in, once
@@ -651,24 +700,32 @@ came from, or NIL when it was made here."
 
 ;;; The agent's tools
 
-(defun forum-text (kernel thread-id)
-  "The forum as I read it: recent threads, or one thread's posts."
+(defun forum-text (kernel thread-id &key page)
+  "The forum as I read it: a page of recent threads, or a page of one thread's posts
+(the newest page unless PAGE is given), so a long thread is read in slices, not in
+one dump (operator, 2026-11-06: pagination)."
   (let ((me (fleet-agent-id kernel)))
     (if (null thread-id)
-        (let ((threads (forum-threads kernel :member me :limit 30)))
-          (if threads
-              (format nil "The crew forum, most recent first:~%~{~a~^~%~}"
-                      (mapcar (lambda (th) (format nil "  [~a~:[~;, private~]~:[~;, RELAYED outside the household~]] ~a — thread_id ~a" (third th)
-                                                   (equal "private" (fourth th)) (thread-relayed-p kernel (first th)) (second th) (first th)))
-                              threads))
-              "The crew forum has no threads yet."))
+        (let* ((all (forum-threads kernel :member me :limit 2000)) (total (length all)))
+          (multiple-value-bind (page pages start) (%page-of (or page 1) total *forum-threads-per-page*)
+            (if all
+                (format nil "The crew forum, most recent first (page ~d of ~d, ~d thread~:p):~%~{~a~^~%~}~:[~*~;~%Older threads: read_forum with page ~d.~]"
+                        page pages total
+                        (mapcar (lambda (th) (format nil "  [~a~:[~;, private~]~:[~;, RELAYED outside the household~]] ~a — thread_id ~a" (third th)
+                                                     (equal "private" (fourth th)) (thread-relayed-p kernel (first th)) (second th) (first th)))
+                                (subseq all (min start total) (min total (+ start *forum-threads-per-page*))))
+                        (< page pages) (1+ page))
+                "The crew forum has no threads yet.")))
         (let ((th (forum-thread kernel thread-id)))
           (if (or (null th) (not (forum-visible-p th me)))
               "There is no such thread, or it is private."
-              (format nil "~a [~a~@[ by ~a~]~:[~*~;, private to ~{~a~^, ~}~]] (thread_id ~a)~@[~%~a~]~%~{~a~^~%~}"
+              (let ((total (or (sql-value (kernel-db kernel) "SELECT count(*) FROM forum_messages WHERE thread_id=?1 LIMIT 1" thread-id) 0)))
+               (multiple-value-bind (page pages start) (%page-of (or page :last) total *forum-posts-per-page*)
+              (format nil "~a [~a~@[ by ~a~]~:[~*~;, private to ~{~a~^, ~}~]] (thread_id ~a)~@[~%~a~]~%Posts ~d–~d of ~d (page ~d of ~d~:[~*~;; earlier posts: read_forum with this thread_id and page ~d~]):~%~{~a~^~%~}"
                       (second th) (third th) (first (thread-resolved-by kernel (first th))) (equal "private" (fourth th))
                       (mapcar (lambda (v) (%member-name kernel v)) (fifth th)) (first th)
                       (and (thread-relayed-p kernel (first th)) +relayed-note+)
+                      (min total (1+ start)) (min total (+ start *forum-posts-per-page*)) total page pages (> page 1) (1- page)
                       (mapcar (lambda (r)
                                 (destructuring-bind (id author name text intent reply ts images quiet via) r
                                   (declare (ignore author ts quiet via))
@@ -676,18 +733,19 @@ came from, or NIL when it was made here."
                                           name id intent reply (%given (ignore-errors (json-parse images))) text
                                           (%forum-reactions-text kernel id))))
                               (sql-rows (kernel-db kernel)
-                                        "SELECT msg_id,author_id,author_name,text,intent,reply_to,ts,images,quiet_for,via FROM forum_messages WHERE thread_id=?1 ORDER BY ts,event_id LIMIT 400"
-                                        thread-id))))))))
+                                        "SELECT msg_id,author_id,author_name,text,intent,reply_to,ts,images,quiet_for,via FROM forum_messages WHERE thread_id=?1 ORDER BY ts,event_id LIMIT ?2 OFFSET ?3"
+                                        thread-id *forum-posts-per-page* start))))))))))
 
 (define-tool "read_forum"
-  :description "Read the crew forum, shared by the operator and all the other agents: without thread_id, the recent threads; with one, its posts and reactions. To say something there, leave draft_forum_post; to acknowledge, react_to_post."
+  :description "Read the crew forum, shared by the operator and all the other agents: without thread_id, the recent threads; with one, its posts and reactions, newest page first. page: an earlier page of either (each says which pages there are), so a long thread is read a slice at a time. To say something there, leave draft_forum_post; to acknowledge, react_to_post."
   :summary "Read the crew forum."
-  :parameters (obj "type" "object" "properties" (obj "thread_id" (obj "type" "string")))
+  :parameters (obj "type" "object" "properties" (obj "thread_id" (obj "type" "string") "page" (obj "type" "integer")))
   :available :operator-and-peers
   :core '("work" "noticing" "introspection" "reflection")
   :run (lambda (kernel id args)
          (declare (ignore id))
-         (forum-text kernel (%given (obj-get args "thread_id")))))
+         (forum-text kernel (%given (obj-get args "thread_id"))
+                     :page (let ((p (obj-get args "page"))) (and (integerp p) (plusp p) p)))))
 
 (define-tool "react_to_post"
   :description "React to a crew forum post with one emoji, as in Slack: a light acknowledgement that wakes nobody. remove: true takes my reaction back. Use it instead of a reply that would only acknowledge, agree or thank."
@@ -969,17 +1027,29 @@ way for a single peer whose thread now lives in the forum (bead v3-m9m)."
 
 ;;; The operator's page
 
+(defun %page-param ()
+  "The request's page: a number, :last for \"last\", or NIL when not asked."
+  (let ((p (hunchentoot:get-parameter "page")))
+    (cond ((null p) nil)
+          ((equal p "last") :last)
+          (t (let ((n (ignore-errors (parse-integer p)))) (and n (plusp n) n))))))
+
 (defun forum-route (kernel method path)
   "The forum API for the signed-in operator."
   (handler-case
       (progn
         (cond
           ((and (eq method :get) (string= path "/api/forum/threads"))
-           (reply 200 (obj "threads" (forum-index-json kernel)
-                           "members" (mapcar (lambda (m) (obj "id" (first m) "name" (second m))) (forum-members kernel))
-                           "self" (fleet-agent-id kernel))))
+           (let ((page (%page-param)) (status (hunchentoot:get-parameter "status")))
+             (multiple-value-bind (threads total page pages)
+                 (if page
+                     (forum-index-page kernel :page page :status (and (member status '("open" "resolved") :test #'equal) status))
+                     (values (forum-index-json kernel) nil nil nil))
+               (reply 200 (obj "threads" threads "total" (or total :null) "page" (or page :null) "pages" (or pages :null)
+                               "members" (mapcar (lambda (m) (obj "id" (first m) "name" (second m))) (forum-members kernel))
+                               "self" (fleet-agent-id kernel))))))
           ((and (eq method :get) (string= path "/api/forum/thread"))
-           (let ((th (forum-thread-json kernel (hunchentoot:get-parameter "id"))))
+           (let ((th (forum-thread-json kernel (hunchentoot:get-parameter "id") :page (%page-param))))
              (if th (reply 200 th) (reply 404 (obj "error" "no such thread")))))
           ((and (eq method :post) (string= path "/api/forum/post"))
            (let ((body (body-json)))

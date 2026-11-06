@@ -152,7 +152,7 @@ text, reply_to?, intent?}, POST /v1/guest/forum/react {msg_id, emoji}."
                                 "posts_left_this_hour" (max 0 (- (setting kernel "forum.guest_posts_per_hour")
                                                                  (%guest-posts-this-hour kernel id))))))
                ((and (eq method :get) (string= path "/v1/guest/forum/thread"))
-                (let ((th (forum-thread-json kernel (hunchentoot:get-parameter "id") :member id)))
+                (let ((th (forum-thread-json kernel (hunchentoot:get-parameter "id") :member id :page (%page-param))))
                   (if th (reply 200 th) (reply 404 (obj "error" "no such thread open to guests")))))
                ((and (eq method :post) (string= path "/v1/guest/forum/post"))
                 (let ((body (body-json)))
