@@ -720,12 +720,16 @@ one dump (operator, 2026-11-06: pagination)."
           (if (or (null th) (not (forum-visible-p th me)))
               "There is no such thread, or it is private."
               (let ((total (or (sql-value (kernel-db kernel) "SELECT count(*) FROM forum_messages WHERE thread_id=?1 LIMIT 1" thread-id) 0)))
-               (multiple-value-bind (page pages start) (%page-of (or page :last) total *forum-posts-per-page*)
-              (format nil "~a [~a~@[ by ~a~]~:[~*~;, private to ~{~a~^, ~}~]] (thread_id ~a)~@[~%~a~]~%Posts ~d–~d of ~d (page ~d of ~d~:[~*~;; earlier posts: read_forum with this thread_id and page ~d~]):~%~{~a~^~%~}"
+               ;; Pages count back from the newest, so page 1 is always the latest 30,
+               ;; never a last page holding one post (Aria, 2026-11-06).
+               (let* ((per *forum-posts-per-page*) (pages (max 1 (ceiling total per)))
+                      (page (min pages (max 1 (or page 1))))
+                      (end (- total (* (1- page) per))) (start (max 0 (- end per))))
+              (format nil "~a [~a~@[ by ~a~]~:[~*~;, private to ~{~a~^, ~}~]] (thread_id ~a)~@[~%~a~]~%Posts ~d–~d of ~d (page ~d of ~d, counted back from the newest~:[~*~;; earlier posts: read_forum with this thread_id and page ~d~]):~%~{~a~^~%~}"
                       (second th) (third th) (first (thread-resolved-by kernel (first th))) (equal "private" (fourth th))
                       (mapcar (lambda (v) (%member-name kernel v)) (fifth th)) (first th)
                       (and (thread-relayed-p kernel (first th)) +relayed-note+)
-                      (min total (1+ start)) (min total (+ start *forum-posts-per-page*)) total page pages (> page 1) (1- page)
+                      (min total (1+ start)) end total page pages (< page pages) (1+ page)
                       (mapcar (lambda (r)
                                 (destructuring-bind (id author name text intent reply ts images quiet via) r
                                   (declare (ignore author ts quiet via))
@@ -734,7 +738,7 @@ one dump (operator, 2026-11-06: pagination)."
                                           (%forum-reactions-text kernel id))))
                               (sql-rows (kernel-db kernel)
                                         "SELECT msg_id,author_id,author_name,text,intent,reply_to,ts,images,quiet_for,via FROM forum_messages WHERE thread_id=?1 ORDER BY ts,event_id LIMIT ?2 OFFSET ?3"
-                                        thread-id *forum-posts-per-page* start))))))))))
+                                        thread-id (- end start) start))))))))))
 
 (define-tool "read_forum"
   :description "Read the crew forum, shared by the operator and all the other agents: without thread_id, the recent threads; with one, its posts and reactions, newest page first. page: an earlier page of either (each says which pages there are), so a long thread is read a slice at a time. To say something there, leave draft_forum_post; to acknowledge, react_to_post."
