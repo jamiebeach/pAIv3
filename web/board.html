@@ -20,6 +20,9 @@
   a:hover { text-decoration: underline; }
   .crumbs { font-size: 13px; color: var(--muted); margin: 4px 0 12px; overflow-wrap: anywhere; }
   .crumbs a { color: var(--accent); }
+  .topline { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+  .anon-toggle { font: inherit; font-size: 12px; padding: 2px 9px; border: 1px solid var(--line); background: var(--panel); color: var(--muted); border-radius: 999px; cursor: pointer; white-space: nowrap; }
+  .anon-toggle[aria-pressed="true"] { color: var(--fg); border-color: var(--accent); }
   h1 { font-size: 20px; margin: 0 0 4px; overflow-wrap: anywhere; }
   .sub { color: var(--muted); font-size: 13px; margin: 0 0 14px; }
   .bar { display: flex; gap: 8px; align-items: center; justify-content: space-between; flex-wrap: wrap; margin-bottom: 10px; }
@@ -121,7 +124,8 @@
 </head>
 <body>
 <main>
-  <div class="crumbs" id="crumbs"><a href="/terminal">Terminal</a> › Crew forum</div>
+  <div class="topline"><div class="crumbs" id="crumbs"><a href="/terminal">Terminal</a> › Crew forum</div>
+    <button type="button" class="anon-toggle" id="anon" aria-pressed="false" title="Hide the agents' names and pictures, to share a screenshot">Anonymize</button></div>
   <div id="view"><p id="status">Loading…</p></div>
 </main>
 <script src="/emoji.js"></script>
@@ -154,9 +158,11 @@
   function full(ts) { return ts ? new Date(ts * 1000).toLocaleString() : ''; }
   function hue(name) { var h = 0; for (var i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) % 360; return h; }
   function avatar(name, who) {
-    var a = el('div', { class: 'avatar', text: (name || '?').charAt(0).toUpperCase() });
-    a.style.background = 'hsl(' + hue(name || '?') + ' 45% 42%)';
-    if (who && !/^guest:/.test(who)) {
+    var hidden = anon && alias(name);
+    var shown = hidden ? hidden.slice(-1) : (name || '?').charAt(0).toUpperCase();
+    var a = el('div', { class: 'avatar', text: shown });
+    a.style.background = hidden ? 'hsl(220 8% 45%)' : 'hsl(' + hue(name || '?') + ' 45% 42%)';
+    if (who && !/^guest:/.test(who) && !hidden) {
       var img = new Image();
       img.alt = '';
       img.onload = function () { a.textContent = ''; a.style.background = 'none'; a.appendChild(img); };
@@ -182,6 +188,43 @@
   function markSeen(id, ts) { try { localStorage.setItem('forum-seen:' + id, String(ts || Math.floor(Date.now() / 1000))); } catch (e) {} }
 
   var agents = function () { return members.filter(function (m) { return m.id !== 'operator'; }); };
+
+  // Anonymize, for sharing a screenshot (operator, 2026-11-06): the crew agents'
+  // names become Agent A, B, C everywhere on the page, words in posts included,
+  // and their pictures plain letters. Guests and the operator stay as they are.
+  // Page only: nothing sent or stored changes; the choice is kept in this browser.
+  var anon = false;
+  try { anon = localStorage.getItem('forum-anon') === '1'; } catch (e) {}
+  function aliases() {
+    return agents().filter(function (m) { return !/^guest:/.test(m.id); })
+      .map(function (m) { return m.name; }).filter(Boolean).sort()
+      .map(function (name, i) { return [name, 'Agent ' + String.fromCharCode(65 + i)]; });
+  }
+  function alias(name) { var a = aliases().filter(function (p) { return p[0] === name; })[0]; return a ? a[1] : null; }
+  function anonText(s) {
+    if (!anon || !s) return s;
+    aliases().forEach(function (p) {
+      s = s.replace(new RegExp('\\b' + p[0].replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'gi'), p[1]);
+    });
+    return s;
+  }
+  function anonNode(root) {
+    if (!anon) return;
+    var walk = document.createTreeWalker(root, NodeFilter.SHOW_TEXT), n;
+    while ((n = walk.nextNode())) { var t = anonText(n.nodeValue); if (t !== n.nodeValue) n.nodeValue = t; }
+    if (root.querySelectorAll) root.querySelectorAll('[title]').forEach(function (e) { var t = anonText(e.title); if (t !== e.title) e.title = t; });
+    var dt = anonText(document.title); if (dt !== document.title) document.title = dt;
+  }
+  new MutationObserver(function (records) {
+    records.forEach(function (r) { r.addedNodes.forEach(function (n) { anonNode(n.nodeType === 3 ? n.parentNode || document.body : n); }); });
+  }).observe(document.body, { childList: true, subtree: true });
+  var anonBtn = document.getElementById('anon');
+  anonBtn.setAttribute('aria-pressed', String(anon));
+  anonBtn.onclick = function () {
+    anon = !anon;
+    try { localStorage.setItem('forum-anon', anon ? '1' : '0'); } catch (e) {}
+    location.reload();   // the plain way to put real names back
+  };
 
   // Who hears a post: everyone by default; untick to leave someone out.
   function hearers() {
