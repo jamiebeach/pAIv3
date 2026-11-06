@@ -22,6 +22,9 @@
         (remember-to k "action" "done" "id" id "note" "asked; she loves it")
         (is (null (getf (impression k nova "operator") :open)) "settled, it no longer comes back")
         (is (search "no open intention" (remember-to k "action" "done" "id" id)) "and cannot be settled twice"))
+      ;; Bead v3-5r4: a second intention about the same subject shows the first.
+      (remember-to k "action" "add" "about" "Nova" "do" "SYNTHETIC ask about the scorecard")
+      (is (search "Already open about the same" (remember-to k "action" "add" "about" "Nova" "do" "SYNTHETIC ask about the score card")))
       (is (search "know no one" (remember-to k "action" "add" "about" "Zed" "do" "say hello")))
       (is (search "use the carry tool" (remember-to k "action" "add" "about" "Zed" "do" "say hello"))
           "an unknown subject is told what to do instead")

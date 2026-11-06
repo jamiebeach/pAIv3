@@ -104,9 +104,16 @@ to anyone or anything, such as a wish, a plan or a deadline of the operator's, u
          (handler-case
              (let ((action (obj-get args "action")))
                (cond ((equal action "add")
-                      (format nil "I will remember: ~a (~a)." (obj-get args "do")
-                              (form-intention kernel (obj-get args "about") (obj-get args "do")
-                                              :until (obj-get args "until") :thought-id thought-id)))
+                      (let* ((id (form-intention kernel (obj-get args "about") (obj-get args "do")
+                                                 :until (obj-get args "until") :thought-id thought-id))
+                             (anchor (second (find id (open-intentions kernel) :key #'first :test #'equal)))
+                             ;; What was already open about the same subject, so a near
+                             ;; repeat is seen as one and can be dropped (bead v3-5r4).
+                             (others (remove-if-not (lambda (r) (and (equal (second r) anchor) (not (equal (first r) id))))
+                                                    (open-intentions kernel))))
+                        (format nil "I will remember: ~a (~a).~@[ Already open about the same: ~{~a~^; ~}. If one says the same, drop the new one.~]"
+                                (obj-get args "do") id
+                                (mapcar (lambda (r) (format nil "~a: ~a" (first r) (fourth r))) others))))
                      ((member action '("done" "drop") :test #'equal)
                       (settle-intention kernel (obj-get args "id") (if (equal action "done") "done" "dropped")
                                         (obj-get args "note"))

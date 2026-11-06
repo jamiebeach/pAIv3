@@ -74,6 +74,11 @@
       (is (null (pai-v3.api::forum-react b msg "👍" (pai-v3.api::fleet-agent-id b) "Alpha")) "a toggle takes it back")
       (is (= 1 (obj-get (first (obj-get (first (obj-get (pai-v3.api::forum-thread-json a thread) "messages")) "reactions")) "count")))
       (is (= before (length (woken a))) "no reaction woke anyone")
+      ;; Bead v3-5r4: a repeated reaction says nothing changed rather than "Reacted".
+      (let ((react (lambda (&rest args) (funcall (pai-v3.mind::tool-run (gethash "react_to_post" *tools*)) b nil (apply #'obj "msg_id" msg args)))))
+        (is (equal "Reacted." (funcall react "emoji" "🎉")))
+        (is (search "already reacted" (funcall react "emoji" "🎉")))
+        (is (search "no such reaction" (funcall react "emoji" "🙏" "remove" t))))
       (pai-v3.api::forum-set-thread b thread (pai-v3.api::fleet-agent-id b) "Alpha" :status "resolved")
       (is (equal "resolved" (obj-get (pai-v3.api::forum-thread-json a thread) "status")) "any crew member may resolve it"))))
 

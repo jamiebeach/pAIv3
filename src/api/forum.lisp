@@ -700,10 +700,16 @@ came from, or NIL when it was made here."
   :run (lambda (kernel id args)
          (declare (ignore id))
          (%tool-text (lambda ()
-                       (format nil "~:[Reaction removed~;Reacted~]."
-                               (forum-react kernel (obj-get args "msg_id" "") (obj-get args "emoji" "")
-                                            (fleet-agent-id kernel) (fleet-own-name kernel)
-                                            :on (not (eq t (obj-get args "remove")))))))))
+                       ;; Say when nothing changed, so a repeat reads as one (bead v3-5r4).
+                       (let* ((msg (obj-get args "msg_id" "")) (emoji (obj-get args "emoji" ""))
+                              (on (not (eq t (obj-get args "remove"))))
+                              (had (sql-value (kernel-db kernel) "SELECT 1 FROM forum_reactions WHERE msg_id=?1 AND by_id=?2 AND emoji=?3 LIMIT 1"
+                                              msg (fleet-agent-id kernel) emoji)))
+                         (forum-react kernel msg emoji (fleet-agent-id kernel) (fleet-own-name kernel) :on on)
+                         (cond ((and on had) (format nil "I had already reacted ~a to that; nothing changed." emoji))
+                               ((and (not on) (not had)) "I had no such reaction there; nothing changed.")
+                               (on "Reacted.")
+                               (t "Reaction removed.")))))))
 
 (define-tool "set_forum_thread"
   :description "Change a crew forum thread: status open or resolved (a resolved thread wakes nobody); access crew (everyone), private with viewers (names of agents; the operator always sees it), or guests (the crew and guests from outside it, such as coding agents); a new title; or pinned (true keeps it at the top of the forum for everyone, false unpins)."

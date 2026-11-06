@@ -136,12 +136,20 @@
                    (values id nil)))))
     (error (e) (values nil (princ-to-string e)))))
 
+;; Why ID is not open, from its row: an item already closed says so and when,
+;; so a close is not taken for news it was not (bead v3-5r4).
+(defun %not-open-why (kernel id)
+  (let ((r (sql-row (kernel-db kernel) "SELECT state,closed_at FROM carried_items WHERE id=?1 LIMIT 1" id)))
+    (if r
+        (format nil "~a is already ~a~@[ (since ~a)~], not open" id (first r) (second r))
+        "nothing open is carried as that")))
+
 (defun %carry-open-p (kernel id)
   (sql-value (kernel-db kernel) "SELECT 1 FROM carried_items WHERE id=?1 AND state=?2 LIMIT 1" id "open"))
 
 (defun carry-revise (kernel id &key what why consider-at due-at condition work-id note)
   (handler-case
-      (cond ((not (%carry-open-p kernel id)) (values nil "nothing open is carried as that"))
+      (cond ((not (%carry-open-p kernel id)) (values nil (%not-open-why kernel id)))
             ((and what (not (%carry-ok what 240))) (values nil "what is up to 240 characters"))
             (t (let ((consider (%carry-time kernel consider-at)))
                  (when (and consider (< (parse-iso8601 consider) (- (now) 60))) (error "~a is already past" consider-at))
@@ -157,13 +165,21 @@
       (progn (append! kernel "carried.revised"
                       (obj "id" id "consider_at" (now-iso8601) "note" (subseq (or note "") 0 (min 600 (length (or note ""))))))
              (values id nil))
-      (values nil "nothing open is carried as that")))
+      (values nil (%not-open-why kernel id))))
 
 (defun carry-close (kernel id state note)
   (cond ((not (member state '("done" "dropped") :test #'equal)) (values nil "state must be \"done\" or \"dropped\""))
-        ((not (%carry-open-p kernel id)) (values nil "nothing open is carried as that"))
+        ((not (%carry-open-p kernel id)) (values nil (%not-open-why kernel id)))
         (t (append! kernel "carried.closed" (obj "id" id "state" state "note" (and note (subseq note 0 (min 600 (length note))))))
            (values id nil))))
+
+;; A success says what the row now holds, read back rather than assumed (bead v3-5r4).
+(defun %carried-now (kernel id verb)
+  (let ((item (and id (carried-item kernel id))))
+    (if item
+        (format nil "~a ~a: now ~a — ~a~@[ (note: ~a)~]" verb id (obj-get item "state") (obj-get item "what")
+                (let ((n (obj-get item "note"))) (and (stringp n) (subseq n 0 (min 160 (length n))))))
+        (format nil "~a ~a." verb id))))
 
 ;;; What a thought sees
 
@@ -239,13 +255,13 @@ then, and may not be now (bead v3-rc0)."
                                                     :consider-at (obj-get args "consider_at") :due-at (obj-get args "due_at")
                                                     :condition (obj-get args "condition") :work-id (obj-get args "work_id")
                                                     :note (obj-get args "note"))
-                  (say id why-not "Updated ~a.")))
+                  (if id (%carried-now kernel id "Updated") (say id why-not ""))))
                ((string= action "consider")
                 (multiple-value-bind (id why-not) (carry-consider-now kernel (or id "") (obj-get args "note"))
                   (say id why-not "~a will be looked at shortly.")))
                ((string= action "close")
                 (multiple-value-bind (id why-not) (carry-close kernel (or id "") (obj-get args "state") (obj-get args "note"))
-                  (say id why-not "Closed ~a.")))
+                  (if id (%carried-now kernel id "Closed") (say id why-not ""))))
                (t (let ((items (carried-items kernel)))
                     (if items
                         (format nil "~{~a~^~%~}"

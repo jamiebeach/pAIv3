@@ -40,9 +40,9 @@
       (is (null (carried-items k)) "closed items leave the list")
       (is (= 1 (length (carried-items k :state "done"))))
       (multiple-value-bind (x why) (carry-close k id "done" nil)
-        (is (null x)) (is (search "nothing open" why)) "closing twice is refused")
+        (is (null x)) (is (search "already" why)) "closing twice is refused")
       (multiple-value-bind (x why) (carry-revise k id :what "Back again")
-        (is (null x)) (is (search "nothing open" why)) "a closed item is not revised"))))
+        (is (null x)) (is (search "not open" why)) "a closed item is not revised"))))
 
 (deftest what-may-be-carried-is-bounded
   (with-carrying (k)
@@ -80,7 +80,9 @@
         (is (search "use action close" said))
         (is (null (search "Updated" said))))
       (is (search "must be" (carry-tool k "operator" "responding" (obj "action" "close" "id" id "state" "finished"))))
-      (is (search "Closed" (carry-tool k "operator" "responding" (obj "action" "close" "id" id "state" "done")))))))
+      (is (search "Closed" (carry-tool k "operator" "responding" (obj "action" "close" "id" id "state" "done"))))
+      ;; Bead v3-5r4: a close says what the row holds, and a second one says it was already closed.
+      (is (search "already done" (carry-tool k "operator" "responding" (obj "action" "close" "id" id "state" "done")))))))
 
 (deftest who-added-an-item-is-recorded
   (with-carrying (k)
