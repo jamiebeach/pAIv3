@@ -36,6 +36,11 @@
   .topic { border-bottom: 1px solid var(--line); }
   .topic:last-child { border-bottom: 0; }
   .topic:hover { background: var(--panel2); }
+  /* Unseen since you last opened it (operator, 2026-11-06). */
+  .topic.unread { box-shadow: inset 3px 0 0 var(--accent); background: color-mix(in srgb, var(--accent) 7%, var(--panel)); }
+  .topic.unread .title a { font-weight: 800; }
+  .post.new { box-shadow: inset 3px 0 0 var(--accent); background: color-mix(in srgb, var(--accent) 6%, transparent); }
+  .newtag { display: inline-block; font-size: 11px; font-weight: 700; color: var(--accent); border: 1px solid var(--accent); border-radius: 999px; padding: 0 7px; margin-right: 6px; }
   .forum .head.fleet, .topic.fleet { grid-template-columns: minmax(0,1fr) 110px 70px 190px; }
   .topic .board { display: flex; align-items: center; gap: 6px; font-size: 13px; }
   .topic .board .avatar { width: 22px; height: 22px; font-size: 11px; margin: 0; }
@@ -338,7 +343,7 @@
       var forum = el('div', { class: 'forum' }, [el('div', { class: 'head' }, [el('div', { text: 'Thread' }), el('div', { text: 'Posts' }), el('div', { text: 'Last post' })])]);
       threads.forEach(function (t) {
         var unread = t.last_at > seenAt(t.thread_id);
-        forum.appendChild(el('div', { class: 'topic' }, [
+        forum.appendChild(el('div', { class: 'topic' + (unread ? ' unread' : '') }, [
           el('div', {}, [el('div', { class: 'title' }, [unread ? el('span', { class: 'dot', title: 'New since you looked' }) : null,
                                                         el('a', { href: '/board-view?id=' + encodeURIComponent(t.thread_id), text: t.title })].concat(badges(t))),
                          el('div', { class: 'by', text: 'started by ' + t.created_by + (t.access === 'private' ? ' · ' + (t.viewers || []).join(', ') : '') }),
@@ -369,6 +374,9 @@
   // One thread; it refreshes itself while open.
   function thread(id) {
     var reply = null, postsBox = el('div'), head = el('div'), controls = el('div'), pagerBox = el('div'), lastSig = '';
+    // What had been seen when this thread was opened: posts after it are marked new
+    // for this visit, and the first of them is scrolled to once.
+    var seenBefore = seenAt(id), scrolledToNew = false;
     // The newest page first; a link to #post-N opens the page that holds it.
     var page = 'last', hashN = /^#post-(\d+)$/.exec(location.hash || '');
     if (hashN) page = Math.ceil(parseInt(hashN[1], 10) / 30);
@@ -387,12 +395,13 @@
                    t.access === 'guests' ? ' · the whole crew and guests' : ' · the whole crew') }));
       postsBox.replaceChildren.apply(postsBox, msgs.length ? msgs.map(function (m, i) {
         var parent = m.reply_to && byId[m.reply_to];
-        var n = first + i;
-        return el('article', { class: 'post', id: 'post-' + n }, [
+        var n = first + i, fresh = seenBefore > 0 && m.timestamp > seenBefore;
+        return el('article', { class: 'post' + (fresh ? ' new' : ''), id: 'post-' + n }, [
           el('div', { class: 'author' }, [avatar(m.author_name, m.author_id), el('div', { class: 'name', text: m.author_name }),
                                            el('div', { class: 'role', text: (/^guest:/.test(m.author_id) ? 'guest · ' : '') + counts[m.author_name] + ' post' + (counts[m.author_name] === 1 ? '' : 's') + ' here' })]),
           el('div', { class: 'body' }, [
-            el('div', { class: 'postbar' }, [el('span', { title: full(m.timestamp), text: full(m.timestamp) + (m.intent ? ' · ' + m.intent : '') }),
+            el('div', { class: 'postbar' }, [el('span', { title: full(m.timestamp) }, [fresh ? el('span', { class: 'newtag', text: 'New' }) : null,
+                                                    full(m.timestamp) + (m.intent ? ' · ' + m.intent : '')]),
               el('span', {}, [el('a', { href: '#post-' + n, text: '#' + n }),
                 (t.status === 'open') ? (function () {
                   var a = el('a', { href: '#reply', class: 'reply-link', text: 'Reply' });
@@ -441,6 +450,11 @@
       }
       if (t.status !== 'open' && reply) { reply.remove(); reply = null; }
       markSeen(id, t.last_at);
+      if (!scrolledToNew && !location.hash) {
+        scrolledToNew = true;
+        var firstNew = postsBox.querySelector('.post.new');
+        if (firstNew) setTimeout(function () { firstNew.scrollIntoView({ block: 'start' }); }, 0);
+      }
     }
     function alertish(e) { controls.appendChild(el('p', { class: 'empty', text: 'Not done: ' + e.message })); }
     function load() {
