@@ -609,10 +609,25 @@ localhost), the URL to send it to; passkeys only work at the agent's origin."
                                                (string-downcase text)))
           :test #'string=))
 
+(defun %letters-apart (a b)
+  "Edit distance between words A and B, enough to tell a letter apart."
+  (let ((row (loop for i to (length b) collect i)))
+    (loop for ca across a for i from 1
+          do (let ((next (list i)))
+               (loop for cb across b for (diag up) on row
+                     do (push (min (1+ up) (1+ (first next)) (+ diag (if (char= ca cb) 0 1))) next))
+               (setf row (nreverse next))))
+    (car (last row))))
+
 (defun voice-turns-alike-p (a b seconds)
   "True when spoken turn B, SECONDS after A, is A again."
   (let ((wa (%spoken-words a)) (wb (%spoken-words b)))
     (or (and (equal wa wb) (<= seconds *voice-repeat-seconds*))
+        ;; A short turn re-recognised a letter apart ("Yup" then "Yep", one
+        ;; second later) is the same turn too (bead v3-z1m).
+        (and (<= seconds *voice-repeat-seconds*) wa (= (length wa) (length wb))
+             (< (length wa) *voice-similar-min-words*)
+             (every (lambda (x y) (<= (%letters-apart x y) 1)) wa wb))
         (and (>= (min (length wa) (length wb)) *voice-similar-min-words*)
              (<= seconds *voice-similar-seconds*)
              (>= (/ (length (intersection wa wb :test #'string=)) (max (length wa) (length wb)))
@@ -911,7 +926,7 @@ localhost), the URL to send it to; passkeys only work at the agent's origin."
                                ((char= #\/ (char text 0))
                                 (broadcast agent "command" (obj "text" text "reply" (terminal-command k text (session-token))))
                                 (reply 200 (obj "ok" t "command" text)))
-                               ((and (equal "voice" (obj-get b "mode")) (%repeated-voice-send agent text))
+                               ((and (equal "voice" (obj-get b "mode")) (null (obj-get b "images")) (%repeated-voice-send agent text))
                                 (reply 200 (obj "ok" t "duplicate" t "receipt" (%repeated-voice-send agent text))))
                                (t
                                 (let* ((images (handler-case
@@ -934,7 +949,8 @@ localhost), the URL to send it to; passkeys only work at the agent's origin."
                                                                             origin)))
                                        (thought (request-thought k "responding" "The operator spoke."
                                                                  :channel "web" :source-event-id (event-id turn))))
-                                  (when (equal "voice" (obj-get b "mode"))
+                                  ;; A turn with pictures is its own turn whatever it says (bead v3-z1m).
+                                  (when (and (equal "voice" (obj-get b "mode")) (null images))
                                     (%note-voice-send agent text (obj "turn_id" (event-id turn) "thought_id" thought)))
                                   (reply 200 (obj "ok" t "receipt" (obj "turn_id" (event-id turn) "thought_id" thought)))))))))))
         t))

@@ -126,6 +126,10 @@
                                              "Yeah didn't we fix that or didn't Claude fix it" 40)
             "and so is the same turn handed back 40 s later")
         (is (not (pai-v3.api::voice-turns-alike-p "Yes" "Yes" 30)) "a short answer said again is a new turn")
+        ;; Bead v3-z1m: re-recognised a letter apart, a second later.
+        (is (pai-v3.api::voice-turns-alike-p "Yup" "Yep" 1) "a short turn a letter apart is the same turn")
+        (is (not (pai-v3.api::voice-turns-alike-p "Yes" "No" 1)) "different short answers are not")
+        (is (not (pai-v3.api::voice-turns-alike-p "Yup" "Yep" 30)) "nor a letter apart said again later")
         (is (not (pai-v3.api::voice-turns-alike-p "Pick up the wood after school today"
                                                   "Then we start the sauna roof tomorrow" 5))
             "different words are a different turn")
