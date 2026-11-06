@@ -296,7 +296,7 @@ assistant message; a long tool result shows its first part and how to page."
                       (push (obj "id" call-id "type" "function"
                                  "function" (obj "name" tool "arguments" arguments))
                             calls))
-                     ((string= kind "nudge")
+                     ((member kind '("nudge" "said_note") :test #'string=)
                       (flush)
                       (push (obj "role" "user" "content" step-text) messages))
                      ((string= kind "step_note")
@@ -359,6 +359,25 @@ make the re-read never stick, and the agent read it again (bead v3-qwh)."
 
 (defstruct mind kernel thought work)
 
+;; What this thought has already said aloud, so it is never said twice
+;; (operator, 2026-11-06: a greeting said with a wave, then written again).
+;; Kept as its steps, since each bounce of a thought is a new MIND.
+(defun mind-said (mind)
+  (let ((said '()))
+    (loop for (part text) in (sql-rows (kernel-db (mind-kernel mind))
+                                       "SELECT part,text FROM thought_steps WHERE thought_id=?1 AND kind=?2 ORDER BY event_id LIMIT 200"
+                                       (getf (mind-thought mind) :id) "said")
+          do (if (or (zerop part) (null said)) (push text said) (setf (first said) (concatenate 'string (first said) text))))
+    said))
+
+(defun %said-already-p (mind text)
+  "Whether TEXT is empty or what MIND has already said."
+  (let ((norm (lambda (s) (string-downcase (string-trim '(#\Space #\Newline #\Tab) (or s ""))))))
+    (or (zerop (length (funcall norm text)))
+        (member (funcall norm text) (mind-said mind) :key norm :test #'string=)
+        ;; The word the already-said note offers for "nothing more to say".
+        (and (mind-said mind) (string= (string-trim ".!" (funcall norm text)) "done")))))
+
 (defvar *fast-path-hook* nil
   "(lambda (mind)) or NIL: answers a trivial turn without a model call and
 returns true, or returns NIL to let the thought go on (fastpath.lisp).")
@@ -373,7 +392,16 @@ returns true, or returns NIL to let the thought go on (fastpath.lisp).")
         ((and *fast-path-hook* (ignore-errors (funcall *fast-path-hook* mind))) nil)
         (t (let ((reply (consult mind (%with-low-allowance-note mind messages))))
              (cond ((obj-get reply "tool_calls")
-                    (recur mind (append messages (list reply) (act mind reply))))
+                    (let ((said (and (mind-said mind) (stringp (obj-get reply "content"))
+                                     (plusp (length (obj-get reply "content")))
+                                     (%said-already-p mind (obj-get reply "content")))))
+                      (let ((results (act mind reply)))
+                        ;; The words written with the calls were said aloud already; recorded,
+                        ;; so the note survives a replay, but not as a nudge, which would stop
+                        ;; the reply check.
+                        (when said (%record-text (mind-kernel mind) (getf (mind-thought mind) :id) "said_note" +already-said-note+))
+                        (recur mind (append messages (list reply) results
+                                            (and said (list (obj "role" "user" "content" +already-said-note+))))))))
                    (t (let ((problem (%reply-problem mind reply)))
                         (if (null problem)
                             (answer mind reply)
@@ -415,6 +443,9 @@ returns true, or returns NIL to let the thought go on (fastpath.lisp).")
 (defparameter *announce-most-chars* 600 "Longer replies are taken to deliver something.")
 (defparameter *grounding-most-chars* 3000 "How much of a reply the grounding question reads.")
 (defparameter *grounding-hours* 6 "How far back what the operator said is evidence.")
+
+(defparameter +already-said-note+
+  "The words you wrote alongside those tool calls have already been said to them. Do not say them again: if you have nothing new to add, reply with only the word DONE.")
 
 (defparameter +announce-nudge+
   "You said what you were about to do, but made no tool call and did not do it, so it has not been done. Do it now, in this thought: call the tools it needs, or write the thing itself. If it cannot be done now, say so plainly and say when it will be.")
@@ -705,9 +736,12 @@ trampoline rebuilds them on the next bounce; recurring is re-queuing."
     (%activity thought "reply-ready")
     (when (getf thought :communicating)
       (funcall *communication-answer* kernel thought text))
-    (when (direct-reply-p thought)
+    ;; Words already said with a tool call are not said again as the answer.
+    (when (and (direct-reply-p thought) (not (and (mind-said mind) (%said-already-p mind text))))
       (deliver-reply kernel :channel (getf thought :channel) :audience (getf thought :audience)
                             :text text :in-reply-to (getf thought :id)))
+    (when (and (mind-said mind) (%said-already-p mind text))
+      (setf text (first (mind-said mind))))
     (conclude kernel thought "thought.ended"
               (obj "outcome" (if (direct-reply-p thought) "replied" "concluded")
                    "summary" (subseq text 0 (min 500 (length text))))
@@ -858,9 +892,11 @@ TOOLS NIL asks for an answer with no tools offered."
     (%record-text kernel id "model" text)
     ;; Words alongside tool calls are said now, as Claude Code does between
     ;; steps: a plan before starting, status along the way.
-    (when (and calls streaming (plusp (length (string-trim '(#\Space #\Newline #\Tab) text))))
+    (when (and calls streaming (plusp (length (string-trim '(#\Space #\Newline #\Tab) text)))
+               (not (%said-already-p mind text)))
       (deliver-reply kernel :channel (getf thought :channel) :audience (getf thought :audience)
-                            :text text :in-reply-to id :interim t))
+                            :text text :in-reply-to id :interim t)
+      (%record-text kernel id "said" text))
     (if calls
         (let ((reply (obj "role" "assistant" "content" (if (plusp (length text)) text :null) "tool_calls" calls)))
           (when (> asked most) (setf (gethash "asked_calls" reply) asked))

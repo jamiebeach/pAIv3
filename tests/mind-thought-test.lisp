@@ -502,6 +502,27 @@
                                                         "answers" (obj "reply" (obj "type" "score" "score" level "probabilities" p))
                                                         "usage" (obj "input_tokens" 10 "output_tokens" 1 "cost" 0.000001)))))))))
 
+(deftest words-said-with-a-step-are-never-said-again
+  ;; Operator, 2026-11-06: a greeting said with a wave was written again as the
+  ;; answer, and the operator heard it twice.
+  (with-thinking (k)
+    (let* ((*script* (list (obj "content" "Good morning! SYNTHETIC." "tool_calls" (list (call "c" "clock")))
+                           (obj "content" "Good morning! SYNTHETIC.")))
+           (id (operator-turn k "Hey")))
+      (run-until-idle k)
+      (is (equal "ended" (getf (thought-row k id) :status)))
+      (is (= 1 (count-if (lambda (r) (search "Good morning! SYNTHETIC." r)) (replies k))) "said once")
+      (is (search "already been said" (obj-get (car (last (first *seen-messages*))) "content"))
+          "and the model is told its words were said")))
+  (with-thinking (k)
+    (let* ((*script* (list (obj "content" "Good morning! SYNTHETIC." "tool_calls" (list (call "c" "clock")))
+                           (obj "content" "DONE")))
+           (id (operator-turn k "Hey")))
+      (run-until-idle k)
+      (is (equal "ended" (getf (thought-row k id) :status)) "DONE after it ends the thought")
+      (is (= 1 (length (replies k))) (format nil "with nothing more said; got ~s" (replies k)))
+      (is (null (find-if (lambda (r) (search "DONE" r)) (replies k))) "and DONE is never said"))))
+
 (deftest a-reply-that-only-announces-goes-on-once-and-does-it
   ;; Operator report 2026-10-31: "On it, writing chapter two now", and nothing written.
   (with-thinking (k)
