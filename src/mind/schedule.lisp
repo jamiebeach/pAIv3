@@ -70,6 +70,22 @@
 
 ;;; Time
 
+;; How old something I wrote about myself is, said so it cannot be missed: an
+;; age, the date to check it by, and a word worked out from the age, never
+;; chosen by the writer (bead v3-5un; the crew's shape, 2026-11-06).
+(defun written-ago (kernel iso)
+  "\"written 9 days ago (Tue Oct 27) — old\" for ISO8601 time ISO; NIL when ISO is not a time."
+  (let ((at (ignore-errors (local-time:timestamp-to-universal (local-time:parse-timestring iso)))))
+    (when at
+      ;; Whole days only, so the line changes once a day, not with every
+      ;; thought, and the prompt stays cache-stable.
+      (let ((days (floor (max 0 (- (now) at)) 86400)))
+        (format nil "written ~a (~a) — ~a"
+                (case days (0 "today") (1 "yesterday") (t (format nil "~d days ago" days)))
+                (local-time:format-timestring nil (local-time:universal-to-timestamp at)
+                                              :format '(:short-weekday " " :short-month " " :day) :timezone (%zone kernel nil))
+                (cond ((< days 2) "recent") ((< days 7) "somewhat recent") ((< days 30) "old") (t "very old")))))))
+
 (defun local-stamp (kernel iso)
   "ISO8601 time ISO as the operator's wall clock, naming the zone:
 2026-10-17T00:53:00Z -> Fri 2026-10-16 20:53 EDT."

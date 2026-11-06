@@ -55,8 +55,8 @@ operator's own thoughts, those the operator sent. Pictures others posted are not
          (id (avatar-image-id kernel :self)))
     (multiple-value-bind (at by) (avatar-provenance kernel)
       (push (if (and id at)
-                (format nil "I have an avatar (chosen ~a, by ~a). I do not need to make or choose another unless I mean to change it."
-                        (or (ignore-errors (local-stamp kernel at)) at) by)
+                (format nil "I have an avatar (chosen by ~a; ~a). I do not need to make or choose another unless I mean to change it."
+                        by (or (ignore-errors (written-ago kernel at)) at))
                 "I have not chosen an avatar yet.")
             lines))
     (let ((made (or (sql-value (kernel-db kernel) "SELECT count(*) FROM seen_images WHERE audience=?1 AND how=?2 AND at>=?3 LIMIT 1"

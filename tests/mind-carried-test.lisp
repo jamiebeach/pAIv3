@@ -140,6 +140,7 @@
         (is (search "my avatar now" (funcall run (obj "image_id" image "replace" t))))
         (let ((slot (format nil "~{~a~}" (mapcar #'first (funcall (gethash :myself pai-v3.mind::*slot-sources*) k '(:audience "peer:fleet") 200)))))
           (is (search "I have an avatar" slot) "a thought for the fleet is told she has one")
+          (is (search "written today" slot) "with how old the choice is (bead v3-5un)")
           (is (search "by me" slot))))
       (is (search image (sql-value (kernel-db k) "SELECT value_json FROM settings WHERE name=?1 LIMIT 1" "avatar.image")) "it is a setting, so it is in the ledger")
       (is (search "first-letter" (funcall run (obj "image_id" ""))) "she can go back to the letter")

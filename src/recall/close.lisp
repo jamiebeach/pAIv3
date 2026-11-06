@@ -51,13 +51,18 @@ nightly revision leaves these alone, so each has one sense, written here."
 
 ;;; The slots: only what I have written, never assembled from rows.
 
+(defun %settled-with-age (kernel anchor)
+  "ANCHOR's settled text with how old it is, so a stale line reads as stale (bead v3-5un)."
+  (let ((row (sql-row (kernel-db kernel) "SELECT settled,revised_at FROM impressions WHERE anchor=?1 LIMIT 1" anchor)))
+    (and row (format nil "~a~@[ [~a]~]" (first row) (written-ago kernel (second row))))))
+
 (define-slot-source :reality (kernel request max)
-  (let ((settled (first (%revision kernel +self-anchor+))))
+  (let ((settled (%settled-with-age kernel +self-anchor+)))
     (and settled (list settled))))
 
 (define-slot-source :close (kernel request max)
   (loop for (anchor tally) in (%close kernel)
-        for settled = (first (%revision kernel anchor))
+        for settled = (%settled-with-age kernel anchor)
         when settled collect (format nil "~a: ~a" (close-name kernel tally) settled)))
 
 ;;; Writing them in sleep
