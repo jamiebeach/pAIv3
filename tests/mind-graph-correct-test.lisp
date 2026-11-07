@@ -89,10 +89,14 @@
 (deftest a-fact-the-operator-tells-me-is-added-with-their-words
   (with-temp-kernel (k)
     (let ((thought (answering k "My dog Phoebe is a golden retriever, and I love the lake.")))
-      (is (search "operator's own words" (correct k thought "action" "add" "subject" "Sam" "subject_kind" "person"
+      (is (search "that quote is not in the operator's turn" (correct k thought "action" "add" "subject" "Sam" "subject_kind" "person"
                                                   "predicate" "likes" "object" "the lake" "object_kind" "place"
                                                   "statement" "Sam loves the lake." "quote" "I hate the lake"))
           "words the operator did not say are refused")
+      ;; Bead v3-3a2: no quote at all is told apart, and told where my own doings are kept.
+      (is (search "already kept by the system" (correct k thought "action" "add" "subject" "Sam" "subject_kind" "person"
+                                                  "predicate" "likes" "object" "the lake" "object_kind" "place"
+                                                  "statement" "Sam loves the lake.")))
       (is (search "cannot link" (correct k thought "action" "add" "subject" "Phoebe" "subject_kind" "organism"
                                          "predicate" "likes" "object" "the lake" "object_kind" "place"
                                          "statement" "x" "quote" "I love the lake")))

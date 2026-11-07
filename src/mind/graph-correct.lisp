@@ -130,7 +130,11 @@ The quote must be in the operator's turn: nothing they did not say goes in."
          (statement (obj-get args "statement")))
     (unless (and (stringp quote) (plusp (length (string-trim " " quote))) (stringp said)
                  (search (%normalise-quote quote) (%normalise-quote said)))
-      (%graph-refuse "the quote must be the operator's own words from this turn"))
+      ;; Said apart, with where other facts belong (bead v3-3a2): a fact about what
+      ;; I read or did is not added here, because my own records already hold it.
+      (%graph-refuse (if (and (stringp quote) (plusp (length (string-trim " " quote))))
+                         "that quote is not in the operator's turn: add takes only facts the operator just told me, with their exact words"
+                         "add needs quote: the operator's exact words from this turn, since it takes only facts they told me. What I read or did myself is already kept by the system (web_history, and the record on my notes); I do not file it here")))
     (unless (and (stringp statement) (plusp (length statement))) (%graph-refuse "give the fact as one plain sentence"))
     ;; Check the relation before forming anything, so a refused fact leaves no orphans.
     (flet ((kind-of (ref kind) (let ((e (and (stringp ref) (graph-entity kernel ref)))) (if e (second e) kind))))
