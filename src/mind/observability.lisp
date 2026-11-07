@@ -13,7 +13,15 @@
 
 (defparameter *observed-events-kept* 300 "Newest observed events kept.")
 (defparameter *observed-hours-kept* (* 24 31) "Hours of activity counts kept.")
-(defparameter *captures-kept* 200 "Model calls whose request and response are kept.")
+(defparameter *captures-most* 3000 "Most model calls kept whatever their age: a ceiling on the disk they take (about 200 MB at typical sizes).")
+
+;; Captures are kept by age, not by count (bead v3-g86): 200 calls was a few
+;; hours of a busy agent, so the request behind a failure was gone before anyone
+;; looked. A few days is long enough to investigate what an agent or the
+;; operator flags.
+(define-setting "observability.capture_hours"
+  :type :integer :min 1 :max 720 :default 48 :group "Observability"
+  :description "How many hours the exact request and response of each model call are kept, for looking into what an agent said and why. More hours take more disk.")
 
 (defun %universal (iso)
   (local-time:timestamp-to-universal (local-time:parse-timestring iso)))
@@ -140,17 +148,21 @@ by the kind of thought that paid, and the costliest thoughts."
 (define-projection "model_captures"
   :kind :inline
   :consumes ()
-  :tables ("CREATE TABLE IF NOT EXISTS model_captures (seq INTEGER PRIMARY KEY AUTOINCREMENT, call_event_id INTEGER NOT NULL UNIQUE, at TEXT NOT NULL, request TEXT NOT NULL, response TEXT NOT NULL)")
+  :tables ("CREATE TABLE IF NOT EXISTS model_captures (seq INTEGER PRIMARY KEY AUTOINCREMENT, call_event_id INTEGER NOT NULL UNIQUE, at TEXT NOT NULL, request TEXT NOT NULL, response TEXT NOT NULL)"
+           "CREATE INDEX IF NOT EXISTS model_captures_at_idx ON model_captures(at)")
   :reduce (lambda (db e) (declare (ignore db e))))
 
 (defun capture-model-call (kernel call-event request response)
   "Keep the exact REQUEST and RESPONSE (JSON text) of the model call recorded
-as CALL-EVENT, dropping the oldest beyond *captures-kept*."
+as CALL-EVENT, dropping those older than observability.capture_hours, and the
+oldest beyond *captures-most*."
   (ignore-errors
    (let ((db (kernel-db kernel)))
      (sql-exec db "INSERT INTO model_captures(call_event_id,at,request,response) VALUES(?1,?2,?3,?4)"
                (event-id call-event) (event-at call-event) request response)
-     (sql-exec db "DELETE FROM model_captures WHERE seq<=?1" (- (sql-last-insert-rowid db) *captures-kept*)))))
+     (sql-exec db "DELETE FROM model_captures WHERE at<?1"
+               (iso8601 (- (now) (* 3600 (setting kernel "observability.capture_hours")))))
+     (sql-exec db "DELETE FROM model_captures WHERE seq<=?1" (- (sql-last-insert-rowid db) *captures-most*)))))
 
 (setf *capture-hook* #'capture-model-call)
 
