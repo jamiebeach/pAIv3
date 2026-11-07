@@ -28,6 +28,10 @@
           (advance (* 31 86400))
           (is (search "due to be checked again" (format nil "~{~a~}" (pai-v3.mind::%fill k :needs (list :audience "operator") 400)))
               "and it comes due")
+          (let ((shown (obj-get (pai-v3.mind::observed-live k) "operator_needs")))
+            (is (= 1 (length shown)) "the observability page shows it")
+            (is (search "no work stuff on weekends" (obj-get (first (obj-get (first shown) "evidence")) "text")) "with the operator's words")
+            (is (eq t (obj-get (first shown) "due")) "and whether it is due"))
           (is (search "Removed" (funcall run k nil (obj "action" "remove" "id" id))))
           (is (null (pai-v3.mind::%fill k :needs (list :audience "operator") 400)) "removed, it is gone"))))))
 

@@ -63,6 +63,17 @@ or a forum post of theirs; else NIL."
                            (subseq s 0 (min 160 (length s)))))
               due (subseq recheck 0 10) text))))
 
+(defun operator-needs-report (kernel)
+  "The entries as objects for the observability page: what the agent wrote, the
+operator's words behind it from the record, and the ages."
+  (mapcar (lambda (row)
+            (destructuring-bind (id text records recheck set-at) row
+              (let* ((words (sort (remove nil (mapcar (lambda (r) (%operator-words kernel r)) records)) #'string> :key #'first)))
+                (obj "id" id "text" text "set_at" set-at "recheck_on" recheck
+                     "due" (if (and (stringp recheck) (string< recheck (iso8601 (now)))) t :false)
+                     "evidence" (mapcar (lambda (w) (obj "at" (first w) "text" (second w))) words)))))
+          (operator-needs kernel)))
+
 (define-slot-source :needs (kernel request max)
   (when (equal "operator" (getf request :audience))
     (let ((used 0) (rows '()))

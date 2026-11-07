@@ -270,6 +270,8 @@ runtime parameters, and messages from coding agents."
          "work_docket" (let ((o (obj)))
                          (setf (gethash "items" o) (docket-items kernel :states '("active" "waiting" "completed" "cancelled")))
                          o)
+         ;; The agent's own view of what the operator needs (needs.lisp).
+         "operator_needs" (or (ignore-errors (operator-needs-report kernel)) '())
          "runtime_parameters" parameters
          "peer_inbox"
          (let ((counts (obj)))
