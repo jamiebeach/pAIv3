@@ -332,11 +332,13 @@ apart from failing (Aria, 2026-11-07). NIL for no thought."
 read before the note: the system's count of what that thought did, beside what
 the note says it did (2026-11-07, the crew's memory-notes thread). NIL for a
 memory that is not one I wrote."
-  (let ((row (sql-row (kernel-db kernel) "SELECT owner,source_event_id,created_at FROM memory_nodes WHERE id=?1 LIMIT 1" memory-id)))
-    (when (and row (equal "self" (first row)))
+  (let ((row (sql-row (kernel-db kernel) "SELECT owner,source_event_id,created_at,kind FROM memory_nodes WHERE id=?1 LIMIT 1" memory-id)))
+    ;; Episodes are written up by the system from the conversation itself, and
+    ;; say so in their origin: only a note I chose to keep carries a record.
+    (when (and row (equal "self" (first row)) (not (equal "episode" (fourth row))))
       (let ((thought (second row)) (start (web-history-start kernel)))
         (cond ((or (null thought) (null (sql-value (kernel-db kernel) "SELECT 1 FROM thoughts WHERE id=?1 LIMIT 1" thought)))
-               "[record: none; this note does not say which thought wrote it]")
+               "[record: none; kept before notes recorded the thought that wrote them]")
               ((or (null start) (string< (third row) start))
                "[record: none; written before my web history begins]")
               (t (format nil "[record: the thought that wrote this note: ~a]" (thought-web-record kernel thought))))))))
