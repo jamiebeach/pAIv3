@@ -16,7 +16,7 @@ list of (text tokens) rows, most relevant first.")
   '((:clock . :any) (:turn . :any) (:state . :any) (:myself . :any)
     (:summary . :any) (:activity . :any) (:dialogue . :any)
     (:recollection . :any) (:seen . :any) (:scheduled . :any) (:restricted . :any)
-    (:conclusions "operator") (:concerns "operator") (:docket "operator")
+    (:conclusions "operator") (:concerns "operator") (:docket "operator") (:needs "operator")
     (:present "operator" "external") (:stream "operator" "external")
     (:carried "operator" "external"))
   "Slot boundary policy. :ANY sources must filter their rows by audience or
@@ -59,6 +59,7 @@ render audited content safe for every audience. Unreviewed sources default to op
           ;; prompt under a confident title, and pulled replies toward unrelated
           ;; topics; removing it left replies no worse. Private thinking keeps it.
           (:carried   :max 700   :source :carried   :title "Things I am carrying for the operator")
+          (:needs     :max 400   :source :needs     :title "What I understand the operator needs (my own view, from their words)")
           (:docket    :max 600   :source :docket    :title "Work I am keeping")
           (:concerns  :max 600   :source :concerns  :title "What I am looking into")
           (:activity  :max 24000 :source :activity  :title "What I have been doing")
@@ -81,6 +82,7 @@ render audited content safe for every audience. Unreviewed sources default to op
           (:summary   :max 2000  :source :summary   :title "Earlier, in summary")
           (:conclusions :max 800 :source :conclusions :title "What I have concluded lately (newer than the summary)")
           (:carried   :max 700   :source :carried   :title "Things I am carrying for the operator")
+          (:needs     :max 400   :source :needs     :title "What I understand the operator needs (my own view, from their words)")
           (:docket    :max 600   :source :docket    :title "Work I am keeping")
           (:concerns  :max 600   :source :concerns  :title "What I am looking into")
           (:activity  :max 8000  :source :activity  :title "What I have been doing")

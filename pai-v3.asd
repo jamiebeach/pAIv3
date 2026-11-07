@@ -54,6 +54,7 @@
                  (:file "docket")
                  (:file "artifacts")
                  (:file "carried")
+                 (:file "needs")
                  (:file "graph")
                  (:file "graph-import")
                  (:file "graph-read")
