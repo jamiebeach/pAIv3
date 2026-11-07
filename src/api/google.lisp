@@ -336,6 +336,9 @@ day's allowance. Returns how many were taken."
                (account (%given (obj-get args "account"))))
            (handler-case
                (cond ((null accounts) "No Google account is connected.")
+                     ;; An address or a wrong name read as "not connected to Google" (bead v3-wh8).
+                     ((and account (not (member account accounts :test #'equal)))
+                      (format nil "No connected account is called ~a. The connected accounts are ~{~a~^, ~}; give one of those names, or none for all." account accounts))
                      ((equal (obj-get args "action") "search")
                       (%mail-search kernel (if account (list account) accounts) (obj-get args "query")
                                     (max 1 (min 20 (let ((l (obj-get args "limit"))) (if (integerp l) l 10))))))
@@ -392,14 +395,23 @@ day's allowance. Returns how many were taken."
   :run (lambda (kernel id args)
          (declare (ignore id))
          (let* ((given (%given (obj-get args "account")))
-                (accounts (if given (list given) (mapcar #'first (google-accounts kernel))))
+                (connected (mapcar #'first (google-accounts kernel)))
+                (accounts (if given (list given) connected))
+                (hours (setting kernel "calendar.horizon_hours"))
                 (rows (sort (loop for account in accounts
                                   append (sql-rows (kernel-db kernel) "SELECT summary,start_at,location FROM calendar_events WHERE account=?1 AND start_at>=?2 ORDER BY start_at LIMIT 50"
                                                    account (subseq (%iso-now) 0 10)))
                             #'string< :key #'second)))
-           (cond ((null accounts) "No Google account is connected.")
-                 (rows (format nil "~{~a~^~%~}" (mapcar (lambda (r) (format nil "~a: ~a~@[ (~a)~]" (second r) (first r) (third r))) rows)))
-                 (t "Nothing coming up in the window I read.")))))
+           ;; The window is said, so "nothing" is never read as "nothing at all": four
+           ;; days ahead lay past a 48-hour horizon and read as a broken feed (bead v3-wh8).
+           (cond ((null connected) "No Google account is connected.")
+                 ((and given (not (member given connected :test #'equal)))
+                  (format nil "No connected account is called ~a. The connected accounts are ~{~a~^, ~}." given connected))
+                 (rows (format nil "In the next ~d hours (my calendar horizon), on ~{~a~^, ~}'s primary calendar~p:~%~{~a~^~%~}"
+                               hours accounts (length accounts)
+                               (mapcar (lambda (r) (format nil "~a: ~a~@[ (~a)~]" (second r) (first r) (third r))) rows)))
+                 (t (format nil "Nothing in the next ~d hours (my calendar horizon) on ~{~a~^, ~}'s primary calendar~p. Events further ahead are not read; the horizon is the setting calendar.horizon_hours."
+                            hours accounts (length accounts)))))))
 
 ;;; Connecting, from the operator's browser
 
