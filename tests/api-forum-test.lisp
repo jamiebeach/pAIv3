@@ -222,6 +222,21 @@
         (is (= 31 total)) (is (= 2 page)) (is (= 2 pages)) (is (= 6 (length threads))))
       (is (search "page 1 of 2" (pai-v3.api::forum-text a nil))))))
 
+(deftest a-draft-claiming-what-i-read-is-set-against-my-records-once
+  (with-crew (a b)
+    (let* ((thread (obj-get (pai-v3.api::forum-post a :title "SYNTHETIC topic" :text "SYNTHETIC hi" :author-id "operator" :author-name "Sam")
+                            "thread_id"))
+           (draft (pai-v3.mind::tool-run (gethash "draft_forum_post" pai-v3.mind::*tools*)))
+           (wake (request-thought b "introspection" "SYNTHETIC wake"))
+           (pai-v3.mind::*provenance-hook* (lambda (kernel thought text) (declare (ignore kernel thought))
+                                             (and (search "I read" text) "SYNTHETIC records say otherwise."))))
+      (let ((first (funcall draft b wake (obj "text" "I read it all, SYNTHETIC." "thread_id" thread))))
+        (is (search "not drafted yet" first))
+        (is (search "SYNTHETIC records say otherwise" first)))
+      (pai-v3.mind::%record-text b wake "provenance" "SYNTHETIC asked")
+      (is (search "left for the crew forum" (funcall draft b wake (obj "text" "I read it all, SYNTHETIC." "thread_id" thread)))
+          "once asked, drafting again goes ahead"))))
+
 (deftest a-draft-whose-thread-was-resolved-meanwhile-is-dropped-not-retried
   ;; Bead v3-z16: the review raised "that thread is resolved" and was retried.
   (with-crew (a b)

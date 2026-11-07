@@ -110,7 +110,11 @@ Replaced in tests.")
 
 (define-event-type "web.fetched"
   :schema (("url" :string) ("hosts" :array) ("status" :integer) ("thought_id" :integer :optional)
-           ("refused_here" :string :optional)))
+           ("refused_here" :string :optional)
+           ;; What came of it (2026-11-06): text, unreadable, failed, refused or error,
+           ;; and how many characters of text arrived, so "I read it" and "I tried and
+           ;; it broke" stay apart in my own history (Angel).
+           ("outcome" :string :optional) ("chars" :integer :optional)))
 
 (define-projection "web_fetches"
   :kind :inline
@@ -175,18 +179,24 @@ host's limits first and recorded after."
                 (return-from web-fetch refusal))))
         (multiple-value-bind (body status content-type)
             (funcall *http-get* url '(("User-Agent" . "pAI/3 (personal assistant)")))
-          (when kernel
-            (append! kernel "web.fetched" (obj "url" (subseq url 0 (min 500 (length url))) "hosts" hosts "status" (or status 0)
-                                               "thought_id" thought-id)))
-          (let ((body (if (> (length body) *fetch-max-chars*) (subseq body 0 *fetch-max-chars*) body)))
+          (let* ((body (if (> (length body) *fetch-max-chars*) (subseq body 0 *fetch-max-chars*) body))
+                 (text (cond ((not (<= 200 status 299)) nil)
+                             ((search "html" content-type) (html-text body))
+                             ((or (search "text" content-type) (search "json" content-type) (search "xml" content-type)) body)))
+                 (outcome (cond ((not (<= 200 status 299)) "failed") (text "text") (t "unreadable"))))
+            (when kernel
+              (append! kernel "web.fetched" (obj "url" (subseq url 0 (min 500 (length url))) "hosts" hosts "status" (or status 0)
+                                                 "thought_id" thought-id "outcome" outcome "chars" (length (or text "")))))
             (cond ((not (<= 200 status 299)) (format nil "~a answered ~d." url status))
-                  ((search "html" content-type)
-                   (format nil "~@[~a~%~]~a~%~%~a" (%title body) url (html-text body)))
-                  ((or (search "text" content-type) (search "json" content-type) (search "xml" content-type))
-                   (format nil "~a~%~%~a" url body))
+                  ((search "html" content-type) (format nil "~@[~a~%~]~a~%~%~a" (%title body) url text))
+                  (text (format nil "~a~%~%~a" url text))
                   (t (format nil "~a is ~a, which I cannot read as text." url content-type)))))))
     (egress-refused (e) (egress-reason e))
-    (error (e) (format nil "Could not fetch ~a: ~a" url e))))
+    (error (e)
+      (when kernel
+        (ignore-errors (append! kernel "web.fetched" (obj "url" (subseq url 0 (min 500 (length url))) "hosts" (or (ignore-errors (fetch-hosts url)) '())
+                                                          "status" 0 "thought_id" thought-id "outcome" "error"))))
+      (format nil "Could not fetch ~a: ~a" url e))))
 
 (define-tool "web_fetch"
   :description "Read a web page as text. Long pages come back in parts. Each site has an hourly limit, and a site that refuses me is left alone for a day, by any route: I never retry around a refusal."
@@ -257,6 +267,71 @@ search is recorded with what Brave says is left of the quota."
           "Web search is not set up yet: the operator has not given me a Brave Search key."
           (egress-reason e)))
     (error (e) (format nil "Web search failed: ~a" e))))
+
+(define-projection "web_history"
+  ;; What I fetched and searched, one row each, for web_history and the
+  ;; provenance check (2026-11-06). Only addresses and queries: no page text or
+  ;; titles, which are outside content.
+  :kind :inline
+  :consumes ("web.fetched" "web.searched")
+  :tables ("CREATE TABLE IF NOT EXISTS web_history (event_id INTEGER PRIMARY KEY, kind TEXT NOT NULL, target TEXT NOT NULL, status INTEGER NOT NULL, outcome TEXT, chars INTEGER, thought_id INTEGER, at TEXT NOT NULL)"
+           "CREATE INDEX IF NOT EXISTS web_history_at_idx ON web_history(at)")
+  :reduce (lambda (db e)
+            (let* ((p (event-payload e)) (search-p (equal (event-type e) "web.searched")))
+              (sql-exec db "INSERT OR IGNORE INTO web_history(event_id,kind,target,status,outcome,chars,thought_id,at) VALUES(?1,?2,?3,?4,?5,?6,?7,?8)"
+                        (event-id e) (if search-p "search" "fetch") (obj-get p (if search-p "query" "url"))
+                        (or (obj-get p "status") 0)
+                        (or (obj-get p "outcome") (and (obj-get p "refused_here") "refused"))
+                        (obj-get p "chars") (obj-get p "thought_id") (event-at e)))))
+
+(defun web-history-start (kernel)
+  "When my web history begins: the time of its first row, or NIL."
+  (sql-value (kernel-db kernel) "SELECT at FROM web_history ORDER BY at LIMIT 1"))
+
+(defun web-history-rows (kernel &key terms (days 30) (most 40))
+  "My fetches and searches in the last DAYS, newest first, as (kind target status
+outcome chars at); with TERMS, only those whose address or query holds one."
+  (let ((terms (mapcar #'string-downcase (remove-if (lambda (s) (< (length s) 3)) terms))))
+    (loop for r in (sql-rows (kernel-db kernel)
+                             "SELECT kind,target,status,outcome,chars,at FROM web_history WHERE at>=?1 ORDER BY at DESC LIMIT 2000"
+                             (iso8601 (- (now) (* days 86400))))
+          when (or (null terms) (let ((target (string-downcase (second r)))) (some (lambda (term) (search term target)) terms)))
+            collect r into found
+          when (>= (length found) most) return found
+          finally (return found))))
+
+(defun web-history-line (kernel row)
+  "One row of my web history as a line, saying what came of it."
+  (destructuring-bind (kind target status outcome chars at) row
+    (format nil "~a — ~:[fetched~;searched~] ~:[~a~;\"~a\"~] — ~a"
+            (or (ignore-errors (local-stamp kernel at)) at) (equal kind "search") (equal kind "search") target
+            (cond ((equal kind "search") (if (<= 200 status 299) "results returned" (format nil "answered ~d" status)))
+                  ((equal outcome "text") (format nil "text arrived (~:d characters)" (or chars 0)))
+                  ((equal outcome "unreadable") "it arrived but could not be read as text")
+                  ((equal outcome "failed") (format nil "the site answered ~d" status))
+                  ((equal outcome "refused") "not fetched: refused under my web manners")
+                  ((equal outcome "error") "the fetch failed")
+                  (t (format nil "status ~d (what came of it was not recorded then)" status))))))
+
+(define-tool "web_history"
+  :description "My own record of the web pages I fetched and the searches I ran, newest first, with what came of each (text arrived and how much, unreadable, failed). Use it to check, before saying so, what I actually read, checked or found, and when. about: words or part of an address to match (empty: everything); days: how far back (default 30). A fetch shows a page arrived, not that I read all of it."
+  :summary "Check what I actually fetched and searched, and when."
+  :available :operator-and-peers
+  :core t
+  :parameters (obj "type" "object"
+                   "properties" (obj "about" (obj "type" "string") "days" (obj "type" "integer")))
+  :run (lambda (kernel id args)
+         (declare (ignore id))
+         (let* ((about (let ((a (obj-get args "about"))) (and (stringp a) (string-trim " " a))))
+                (days (let ((d (obj-get args "days"))) (if (integerp d) (max 1 (min 365 d)) 30)))
+                (rows (web-history-rows kernel :days days
+                                               :terms (and about (plusp (length about))
+                                                           (remove "" (uiop:split-string about :separator " ") :test #'string=))))
+                (start (web-history-start kernel)))
+           (format nil "~:[My web history is empty.~;My web history begins ~:*~a; nothing before then is in it.~]~%~:[Nothing~;~:*~d entr~:@p~]~@[ matching \"~a\"~] in the last ~d day~:p~:[.~;, newest first:~]~{~%- ~a~}"
+                   (and start (or (ignore-errors (local-stamp kernel start)) start))
+                   (and rows (length rows)) (and about (plusp (length about)) about) days rows
+                   (mapcar (lambda (r) (web-history-line kernel r)) rows)))))
 
 (define-tool "brave_search"
   :description "Search the web. Returns titles, addresses and snippets; read a page with web_fetch. Searches are few per thought and cost credits; reading pages is free, so search once well and then read."

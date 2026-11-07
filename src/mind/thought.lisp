@@ -296,7 +296,7 @@ assistant message; a long tool result shows its first part and how to page."
                       (push (obj "id" call-id "type" "function"
                                  "function" (obj "name" tool "arguments" arguments))
                             calls))
-                     ((member kind '("nudge" "said_note") :test #'string=)
+                     ((member kind '("nudge" "said_note" "provenance_note") :test #'string=)
                       (flush)
                       (push (obj "role" "user" "content" step-text) messages))
                      ((string= kind "step_note")
@@ -378,6 +378,15 @@ make the re-read never stick, and the agent read it again (bead v3-qwh)."
         ;; The word the already-said note offers for "nothing more to say".
         (and (mind-said mind) (string= (string-trim ".!" (funcall norm text)) "done")))))
 
+(defvar *provenance-hook* nil
+  "(lambda (kernel thought text)) or NIL: the request to restate TEXT against my
+own records when it claims what I read, checked or saw, else NIL (provenance.lisp).")
+
+(defun %provenance-asked-p (kernel thought-id)
+  "Whether THOUGHT-ID has had its one look at its records, or another nudge."
+  (or (%nudged-p kernel thought-id)
+      (sql-value (kernel-db kernel) "SELECT 1 FROM thought_steps WHERE thought_id=?1 AND kind=?2 LIMIT 1" thought-id "provenance")))
+
 (defvar *fast-path-hook* nil
   "(lambda (mind)) or NIL: answers a trivial turn without a model call and
 returns true, or returns NIL to let the thought go on (fastpath.lisp).")
@@ -392,7 +401,11 @@ returns true, or returns NIL to let the thought go on (fastpath.lisp).")
         ((and *fast-path-hook* (ignore-errors (funcall *fast-path-hook* mind))) nil)
         (t (let ((reply (consult mind (%with-low-allowance-note mind messages))))
              (cond ((obj-get reply "tool_calls")
-                    (let ((said (and (mind-said mind) (stringp (obj-get reply "content"))
+                    ;; Only on a voice turn, where words said with a gesture are often the
+                    ;; whole reply; in text they are status, and the answer still follows
+                    ;; (operator, 2026-11-06: avatar mode must not change chat mode).
+                    (let ((said (and (%voice-turn-p (mind-kernel mind) (getf (mind-thought mind) :id))
+                                     (mind-said mind) (stringp (obj-get reply "content"))
                                      (plusp (length (obj-get reply "content")))
                                      (%said-already-p mind (obj-get reply "content")))))
                       (let ((results (act mind reply)))
@@ -402,9 +415,21 @@ returns true, or returns NIL to let the thought go on (fastpath.lisp).")
                         (when said (%record-text (mind-kernel mind) (getf (mind-thought mind) :id) "said_note" +already-said-note+))
                         (recur mind (append messages (list reply) results
                                             (and said (list (obj "role" "user" "content" +already-said-note+))))))))
-                   (t (let ((problem (%reply-problem mind reply)))
-                        (if (null problem)
-                            (answer mind reply)
+                   (t (let* ((problem (%reply-problem mind reply))
+                             (thought (mind-thought mind))
+                             ;; What it read, checked or saw, set against its own records, once.
+                             (sources (and (null problem) *provenance-hook* (direct-reply-p thought)
+                                           (not (%provenance-asked-p (mind-kernel mind) (getf thought :id)))
+                                           (ignore-errors (funcall *provenance-hook* (mind-kernel mind) thought
+                                                                   (obj-get reply "content" ""))))))
+                        (cond
+                          (sources
+                           (recur mind (append messages
+                                               (list (obj "role" "assistant" "content" (obj-get reply "content" ""))
+                                                     (obj "role" "user" "content" sources)))))
+                          ((null problem)
+                            (answer mind reply))
+                          (t
                             (let* ((kernel (mind-kernel mind)) (thought (mind-thought mind))
                                    (nudge (if (eq problem :announces) +announce-nudge+ +grounding-nudge+)))
                               ;; A reply that only says what it is about to do
@@ -417,7 +442,7 @@ returns true, or returns NIL to let the thought go on (fastpath.lisp).")
                               (%record-text kernel (getf thought :id) "nudge" nudge)
                               (recur mind (append messages
                                                   (list (obj "role" "assistant" "content" (obj-get reply "content" ""))
-                                                        (obj "role" "user" "content" nudge)))))))))))))
+                                                        (obj "role" "user" "content" nudge))))))))))))))
 
 ;;; A reply that only announces (operator report 2026-10-31: "On it, writing
 ;;; chapter two now", and nothing written). Matching phrases was tried and
@@ -445,7 +470,9 @@ returns true, or returns NIL to let the thought go on (fastpath.lisp).")
 (defparameter *grounding-hours* 6 "How far back what the operator said is evidence.")
 
 (defparameter +already-said-note+
-  "The words you wrote alongside those tool calls have already been said to them. Do not say them again: if you have nothing new to add, reply with only the word DONE.")
+  ;; Not an invitation to stop: "Let me check both live" was said, then DONE was
+  ;; the whole answer and the question went unanswered (Specter, 2026-11-06).
+  "The words you wrote alongside those tool calls have already been said to them, so do not repeat them. Now give them the rest: what you found, the answer, whatever is still owed. Only if those words were already your complete answer and nothing remains, reply with just DONE.")
 
 (defparameter +announce-nudge+
   "You said what you were about to do, but made no tool call and did not do it, so it has not been done. Do it now, in this thought: call the tools it needs, or write the thing itself. If it cannot be done now, say so plainly and say when it will be.")
@@ -726,9 +753,17 @@ trampoline rebuilds them on the next bounce; recurring is re-queuing."
   (and (equal "responding" (getf thought :origin)) (getf thought :channel)
        (equal "operator" (getf thought :audience))))
 
+(defun %without-done (text)
+  "TEXT without a leading DONE line when more follows it: the rest is the answer."
+  (let ((trimmed (string-left-trim '(#\Space #\Newline #\Tab) (or text ""))))
+    (if (and (> (length trimmed) 4) (string= "DONE" trimmed :end2 4)
+             (plusp (length (string-trim '(#\Space #\Newline #\Tab #\. #\! #\-) (subseq trimmed 4)))))
+        (string-left-trim '(#\Space #\Newline #\Tab #\. #\! #\-) (subseq trimmed 4))
+        text)))
+
 (defun answer (mind reply)
   (let* ((kernel (mind-kernel mind)) (thought (mind-thought mind))
-         (text (let ((text (obj-get reply "content" "")))
+         (text (let ((text (%without-done (obj-get reply "content" ""))))
                  ;; A reply the output limit cut off says so, rather than passing as whole.
                  (if (equal "length" (obj-get reply "finish_reason"))
                      (format nil "~a … [cut off: I reached my output limit before finishing]" text)

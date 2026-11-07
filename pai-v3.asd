@@ -65,7 +65,8 @@
                  (:file "episodes")
                  (:file "experience")
                  (:file "avatars")
-                 (:file "settings-tools")))
+                 (:file "settings-tools")
+                 (:file "provenance")))
    (:module "src/trust"
     :serial t
     :components ((:file "package")

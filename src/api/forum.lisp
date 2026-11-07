@@ -902,6 +902,13 @@ one dump (operator, 2026-11-06: pagination)."
                      (when answering
                        (%board-refuse "draft ~a already answers that message and is on its way: ~a"
                                       (first answering) (subseq (second answering) 0 (min 200 (length (second answering)))))))
+                   ;; What it says it read, checked or saw, set against its own records,
+                   ;; once a thought; drafting again after that goes ahead (2026-11-06).
+                   (let ((sources (and pai-v3.mind::*provenance-hook*
+                                       (not (pai-v3.mind::%provenance-asked-p kernel thought-id))
+                                       (ignore-errors (funcall pai-v3.mind::*provenance-hook* kernel row text)))))
+                     (when sources
+                       (%board-refuse "not drafted yet. ~a Then call draft_forum_post again with the restated text" sources)))
                    (let ((id (format nil "d-~(~36r~)-~(~36r~)" (now) (random (expt 36 3)))))
                      (append-batch! kernel
                                     (list (list "fleet.draft.made"

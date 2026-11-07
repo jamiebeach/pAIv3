@@ -108,6 +108,12 @@
                               :text text :origin (obj "principal_type" "operator"))))
     (request-thought k "responding" "operator spoke" :channel "web" :source-event-id (event-id turn))))
 
+(defun voice-turn (k text)
+  "An operator turn spoken through the avatar, and the thought answering it."
+  (let ((turn (receive-turn k :channel "web" :audience "operator" :speaker "Operator"
+                              :text text :origin (obj "principal_type" "operator" "mode" "voice"))))
+    (request-thought k "responding" "operator spoke" :channel "web" :source-event-id (event-id turn))))
+
 (defun replies (k)
   (mapcar #'dialogue-row-text (remove "Operator" (recent-dialogue k "operator")
                                       :key #'dialogue-row-speaker :test #'equal)))
@@ -502,13 +508,83 @@
                                                         "answers" (obj "reply" (obj "type" "score" "score" level "probabilities" p))
                                                         "usage" (obj "input_tokens" 10 "output_tokens" 1 "cost" 0.000001)))))))))
 
+(defun sources-judge (&key (calls (list 0)))
+  "A Decisions provider that finds a reply saying I READ claiming its sources, and others not."
+  (make-provider-profile
+   :name "affect-jev" :model "typesafe/jev-1.13" :base-url "https://openrouter.ai/api/v1" :secret "openrouter"
+   :transport (lambda (url headers body &key timeout)
+                (declare (ignore url headers timeout))
+                (let* ((req (json-parse body))
+                       (reply (obj-get (obj-get req "state") "reply"))
+                       (asks (obj-get req "questions")) (answers (obj)))
+                  (when (obj-get asks "sources") (incf (car calls)))
+                  (loop for name being the hash-keys of asks
+                        do (let ((level (if (and (equal name "sources") (search "I read" reply)) 0 2)) (p (obj)))
+                             (dotimes (i 3) (setf (gethash (write-to-string i) p) (if (= i level) 1d0 0d0)))
+                             (setf (gethash name answers) (obj "type" "score" "score" level "probabilities" p))))
+                  (values 200 nil (json-encode (obj "model" "typesafe/jev-test" "answers" answers
+                                                    "usage" (obj "input_tokens" 10 "output_tokens" 1 "cost" 0.000001))))))))
+
+(deftest a-claim-of-what-i-read-is-set-against-my-own-records-once
+  ;; 2026-11-06: asked how they came to a paper, agents told stories their own
+  ;; records did not bear out. The crew's shape: ask once, show the records, never block.
+  (with-thinking (k)
+    (append! k "web.fetched" (obj "url" "https://arxiv.org/abs/SYNTHETIC-antikythera" "hosts" (list "arxiv.org")
+                                  "status" 200 "outcome" "text" "chars" 1800))
+    (append! k "web.searched" (obj "query" "SYNTHETIC-antikythera calendar ring" "status" 200))
+    (let* ((calls (list 0))
+           (pai-v3.mind::*decision-profile* (sources-judge :calls calls))
+           (*script* (list (obj "content" "I read the SYNTHETIC-antikythera paper in full on Thursday.")
+                           (obj "content" "My fetch log shows I fetched the SYNTHETIC-antikythera abstract today; that is all I can vouch for.")))
+           (id (operator-turn k "How did you come to it?")))
+      (run-until-idle k)
+      (is (equal "ended" (getf (thought-row k id) :status)))
+      (let ((asked (obj-get (car (last (first *seen-messages*))) "content")))
+        (is (search "your own records show" asked) "the claim is set against the records")
+        (is (search "my fetch and search log" asked) "each named")
+        (is (search "fetched https://arxiv.org/abs/SYNTHETIC-antikythera" asked))
+        (is (search "text arrived (1,800 characters)" asked) "with what came of it")
+        (is (search "searched \"SYNTHETIC-antikythera calendar ring\"" asked))
+        (is (search "begins" asked) "and where the log begins"))
+      (let ((said (replies k)))
+        (is (= 1 (length said)) "the first claim was never sent")
+        (is (search "My fetch log shows" (first said)) "the restated one was"))
+      (is (= 1 (car calls)) "asked once: the restatement is not judged again")
+      (is (search "[The text it was asked of]" (format nil "~{~a~}" (mapcar #'third (thought-steps k id))))
+          "kept for the operator's audit")
+      (is (find "user" (pai-v3.mind::%replay-messages k id) :key (lambda (m) (obj-get m "role")) :test #'equal)
+          "the request survives a replay")))
+  (with-thinking (k)
+    (let* ((pai-v3.mind::*decision-profile* (sources-judge))
+           (*script* (list (obj "content" "It is noon where you are.")))
+           (id (operator-turn k "What time is it?")))
+      (run-until-idle k)
+      (is (= 1 (getf (thought-row k id) :model-calls)) "a reply that claims nothing goes straight out"))))
+
+(deftest web-history-says-what-i-fetched-and-searched-and-what-came-of-it
+  (with-thinking (k)
+    (append! k "web.fetched" (obj "url" "https://example.org/SYNTHETIC.pdf" "hosts" (list "example.org") "status" 200 "outcome" "unreadable" "chars" 0))
+    (append! k "web.fetched" (obj "url" "https://example.org/SYNTHETIC.html" "hosts" (list "example.org") "status" 200 "outcome" "text" "chars" 5200))
+    (append! k "web.fetched" (obj "url" "https://example.org/SYNTHETIC-old" "hosts" (list "example.org") "status" 200))
+    (append! k "web.searched" (obj "query" "SYNTHETIC things" "status" 200))
+    (let* ((run (pai-v3.mind::tool-run (gethash "web_history" pai-v3.mind::*tools*)))
+           (all (funcall run k 1 (obj)))
+           (some (funcall run k 1 (obj "about" "pdf"))))
+      (is (search "My web history begins" all))
+      (is (search "4 entries" all))
+      (is (search "could not be read as text" all) "an unreadable fetch is not a read")
+      (is (search "text arrived (5,200 characters)" all))
+      (is (search "was not recorded then" all) "an older fetch says so")
+      (is (search "searched \"SYNTHETIC things\"" all))
+      (is (search "1 entry matching \"pdf\"" some)))))
+
 (deftest words-said-with-a-step-are-never-said-again
   ;; Operator, 2026-11-06: a greeting said with a wave was written again as the
   ;; answer, and the operator heard it twice.
   (with-thinking (k)
     (let* ((*script* (list (obj "content" "Good morning! SYNTHETIC." "tool_calls" (list (call "c" "clock")))
                            (obj "content" "Good morning! SYNTHETIC.")))
-           (id (operator-turn k "Hey")))
+           (id (voice-turn k "Hey")))
       (run-until-idle k)
       (is (equal "ended" (getf (thought-row k id) :status)))
       (is (= 1 (count-if (lambda (r) (search "Good morning! SYNTHETIC." r)) (replies k))) "said once")
@@ -517,11 +593,29 @@
   (with-thinking (k)
     (let* ((*script* (list (obj "content" "Good morning! SYNTHETIC." "tool_calls" (list (call "c" "clock")))
                            (obj "content" "DONE")))
-           (id (operator-turn k "Hey")))
+           (id (voice-turn k "Hey")))
       (run-until-idle k)
       (is (equal "ended" (getf (thought-row k id) :status)) "DONE after it ends the thought")
       (is (= 1 (length (replies k))) (format nil "with nothing more said; got ~s" (replies k)))
       (is (null (find-if (lambda (r) (search "DONE" r)) (replies k))) "and DONE is never said"))))
+
+(deftest a-status-line-said-with-a-step-still-gets-its-answer
+  ;; Specter, 2026-11-06: "Let me check both live" was said with the tool calls,
+  ;; then DONE ended the thought and the question went unanswered.
+  (with-thinking (k)
+    (let* ((*script* (list (obj "content" "Let me check both live." "tool_calls" (list (call "c" "clock")))
+                           (obj "content" "DONE
+
+Yes, both are working: SYNTHETIC mail and calendar answered.")))
+           (id (operator-turn k "Do you have mail and calendar?")))
+      (run-until-idle k)
+      (is (null (search "already been said" (obj-get (car (last (first *seen-messages*))) "content")))
+          "a typed turn gets no note: its status line is not the answer")
+      (let ((said (replies k)))
+        (is (= 2 (length said)))
+        (is (search "Yes, both are working" (second said)) "the answer is said")
+        (is (null (search "DONE" (second said))) "without the DONE before it"))
+      (is (equal "ended" (getf (thought-row k id) :status))))))
 
 (deftest a-reply-that-only-announces-goes-on-once-and-does-it
   ;; Operator report 2026-10-31: "On it, writing chapter two now", and nothing written.
