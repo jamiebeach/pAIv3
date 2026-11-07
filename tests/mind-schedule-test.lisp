@@ -192,4 +192,14 @@
       (is (equal "a ratio of 10:30 apples, version 12:34" (loc "a ratio of 10:30 apples, version 12:34")) "a time not said to be UTC is left alone")
       (is (equal "at 11:00 UTCX" (loc "at 11:00 UTCX")) "nor a word that only starts with UTC"))))
 
+(deftest an-age-counts-calendar-days-where-the-operator-is
+  ;; Aria, 2026-11-07: a message from 10:35 pm the night before read "written today".
+  (with-clock
+    (with-temp-kernel (k)
+      (change-setting k "time.zone" "America/Toronto" :origin (obj "principal_type" "operator"))
+      (advance (* 3600 18))                       ; 18:00 UTC: early afternoon in Toronto
+      (let ((last-night (iso8601 (- (now) (* 3600 16)))))   ; 02:00 UTC: last evening there
+        (is (eql 1 (pai-v3.mind::local-days-ago k last-night)) "fixture: fifteen hours back is yesterday here")
+        (is (search "written yesterday" (pai-v3.mind::written-ago k last-night)))))))
+
 (run-suite "mind-schedule")

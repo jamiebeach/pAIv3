@@ -79,7 +79,9 @@
     (when at
       ;; Whole days only, so the line changes once a day, not with every
       ;; thought, and the prompt stays cache-stable.
-      (let ((days (floor (max 0 (- (now) at)) 86400)))
+      ;; Calendar days in the operator's zone, not 24-hour spans: last night at
+      ;; 10:35 pm read as "today" the next afternoon (Aria, 2026-11-07).
+      (let ((days (or (ignore-errors (max 0 (local-days-ago kernel iso))) (floor (max 0 (- (now) at)) 86400))))
         (format nil "written ~a (~a) — ~a"
                 (case days (0 "today") (1 "yesterday") (t (format nil "~d days ago" days)))
                 (local-time:format-timestring nil (local-time:universal-to-timestamp at)
@@ -98,7 +100,8 @@
   "Whole calendar days, in the operator's zone, between ISO and today: 0 today, 1 yesterday."
   (flet ((day (ts) (local-time:format-timestring nil ts :format '((:year 4) "-" (:month 2) "-" (:day 2) "T00:00:00Z")
                                                          :timezone (%zone kernel nil))))
-    (round (- (parse-iso8601 (day (local-time:now))) (parse-iso8601 (day (local-time:parse-timestring iso)))) 86400)))
+    ;; From the system clock, (now), like every other time here.
+    (round (- (parse-iso8601 (day (local-time:universal-to-timestamp (now)))) (parse-iso8601 (day (local-time:parse-timestring iso)))) 86400)))
 
 (defun localize-dialogue (kernel rendered)
   "A dialogue line with its leading UTC stamp ([2026-10-17 00:53 web] ...)
