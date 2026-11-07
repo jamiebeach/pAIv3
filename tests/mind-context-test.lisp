@@ -163,16 +163,21 @@
 
 (deftest recent-activity-is-one-compact-line-per-thought
   ;; Bead v3-okh.16: each row used to quote the thought's whole prompt.
-  (let ((review (pai-v3.mind::%activity-line
+  (with-temp-kernel (k)
+  (change-setting k "time.zone" "America/Toronto" :origin (obj "principal_type" "operator"))
+  (let ((review (pai-v3.mind::%activity-line k
                  (format nil "Check ONE proposed post for the crew forum. This is a light crew review...~%~a" (make-string 2000 :initial-element #\x))
                  "sent" "ended" "2026-10-25T20:37:00Z"))
-        (long (pai-v3.mind::%activity-line
+        (long (pai-v3.mind::%activity-line k
                (format nil "Quiet time. You are looking into one of your concerns (c-1, curiosity): why the brief is late.~%~a" (make-string 3000 :initial-element #\y))
                (make-string 3000 :initial-element #\z) "ended" "2026-10-25T20:37:00Z")))
     (is (search "Reviewed a draft before it was sent -> ended: sent" review))
     (is (< (length review) 120))
     (is (< (length long) 700) "a long prompt and outcome become one bounded line")
-    (is (search "Quiet time. You are looking into one of your concerns" long))))
+    (is (search "Quiet time. You are looking into one of your concerns" long))
+    ;; Operator, 2026-11-07: an 11-12 UTC stretch was read as 11 pm to midnight.
+    (is (search "[Sun 2026-10-25 16:37 EDT]" review) "in the operator's time, the zone named")
+    (is (null (search "UTC" review))))))
 
 (deftest older-long-tool-results-are-shortened-in-the-replay
   (with-temp-kernel (k)

@@ -74,9 +74,12 @@ conversation has been quiet since."
 
 (defun next-episode (kernel &optional (audience "operator"))
   (split-episode (if (equal audience "operator")
-                     (sql-rows (kernel-db kernel)
-                               "SELECT event_id,kind,speaker,rendered,at FROM working_dialogue WHERE audience=?1 AND event_id>?2 AND kind IN (?3,?4) ORDER BY event_id LIMIT 400"
-                               "operator" (episodes-sealed-through kernel) "turn" "reply")
+                     ;; Stamps in the operator's time: an episode written from UTC stamps
+                     ;; recalled a 10:38 pm message as "around 03:38" (operator, 2026-11-07).
+                     (mapcar (lambda (r) (list (first r) (second r) (third r) (localize-dialogue kernel (fourth r)) (fifth r)))
+                             (sql-rows (kernel-db kernel)
+                                       "SELECT event_id,kind,speaker,rendered,at FROM working_dialogue WHERE audience=?1 AND event_id>?2 AND kind IN (?3,?4) ORDER BY event_id LIMIT 400"
+                                       "operator" (episodes-sealed-through kernel) "turn" "reply"))
                      (experience-items-after kernel audience (episodes-sealed-through kernel audience)))
                  (now)
                  :quiet (setting kernel "memory.episode_quiet_seconds")

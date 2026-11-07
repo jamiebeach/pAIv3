@@ -267,8 +267,9 @@ or identifiers), newest first, as (kind at text ref event-id)."
                        ;; The event id lets a later step name exactly what was said
                        ;; (correct_knowledge's source_event_id).
                        (loop for (kind at snippet ref event-id) in rows
-                             collect (format nil "[~a ~a UTC] ~a (~a, event ~a): ~a"
-                                             (subseq at 0 10) (subseq at 11 16) kind ref event-id snippet)))
+                             collect (format nil "[~a] ~a (~a, event ~a): ~a"
+                                             (or (ignore-errors (local-stamp kernel at)) (format nil "~a ~a UTC" (subseq at 0 10) (subseq at 11 16)))
+                                             kind ref event-id (localize-utc-times kernel snippet at))))
                "Nothing in my experience matches that."))))
 
 ;;; Memory
@@ -289,7 +290,8 @@ or identifiers), newest first, as (kind at text ref event-id)."
              (append! kernel "memory.recalled" (obj "memory_ids" (mapcar #'first rows) "thought_id" id)))
            (if rows
                (format nil "~{~a~^~%~}"
-                       (mapcar (lambda (r) (format nil "- ~a (~a)" (second r) (or (memory-origin kernel (first r)) "a memory")))
+                       (mapcar (lambda (r) (format nil "- ~@[~a ~]~a (~a)" (memory-record kernel (first r)) (memory-text-local kernel (first r) (second r))
+                                                   (or (memory-origin kernel (first r)) "a memory")))
                                rows))
                "Nothing comes to mind.")))))
 
@@ -312,6 +314,11 @@ or identifiers), newest first, as (kind at text ref event-id)."
                (format nil "~a is not a sensitivity. Use operator-only, household, peers, public or granted:<topic>." sensitivity))
              (missing
               (format nil "~a is not an image I hold, so nothing was remembered. An image id is 32 hex digits (set_avatar with no image_id lists the pictures I made); a memory id (m-...) or fact id (f-...) is not one." missing))
+             ;; What it says I read, checked or saw, set against my records once a
+             ;; thought, before it is kept (2026-11-07, the memory-notes thread).
+             ((let ((sources (and *provenance-hook* (not (%provenance-asked-p kernel id))
+                                  (ignore-errors (funcall *provenance-hook* kernel (thought-row kernel id) (obj-get args "content" ""))))))
+                (and sources (format nil "Not kept yet. ~a Then call remember again with the restated note." sources))))
              (t
                (let ((memory (form-memory kernel :kind (obj-get args "kind" "fact")
                                                  :content (format nil "~a~@[~%(pictures: ~{~a~^ ~})~]" (obj-get args "content" "") images)

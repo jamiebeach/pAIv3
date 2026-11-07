@@ -561,6 +561,29 @@
       (run-until-idle k)
       (is (= 1 (getf (thought-row k id) :model-calls)) "a reply that claims nothing goes straight out"))))
 
+(deftest a-note-i-kept-comes-back-with-the-record-of-the-thought-that-wrote-it
+  ;; 2026-11-07, the memory-notes thread: a note said "I read the paper" while
+  ;; its thought's fetches had failed. The record is the system's, read first.
+  (with-thinking (k)
+    (let* ((busy (request-thought k "introspection" "SYNTHETIC reading"))
+           (idle (request-thought k "introspection" "SYNTHETIC musing")))
+      (append! k "web.fetched" (obj "url" "https://example.org/SYNTHETIC-a" "hosts" (list "example.org") "status" 200 "outcome" "text" "chars" 900 "thought_id" busy))
+      (append! k "web.fetched" (obj "url" "https://example.org/SYNTHETIC-b" "hosts" (list "example.org") "status" 403 "outcome" "failed" "chars" 0 "thought_id" busy))
+      (append! k "web.searched" (obj "query" "SYNTHETIC" "status" 200 "thought_id" busy))
+      (let ((read (form-memory k :kind "insight" :content "I read the SYNTHETIC paper" :owner "self" :source-event-id busy))
+            (mused (form-memory k :kind "insight" :content "SYNTHETIC thought" :owner "self" :source-event-id idle))
+            (told (form-memory k :kind "fact" :content "SYNTHETIC from the operator" :owner "operator")))
+        (is (search "2 fetches, 1 bringing text (the rest: failed 403); 1 search" (memory-record k read)))
+        (is (search "it fetched no page; no search" (memory-record k mused)) "nothing attempted reads apart from failing")
+        (is (null (memory-record k told)) "only notes I wrote carry it")))
+    (let* ((wake (request-thought k "introspection" "SYNTHETIC wake"))
+           (run (pai-v3.mind::tool-run (gethash "remember" pai-v3.mind::*tools*)))
+           (pai-v3.mind::*provenance-hook* (lambda (kernel thought text) (declare (ignore kernel thought))
+                                             (and (search "I read" text) "SYNTHETIC records say otherwise."))))
+      (is (search "Not kept yet" (funcall run k wake (obj "content" "I read it all, SYNTHETIC."))) "saving a note goes through the check")
+      (pai-v3.mind::%record-text k wake "provenance" "SYNTHETIC asked")
+      (is (search "Remembered" (funcall run k wake (obj "content" "I read it all, SYNTHETIC."))) "once asked, keeping it goes ahead"))))
+
 (deftest web-history-says-what-i-fetched-and-searched-and-what-came-of-it
   (with-thinking (k)
     (append! k "web.fetched" (obj "url" "https://example.org/SYNTHETIC.pdf" "hosts" (list "example.org") "status" 200 "outcome" "unreadable" "chars" 0))

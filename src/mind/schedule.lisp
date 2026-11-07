@@ -111,6 +111,53 @@ did, more than once) even with the clock slot saying otherwise."
             rendered))
       rendered))
 
+(defun localize-utc-times (kernel text &optional reference)
+  "TEXT with each time it gives in UTC said in the operator's time instead: HH:MM,
+or a range HH:MM-HH:MM, followed by UTC or \"web time\" (how dialogue stamps,
+which are UTC, were copied into written memories), with a date just before it
+used when there is one, else the date of REFERENCE (ISO), else today. Read-time
+only: what is stored is never changed (operator, 2026-11-07: a 10:38 pm message
+recalled as \"around 03:38\")."
+  (if (not (stringp text))
+      text
+      (let ((out (make-string-output-stream)) (i 0) (n (length text))
+            (zone (%zone kernel nil)))
+        (labels ((digits-p (s e) (and (<= 0 s) (<= e n) (every #'digit-char-p (subseq text s e))))
+                 (hhmm-p (s) (and (digits-p s (+ s 2)) (< (+ s 4) n) (char= #\: (char text (+ s 2))) (digits-p (+ s 3) (+ s 5))
+                                  (or (zerop s) (not (digit-char-p (char text (1- s)))))))
+                 (date-before (s) (and (>= s 11) (digits-p (- s 11) (- s 7)) (char= #\- (char text (- s 7)))
+                                       (digits-p (- s 6) (- s 4)) (char= #\- (char text (- s 4))) (digits-p (- s 3) (- s 1))
+                                       (member (char text (1- s)) '(#\Space #\T))
+                                       (- s 11)))
+                 (suffix-at (s) (loop for word in '(" UTC" "UTC" "Z" " web time")
+                                      when (and (<= (+ s (length word)) n) (string-equal word text :start2 s :end2 (+ s (length word)))
+                                                (or (= (+ s (length word)) n) (not (alpha-char-p (char text (+ s (length word)))))))
+                                        return (+ s (length word))))
+                 (local (date hhmm) (let ((at (ignore-errors (local-time:parse-timestring (format nil "~aT~a:00Z" date hhmm)))))
+                                      (and at (list (local-time:format-timestring nil at :format '((:year 4) "-" (:month 2) "-" (:day 2)) :timezone zone)
+                                                    (local-time:format-timestring nil at :format '((:hour 2) ":" (:min 2)) :timezone zone)
+                                                    (local-time:format-timestring nil at :format '(:timezone) :timezone zone))))))
+          (loop while (< i n)
+                do (let* ((range-end (and (hhmm-p i) (< (+ i 5) n) (member (char text (+ i 5)) '(#\- #\–)) (hhmm-p (+ i 6)) (+ i 11)))
+                          (end (and (hhmm-p i) (or (and range-end (suffix-at range-end)) (suffix-at (+ i 5)))))
+                          (date-start (and end (date-before i)))
+                          (date (and end (cond (date-start (subseq text date-start (+ date-start 10)))
+                                               ((and (stringp reference) (>= (length reference) 10)) (subseq reference 0 10))
+                                               (t (subseq (iso8601 (now)) 0 10)))))
+                          (from (and end (local date (subseq text i (+ i 5)))))
+                          (to (and end range-end (suffix-at range-end) (local date (subseq text (+ i 6) (+ i 11))))))
+                     (if (and end from)
+                         (progn
+                           ;; A date written just before the time is replaced with it: the local date may differ.
+                           (when date-start
+                             (let ((written (get-output-stream-string out)))
+                               (write-string (subseq written 0 (- (length written) (- i date-start))) out)
+                               (format out "~a " (first from))))
+                           (format out "~a~@[–~a~] ~a" (second from) (and to (second to)) (third from))
+                           (setf i end))
+                         (progn (write-char (char text i) out) (incf i)))))
+          (get-output-stream-string out)))))
+
 (defun %zone (kernel name)
   (local-time:find-timezone-by-location-name
    (if (or (null name) (string= name "user")) (setting kernel "time.zone") name)))
@@ -134,7 +181,7 @@ did, more than once) even with the clock slot saying otherwise."
   (let* ((name (setting kernel "time.zone"))
          (zone (%zone kernel nil))
          (weekday (sixth (%local (now) zone)))
-         (text (format nil "It is ~a, ~a, in ~a (~a UTC). Conversation times are in this zone; other times say UTC."
+         (text (format nil "It is ~a, ~a, in ~a (~a UTC). Times shown to you are in this zone, the zone named, unless a time says UTC."
                        (nth weekday '("Sunday" "Monday" "Tuesday" "Wednesday" "Thursday" "Friday" "Saturday"))
                        (local-slot (now) zone) name (subseq (local-slot (now) local-time:+utc-zone+) 11))))
     (list (list (format nil "~a~%Coming days: ~{~a~^ / ~}" text

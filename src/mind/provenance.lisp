@@ -87,7 +87,8 @@ to restate it against my records, with them; else NIL."
              (provenance-claims-p kernel thought text))
     (let ((evidence (provenance-evidence kernel thought text))
           (start (web-history-start kernel)))
-      (format nil "What you are about to say claims what you read, checked or saw, or when you started on something. Here is what your own records show on it, each named:~%~:[- nothing: your records hold nothing on this.~;~:*~{- ~a~%~}~]~@[Your fetch and search log begins ~a; nothing before then is in it, and that is no fault of yours.~%~]A fetch shows a page arrived, not that you read all of it. Restate the claim as your records support it, naming the record (\"my fetch log shows…\", \"my memory note says…\"), or say plainly that you cannot verify it. If they already back it, keep it as it is."
+      (format nil "What you are about to say claims what you read, checked or saw, or when you started on something. In this thought, by the system's count, ~a. Here is what your own records show on it, each named:~%~:[- nothing: your records hold nothing on this.~;~:*~{- ~a~%~}~]~@[Your fetch and search log begins ~a; nothing before then is in it, and that is no fault of yours.~%~]A fetch shows a page arrived, not that you read all of it. Restate the claim as your records support it, naming the record (\"my fetch log shows…\", \"my memory note says…\"), or say plainly that you cannot verify it. If they already back it, keep it as it is."
+              (or (thought-web-record kernel (getf thought :id)) "it fetched no page and ran no search")
               evidence (and start (or (ignore-errors (local-stamp kernel start)) start))))))
 
 (setf *provenance-hook*

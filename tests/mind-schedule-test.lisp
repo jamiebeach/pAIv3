@@ -83,7 +83,7 @@
         (is (search "in America/New_York" text))
         (is (search (format nil "~a" (pai-v3.mind:local-slot (now) (local-time:find-timezone-by-location-name "America/New_York"))) text)
             "the local wall time")
-        (is (search "other times say UTC" text) "and that other stamps say UTC")))))
+        (is (search "unless a time says UTC" text) "and that times shown are local unless they say UTC")))))
 
 (deftest conversation-is-stamped-in-the-operators-time
   (with-temp-kernel (k)
@@ -180,5 +180,16 @@
     (flet ((reason (like) (sql-value (kernel-db k) "SELECT reason FROM thoughts WHERE reason LIKE ?1 LIMIT 1" like)))
       (is (search "do not do that job now" (reason "%06:30 brief%")) "a context note says it is context for a later run")
       (is (not (search "do not do that job now" (reason "%plain notice%"))) "a notify reminder does not"))))
+
+(deftest utc-times-written-into-prose-are-read-in-the-operators-time
+  ;; Operator, 2026-11-07: a 10:38 pm message was recalled as "around 03:38–03:45 web time".
+  (with-temp-kernel (k)
+    (change-setting k "time.zone" "America/Toronto" :origin (obj "principal_type" "operator"))
+    (flet ((loc (text &optional ref) (pai-v3.mind::localize-utc-times k text ref)))
+      (is (equal "messaged around 22:38–22:45 EST from bed" (loc "messaged around 03:38–03:45 web time from bed" "2026-11-07T04:00:00Z")))
+      (is (equal "on 2026-11-06 22:38 EST, he wrote" (loc "on 2026-11-07 03:38 UTC, he wrote")) "a date before it is moved too")
+      (is (equal "at 07:00 EDT" (loc "at 11:00 UTC" "2026-07-01T12:00:00Z")) "summer time from the reference date")
+      (is (equal "a ratio of 10:30 apples, version 12:34" (loc "a ratio of 10:30 apples, version 12:34")) "a time not said to be UTC is left alone")
+      (is (equal "at 11:00 UTCX" (loc "at 11:00 UTCX")) "nor a word that only starts with UTC"))))
 
 (run-suite "mind-schedule")

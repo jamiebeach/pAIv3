@@ -48,7 +48,7 @@
    #:facts-near #:fact-statement #:live-fact #:entity-names
    #:open-worlds-for #:entity-knowledge #:fact-ended
    #:note-depiction #:note-depictions #:pictures-of #:depicted-in
-   #:memory-strength #:memory-origin #:define-consolidation #:consolidation-budget-left #:define-embedding-source
+   #:memory-strength #:memory-origin #:memory-record #:memory-text-local #:define-consolidation #:consolidation-budget-left #:define-embedding-source
    #:nearest-vectors #:unit-vector-octets
    #:define-open-items #:open-items-about #:mentions-any-p #:define-step-note #:local-stamp #:written-ago
    #:grant-topic #:revoke-topic #:granted-class #:authority-refused #:classify-status #:calibrated-chars-per-token))

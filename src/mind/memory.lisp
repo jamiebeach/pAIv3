@@ -140,6 +140,11 @@ something I chose to remember)."
                 (let ((days (ignore-errors (local-days-ago kernel at))))
                   (and days (plusp days) "; time words in it such as tonight or tomorrow meant then, not now")))))))
 
+(defun memory-text-local (kernel memory-id text)
+  "A memory's TEXT with the UTC times written into it said in the operator's
+time, dated by when the memory was formed. Read-time only."
+  (localize-utc-times kernel text (sql-value (kernel-db kernel) "SELECT created_at FROM memory_nodes WHERE id=?1 LIMIT 1" memory-id)))
+
 (defun memory-strength (kernel memory-id)
   "MEMORY-ID's strength (0 to 1), or NIL."
   (sql-value (kernel-db kernel) "SELECT strength FROM memory_nodes WHERE id=?1 LIMIT 1" memory-id))

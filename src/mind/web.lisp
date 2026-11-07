@@ -275,7 +275,8 @@ search is recorded with what Brave says is left of the quota."
   :kind :inline
   :consumes ("web.fetched" "web.searched")
   :tables ("CREATE TABLE IF NOT EXISTS web_history (event_id INTEGER PRIMARY KEY, kind TEXT NOT NULL, target TEXT NOT NULL, status INTEGER NOT NULL, outcome TEXT, chars INTEGER, thought_id INTEGER, at TEXT NOT NULL)"
-           "CREATE INDEX IF NOT EXISTS web_history_at_idx ON web_history(at)")
+           "CREATE INDEX IF NOT EXISTS web_history_at_idx ON web_history(at)"
+           "CREATE INDEX IF NOT EXISTS web_history_thought_idx ON web_history(thought_id)")
   :reduce (lambda (db e)
             (let* ((p (event-payload e)) (search-p (equal (event-type e) "web.searched")))
               (sql-exec db "INSERT OR IGNORE INTO web_history(event_id,kind,target,status,outcome,chars,thought_id,at) VALUES(?1,?2,?3,?4,?5,?6,?7,?8)"
@@ -299,6 +300,46 @@ outcome chars at); with TERMS, only those whose address or query holds one."
             collect r into found
           when (>= (length found) most) return found
           finally (return found))))
+
+(defun thought-web-record (kernel thought-id)
+  "What the thought THOUGHT-ID (with its subthoughts) did on the web, counted
+and said by the system, never by the agent: how many fetches, how many brought
+text, how the others ended, and how many searches. Attempting nothing reads
+apart from failing (Aria, 2026-11-07). NIL for no thought."
+  (when thought-id
+    (let* ((db (kernel-db kernel))
+           (root (or (sql-value db "SELECT root_id FROM thoughts WHERE id=?1 LIMIT 1" thought-id) thought-id))
+           (rows (sql-rows db "SELECT kind,outcome,status FROM web_history WHERE thought_id IN (SELECT id FROM thoughts WHERE root_id=?1) LIMIT 500" root))
+           (fetches (remove "search" rows :key #'first :test #'string=))
+           (searches (- (length rows) (length fetches)))
+           (text (count "text" fetches :key #'second :test #'equal))
+           (others (remove "text" fetches :key #'second :test #'equal)))
+      (let ((ended (mapcar (lambda (r) (destructuring-bind (kind outcome status) r
+                                         (declare (ignore kind))
+                                         (cond ((equal outcome "failed") (format nil "failed ~d" status))
+                                               (outcome outcome)
+                                               (t (format nil "status ~d" status)))))
+                           others)))
+        (format nil "~a; ~a"
+                (if fetches
+                    (format nil "~d fetch~:*~[es~;~:;es~], ~d bringing text~@[ (the rest: ~{~a~^, ~})~]"
+                            (length fetches) text ended)
+                    "it fetched no page")
+                (if (plusp searches) (format nil "~d search~:*~[es~;~:;es~]" searches) "no search"))))))
+
+(defun memory-record (kernel memory-id)
+  "For a memory I chose to keep, the record of the thought that wrote it, to be
+read before the note: the system's count of what that thought did, beside what
+the note says it did (2026-11-07, the crew's memory-notes thread). NIL for a
+memory that is not one I wrote."
+  (let ((row (sql-row (kernel-db kernel) "SELECT owner,source_event_id,created_at FROM memory_nodes WHERE id=?1 LIMIT 1" memory-id)))
+    (when (and row (equal "self" (first row)))
+      (let ((thought (second row)) (start (web-history-start kernel)))
+        (cond ((or (null thought) (null (sql-value (kernel-db kernel) "SELECT 1 FROM thoughts WHERE id=?1 LIMIT 1" thought)))
+               "[record: none; this note does not say which thought wrote it]")
+              ((or (null start) (string< (third row) start))
+               "[record: none; written before my web history begins]")
+              (t (format nil "[record: the thought that wrote this note: ~a]" (thought-web-record kernel thought))))))))
 
 (defun web-history-line (kernel row)
   "One row of my web history as a line, saying what came of it."

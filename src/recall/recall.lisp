@@ -127,7 +127,8 @@ nearest VECTOR, within the association distance."
         (append (mapcar (lambda (text) (list text (estimate-tokens text))) texts)
                 (mapcar (lambda (row)
                           ;; Where it came from, so it is never taken for first-hand experience.
-                          (let ((text (format nil "~a (~a)" (second row) (or (memory-origin kernel (first row)) "a memory"))))
+                          (let ((text (format nil "~@[~a ~]~a (~a)" (memory-record kernel (first row)) (memory-text-local kernel (first row) (second row))
+                                                      (or (memory-origin kernel (first row)) "a memory"))))
                             (list text (estimate-tokens text))))
                         memories)
                 (unless vector

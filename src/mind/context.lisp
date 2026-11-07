@@ -147,7 +147,7 @@ animations it can perform.")
             (sql-rows (kernel-db kernel)
                       "SELECT reason,outcome,status,updated_at FROM thoughts WHERE audience=?1 AND id<>?2 ORDER BY id DESC LIMIT 40"
                       (getf request :audience) (or (getf request :thought-id) 0)))
-        for text = (%activity-line reason outcome status at)
+        for text = (%activity-line kernel reason outcome status at)
         collect (list text (estimate-tokens text))))
 
 (defparameter +activity-kinds+
@@ -165,13 +165,15 @@ animations it can perform.")
          (end (min n (length line) (if (and stop (>= stop 40)) (1+ stop) (length line)))))
     (if (< end (length line)) (format nil "~a…" (subseq line 0 end)) line)))
 
-(defun %activity-line (reason outcome status at)
+(defun %activity-line (kernel reason outcome status at)
   "One compact line for a recent thought: what it was about and how it ended.
 The full prompt of each thought used to be quoted here: a third of every context."
   (let ((kind (cdr (find-if (lambda (k) (eql 0 (search (car k) (or reason "")))) +activity-kinds+))))
-    (format nil "[~a UTC] ~a -> ~a~@[: ~a~]" (subseq at 0 16)
+    ;; In the operator's time, the zone named: a UTC hour was read as local, an
+    ;; 11-12 UTC stretch as 11 pm to midnight (operator, 2026-11-07).
+    (format nil "[~a] ~a -> ~a~@[: ~a~]" (or (ignore-errors (local-stamp kernel at)) (format nil "~a UTC" (subseq at 0 16)))
             (or kind (%first-part reason 240)) status
-            (and outcome (plusp (length outcome)) (%first-part outcome 400)))))
+            (and outcome (plusp (length outcome)) (localize-utc-times kernel (%first-part outcome 400) at)))))
 
 ;;; Assembly
 

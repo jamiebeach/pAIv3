@@ -153,7 +153,7 @@ decisions and directions, e.g. \"Sam decided pAI v3 keeps one knowledge graph\",
                                          known)
                                  (loop for (id kind nil rendered) in turns
                                        collect (format nil "[S~d · from the ~:[agent~;operator~]] ~a"
-                                                       id (equal kind "turn") rendered)))))))
+                                                       id (equal kind "turn") (localize-dialogue kernel rendered))))))))
 
 ;;; Checking each item
 
