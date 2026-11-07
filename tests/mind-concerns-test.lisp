@@ -162,6 +162,12 @@
     (advance (* 4 86400))
     (is (null (pai-v3.mind::%fill k :conclusions (list :audience "operator") 1200)) "and ages out after a few days")))
 
+(deftest conclusions-stay-out-of-conversations-and-in-private-thinking
+  ;; Operator, 2026-11-07: in a conversation they pulled replies toward unrelated topics.
+  (flet ((has (profile) (find :conclusions (gethash profile pai-v3.mind::*context-profiles*) :key #'first)))
+    (is (null (has "operator-turn")) "not in a conversation with the operator")
+    (is (has "private-cognition") "still in quiet-time thinking, so settled work is not reopened")))
+
 (deftest a-failure-is-looked-at-at-once-with-repair-steps
   (with-quiet (k)
     (quiet-tick k)                                      ; the failure cursor starts here

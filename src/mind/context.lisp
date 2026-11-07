@@ -54,7 +54,10 @@ render audited content safe for every audience. Unreviewed sources default to op
           (:reality   :max 200   :source :reality   :title "Where I stand")
           (:close     :max 500   :source :close     :title "Those I am close to")
           (:summary   :max 3000  :source :summary   :title "Earlier, in summary")
-          (:conclusions :max 1200 :source :conclusions :title "What I have concluded lately (newer than the summary)")
+          ;; No "What I have concluded lately" here (operator, 2026-11-07): closed
+          ;; quiet-time concerns are mostly about my own internals, sat high in the
+          ;; prompt under a confident title, and pulled replies toward unrelated
+          ;; topics; removing it left replies no worse. Private thinking keeps it.
           (:carried   :max 700   :source :carried   :title "Things I am carrying for the operator")
           (:docket    :max 600   :source :docket    :title "Work I am keeping")
           (:concerns  :max 600   :source :concerns  :title "What I am looking into")
