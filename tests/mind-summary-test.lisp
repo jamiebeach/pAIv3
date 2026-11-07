@@ -55,7 +55,10 @@
     (let* ((messages (assemble-context k "operator-turn" (list :audience "operator" :task "hi")))
            (now (obj-get (second messages) "content")))
       (is (search "## Earlier, in summary" now))
-      (is (search "order seeds" now)))))
+      (is (search "order seeds" now))
+      ;; Operator, 2026-11-07: yesterday's 5 am, summarised, was told as today's.
+      (is (search "[Covers our conversation up to" now) "framed by what it covers")
+      (is (search "earlier today. What it describes happened then or earlier" now)))))
 
 (deftest folds-roll-forward-from-the-last-summary
   (with-summaries (k "First summary.")

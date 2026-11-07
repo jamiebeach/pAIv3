@@ -53,8 +53,18 @@
            "SELECT text,tokens,covers_to FROM working_summary WHERE audience=?1 LIMIT 1" audience))
 
 (define-slot-source :summary (kernel request max)
+  ;; Framed by what it covers: without it, a summarised 5 am of yesterday was
+  ;; told as today's (operator, 2026-11-07, who found "(from yesterday)" fixed it).
   (let ((row (working-summary kernel (getf request :audience))))
-    (and row (list (list (first row) (second row))))))
+    (when row
+      (let* ((at (ignore-errors (event-at (event-by-id kernel (third row)))))
+             (days (and at (ignore-errors (local-days-ago kernel at))))
+             (text (format nil "~@[~a~%~]~a"
+                           (and at (format nil "[Covers our conversation up to ~a~@[, ~a~]. What it describes happened then or earlier, not today unless it says so.]"
+                                           (or (ignore-errors (local-stamp kernel at)) at)
+                                           (case days ((nil) nil) (0 "earlier today") (1 "yesterday") (t (format nil "~d days ago" days)))))
+                           (localize-utc-times kernel (first row) at))))
+        (list (list text (estimate-tokens text)))))))
 
 ;;; What needs folding
 
