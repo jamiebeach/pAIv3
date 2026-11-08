@@ -25,7 +25,9 @@
            ("title" :string :optional) ("access" :string :optional) ("viewers" :array :optional)
            ("intent" :string :optional) ("reply_to" :string :optional) ("chain_depth" :integer :optional)
            ("images" :array :optional) ("quiet_for" :array :optional) ("via" :string :optional)
-           ("migrated" :boolean :optional)))
+           ("migrated" :boolean :optional)
+           ;; Attached files, described only: name, size, type, sha256 (forum-files.lisp).
+           ("files" :array :optional)))
 (define-event-type "forum.reacted"
   :schema (("msg_id" :string) ("thread_id" :string) ("emoji" :string) ("by_id" :string) ("by_name" :string)
            ("on" :boolean) ("ts" :integer)))
@@ -229,13 +231,16 @@
         (ignore-errors (%forum-deliver kernel op))))))
 
 (defun %forum-wire (kernel type payload)
-  "PAYLOAD as sent: a post carries its images' data."
-  (let ((ids (and (string= type "forum.posted") (remove-if-not #'stringp (or (%given (obj-get payload "images")) '())))))
-    (if (null ids)
+  "PAYLOAD as sent: a post carries its images' data and its files' bytes."
+  (let ((ids (and (string= type "forum.posted") (remove-if-not #'stringp (or (%given (obj-get payload "images")) '()))))
+        (files (and (string= type "forum.posted") (%given (obj-get payload "files")))))
+    (if (and (null ids) (null files))
         payload
         (let ((o (obj)))
           (maphash (lambda (k v) (setf (gethash k o) v)) payload)
-          (setf (gethash "image_data" o) (remove nil (mapcar (lambda (id) (pai-v3.mind::image-data-url kernel id)) ids)))
+          (when ids
+            (setf (gethash "image_data" o) (remove nil (mapcar (lambda (id) (pai-v3.mind::image-data-url kernel id)) ids))))
+          (when files (setf (gethash "file_data" o) (forum-files-wire kernel files)))
           o))))
 
 (defun %forum-deliver (kernel op)
@@ -302,7 +307,7 @@ fails is skipped for the rest of this round."
     (%board-refuse "write 1 to 4000 characters")))
 
 (defun forum-post (kernel &key thread-id title text reply-to intent images author-id author-name
-                               (chain-depth 1) quiet-for (access "crew") viewers)
+                               (chain-depth 1) quiet-for (access "crew") viewers files)
   "Post TEXT in the forum, as AUTHOR-ID (\"operator\" or my own id): a new
 thread titled TITLE, or a reply in THREAD-ID. Applied here and sent to every
 crew member who may see it. Returns an object saying what was done."
@@ -330,6 +335,7 @@ crew member who may see it. Returns an object saying what was done."
                          "intent" intent "reply_to" reply-to "chain_depth" chain-depth
                          "images" images "quiet_for" (remove (fleet-agent-id kernel) quiet :test #'equal)
                          "via" (fleet-agent-id kernel))))
+      (when files (setf (gethash "files" payload) files))
       (unless thread
         (setf (gethash "title" payload) (string-trim " " title)
               (gethash "access" payload) access
@@ -442,7 +448,9 @@ where the operator was signed in."
         (when data
           (unless (and (listp data) (<= (length data) +board-images-most+)) (%board-refuse "too many images"))
           (dolist (url data) (pai-v3.mind::store-image kernel url)))
-        (remhash "image_data" payload)))
+        (remhash "image_data" payload))
+      ;; Files likewise: kept in my workspace, checked against their hash; their bytes never recorded.
+      (accept-forum-files kernel payload))
     ;; Who gets what is the sender's decision, made from the thread's access.
     (let ((thread (forum-thread kernel (obj-get payload "thread_id"))))
       (when (and (null thread) (not (string= type "forum.posted"))
@@ -562,7 +570,7 @@ came from, or NIL when it was made here."
   (destructuring-bind (id author name text intent reply ts images quiet via) r
     (let ((reactions (board-reactions-of kernel id)))
       (obj "msg_id" id "author_id" author "author_name" name "text" text "intent" (or intent :null)
-           "reply_to" (or reply :null) "timestamp" ts
+           "reply_to" (or reply :null) "timestamp" ts "files" (or (%forum-files-of kernel id) '())
            "images" (or (ignore-errors (json-parse images)) '())
            "quiet_for" (or (ignore-errors (json-parse quiet)) '())
            "via" (or via :null) "reactions" reactions))))
@@ -733,9 +741,11 @@ one dump (operator, 2026-11-06: pagination)."
                       (mapcar (lambda (r)
                                 (destructuring-bind (id author name text intent reply ts images quiet via) r
                                   (declare (ignore author ts quiet via))
-                                  (format nil "  ~a (message ~a~@[, ~a~]~@[, replying to ~a~]~@[, images ~{~a~^, ~}~]): ~a~@[~a~]"
+                                  (format nil "  ~a (message ~a~@[, ~a~]~@[, replying to ~a~]~@[, images ~{~a~^, ~}~]): ~a~@[~a~]~@[~%    attached: ~{~a~^, ~} (read with read_attachment)~]"
                                           name id intent reply (%given (ignore-errors (json-parse images))) text
-                                          (%forum-reactions-text kernel id))))
+                                          (%forum-reactions-text kernel id)
+                                          (mapcar (lambda (d) (format nil "~a (~:d bytes)" (obj-get d "name") (obj-get d "size")))
+                                                  (%forum-files-of kernel id)))))
                               (sql-rows (kernel-db kernel)
                                         "SELECT msg_id,author_id,author_name,text,intent,reply_to,ts,images,quiet_for,via FROM forum_messages WHERE thread_id=?1 ORDER BY ts,event_id LIMIT ?2 OFFSET ?3"
                                         thread-id (- end start) start))))))))))
@@ -1059,6 +1069,17 @@ way for a single peer whose thread now lives in the forum (bead v3-m9m)."
                (reply 200 (obj "threads" threads "total" (or total :null) "page" (or page :null) "pages" (or pages :null)
                                "members" (mapcar (lambda (m) (obj "id" (first m) "name" (second m))) (forum-members kernel))
                                "self" (fleet-agent-id kernel))))))
+          ((and (eq method :get) (string= path "/api/forum/file"))
+           ;; A file attached to a post, as a download.
+           (let* ((sha (hunchentoot:get-parameter "sha")) (name (hunchentoot:get-parameter "name"))
+                  (octets (forum-file-octets kernel sha name)))
+             (if (null octets)
+                 (reply 404 (obj "error" "no such file"))
+                 (progn
+                   (setf (hunchentoot:content-type*) "application/octet-stream"
+                         (hunchentoot:header-out "Content-Disposition") (format nil "attachment; filename=\"~a\"" (%safe-file-name name))
+                         (hunchentoot:header-out "X-Content-Type-Options") "nosniff")
+                   octets))))
           ((and (eq method :get) (string= path "/api/forum/thread"))
            (let ((th (forum-thread-json kernel (hunchentoot:get-parameter "id") :page (%page-param))))
              (if th (reply 200 th) (reply 404 (obj "error" "no such thread")))))
@@ -1076,6 +1097,7 @@ way for a single peer whose thread now lives in the forum (bead v3-m9m)."
                                                                       (handler-case (pai-v3.mind::store-image kernel u)
                                                                         (error (e) (%board-refuse "~a" e))))
                                                                     (remove-if-not #'stringp v))))
+                                             :files (let ((v (g "files"))) (and v (store-forum-files kernel v)))
                                              :author-id "operator" :author-name (setting kernel "operator.name")
                                              :quiet-for (let ((v (g "quiet_for"))) (if (listp v) v '()))
                                              :access (or (g "access") "crew")

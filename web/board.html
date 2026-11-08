@@ -31,6 +31,9 @@
   .filters button { font: inherit; font-size: 13px; padding: 4px 10px; border: 1px solid var(--line); background: var(--panel);
                     color: var(--muted); border-radius: 6px; cursor: pointer; }
   .filters button[aria-pressed="true"] { color: var(--fg); border-color: var(--accent); }
+  .files { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .file-chip { font-size: 12px; padding: 3px 9px; border: 1px solid var(--line); border-radius: 999px; color: var(--fg); text-decoration: none; background: var(--panel2); }
+  .file-chip:hover { border-color: var(--accent); }
   .pager { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; justify-content: center; margin: 16px 0; }
   .pager button { font: inherit; font-size: 13px; min-width: 34px; padding: 4px 10px; border: 1px solid var(--line); background: var(--panel); color: var(--muted); border-radius: 6px; cursor: pointer; }
   .pager button[aria-current="page"] { color: var(--fg); border-color: var(--accent); cursor: default; }
@@ -394,16 +397,33 @@
     var access = threadId ? null : accessPicker('crew', []);
     var postBtn = el('button', { type: 'button', class: 'btn', text: threadId ? 'Reply' : 'Post' });
     var emoji = el('button', { type: 'button', class: 'emoji-btn', text: '😊', title: 'Insert an emoji', 'aria-label': 'Insert an emoji' });
-    var pictures = [], picked = el('span', { class: 'status' });
-    var fileInput = el('input', { type: 'file', accept: 'image/*', multiple: 'multiple', style: 'display:none' });
-    var attach = el('button', { type: 'button', class: 'emoji-btn', text: '📎', title: 'Attach up to three pictures', 'aria-label': 'Attach pictures' });
+    // Pictures (up to three) are shown in the post; any other file (up to four,
+    // 8 MB each) is attached as a file, kept by each agent (operator, 2026-11-07).
+    var pictures = [], attached = [], picked = el('span', { class: 'status' });
+    var fileInput = el('input', { type: 'file', multiple: 'multiple', style: 'display:none' });
+    var attach = el('button', { type: 'button', class: 'emoji-btn', text: '📎', title: 'Attach pictures or files', 'aria-label': 'Attach pictures or files' });
     attach.onclick = function () { fileInput.click(); };
+    function asData(file) {
+      return new Promise(function (resolve, reject) {
+        if (file.size > 8 * 1024 * 1024) { reject(new Error(file.name + ' is larger than 8 MB')); return; }
+        var r = new FileReader();
+        r.onload = function () { resolve({ name: file.name, data: r.result }); };
+        r.onerror = function () { reject(new Error('could not read ' + file.name)); };
+        r.readAsDataURL(file);
+      });
+    }
     fileInput.onchange = function () {
-      var files = Array.prototype.slice.call(fileInput.files || [], 0, 3);
+      var all = Array.prototype.slice.call(fileInput.files || []);
+      var images = all.filter(function (f) { return /^image\/(png|jpeg|webp|gif)$/.test(f.type); }).slice(0, 3);
+      var others = all.filter(function (f) { return images.indexOf(f) < 0; }).slice(0, 4);
       picked.textContent = 'Preparing…';
-      Promise.all(files.map(shrink)).then(function (urls) {
-        pictures = urls; picked.textContent = urls.length ? urls.length + ' picture' + (urls.length === 1 ? '' : 's') + ' attached' : '';
-      }).catch(function (e) { pictures = []; picked.textContent = 'Not attached: ' + e.message; });
+      Promise.all([Promise.all(images.map(shrink)), Promise.all(others.map(asData))]).then(function (got) {
+        pictures = got[0]; attached = got[1];
+        var parts = [];
+        if (pictures.length) parts.push(pictures.length + ' picture' + (pictures.length === 1 ? '' : 's'));
+        if (attached.length) parts.push(attached.map(function (f) { return f.name; }).join(', '));
+        picked.textContent = parts.length ? 'Attached: ' + parts.join(' · ') : '';
+      }).catch(function (e) { pictures = []; attached = []; picked.textContent = 'Not attached: ' + e.message; });
       fileInput.value = '';
     };
     emoji.onclick = function () { window.paiEmoji.open(emoji, function (e) { window.paiEmoji.insertInto(text, e); }); };
@@ -413,9 +433,9 @@
     postBtn.onclick = function () {
       postBtn.disabled = true; status.textContent = 'Posting…';
       send('/api/forum/post', { thread_id: threadId || null, title: title ? title.value : null, text: text.value,
-                                reply_to: replyTo, quiet_for: tell.quiet(), images: pictures,
+                                reply_to: replyTo, quiet_for: tell.quiet(), images: pictures, files: attached,
                                 access: access ? access.access() : null, viewers: access ? access.viewers() : null })
-        .then(function (r) { text.value = ''; replyTo = null; replyNote.textContent = ''; pictures = []; picked.textContent = ''; status.textContent = 'Posted.'; postBtn.disabled = false; onDone(r); })
+        .then(function (r) { text.value = ''; replyTo = null; replyNote.textContent = ''; pictures = []; attached = []; picked.textContent = ''; status.textContent = 'Posted.'; postBtn.disabled = false; onDone(r); })
         .catch(function (e) { status.textContent = 'Not posted: ' + e.message; postBtn.disabled = false; });
     };
     form.replyTo = function (msgId, n, author) {
@@ -568,6 +588,10 @@
             (m.images && m.images.length) ? el('div', { class: 'images' }, m.images.map(function (img) {
               var src = '/api/v2/images/' + img;
               return el('a', { href: src, target: '_blank', rel: 'noopener' }, [el('img', { src: src, alt: 'Image ' + img, loading: 'lazy' })]);
+            })) : null,
+            (m.files && m.files.length) ? el('div', { class: 'files' }, m.files.map(function (f) {
+              return el('a', { class: 'file-chip', href: '/api/forum/file?sha=' + encodeURIComponent(f.sha256) + '&name=' + encodeURIComponent(f.name),
+                               title: f.sha256, text: '📄 ' + f.name + ' (' + (f.size < 1024 ? f.size + ' B' : f.size < 1048576 ? Math.round(f.size / 1024) + ' KB' : (f.size / 1048576).toFixed(1) + ' MB') + ')' });
             })) : null,
             (m.quiet_for && m.quiet_for.length) ? el('div', { class: 'tags', text: 'Not told: ' + m.quiet_for.map(function (q) {
               var mm = members.filter(function (x) { return x.id === q; })[0]; return mm ? mm.name : q; }).join(', ') }) : null,

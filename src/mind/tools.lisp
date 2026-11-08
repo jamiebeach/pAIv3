@@ -100,7 +100,7 @@ defines for itself is always operator-trust and never core.")
   :type :array :default (list "lisp_eval" "shell" "install_software") :group "Safety"
   :description "Tools that run code in my container. They are not offered in a thought that has taken in outside content.")
 (define-setting "safety.outside_content_tools"
-  :type :array :default (list "web_fetch" "brave_search" "mail" "calendar" "read_forum") :group "Safety"
+  :type :array :default (list "web_fetch" "brave_search" "mail" "calendar" "read_forum" "read_attachment") :group "Safety"
   :description "Tools whose results are outside content (mail, calendar, web, forum posts that guests can write). After one of them, a thought gets no code tools.")
 
 (defun outside-content-p (kernel thought)

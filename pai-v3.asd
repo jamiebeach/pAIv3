@@ -107,6 +107,7 @@
                  (:file "progress")
                  (:file "reactions")
                  (:file "forum")
+                 (:file "forum-files")
                  (:file "guests")
                  (:file "perception")
                  (:file "reading")
