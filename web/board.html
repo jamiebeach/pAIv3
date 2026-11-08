@@ -621,7 +621,21 @@
           send('/api/forum/thread', { thread_id: id, relayed: t.relayed !== true }).then(load).catch(function (e) { alertish(e); });
         };
       }
-      controls.replaceChildren(el('div', { class: 'toolbar' }, [toggle, pin, who, relay].filter(Boolean)), panel);
+      // Rename: the thread's title, in place (operator, 2026-11-08).
+      var rename = el('button', { type: 'button', text: 'Rename' });
+      rename.onclick = function () {
+        var input = el('input', { type: 'text', value: t.title, 'aria-label': 'Thread title', style: 'flex:1;min-width:200px;font:inherit;padding:4px 8px' });
+        var save = el('button', { type: 'button', class: 'btn', text: 'Save' });
+        save.onclick = function () {
+          var title = input.value.trim();
+          if (!title || title === t.title) { panel.replaceChildren(); return; }
+          send('/api/forum/thread', { thread_id: id, title: title }).then(function () { panel.replaceChildren(); lastSig = ''; load(); }).catch(function (e) { alertish(e); });
+        };
+        input.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') save.click(); });
+        panel.replaceChildren(el('div', { class: 'access', style: 'display:flex;gap:8px;align-items:center' }, [input, save]));
+        input.focus();
+      };
+      controls.replaceChildren(el('div', { class: 'toolbar' }, [toggle, pin, rename, who, relay].filter(Boolean)), panel);
       if (t.status === 'open' && !reply) {
         reply = composer(id, function () { page = 'last'; lastSig = ''; load(); });
         reply.id = 'reply';
