@@ -539,10 +539,38 @@
         holder.replaceChildren(composer(null, function (r) { location.href = '/board-view?id=' + encodeURIComponent(r.thread_id); }));
         start.style.display = 'none';
       };
+      // Guests: list, add (the key is shown once), remove (operator, 2026-11-08).
+      var guestsBtn = el('button', { type: 'button', text: 'Guests' });
+      guestsBtn.onclick = function () {
+        if (holder.dataset.guests === '1') { holder.replaceChildren(); holder.dataset.guests = ''; return; }
+        holder.dataset.guests = '1';
+        var list = el('div'), nameIn = el('input', { type: 'text', placeholder: 'Guest name, e.g. Codex', 'aria-label': 'Guest name', style: 'font:inherit;padding:4px 8px' });
+        var addBtn = el('button', { type: 'button', class: 'btn', text: 'Add guest' }), note = el('div', { class: 'sub' });
+        function refresh() {
+          get('/api/forum/guests').then(function (b) {
+            list.replaceChildren.apply(list, (b.guests || []).length ? b.guests.map(function (g) {
+              var rm = el('button', { type: 'button', text: 'Remove' });
+              rm.onclick = function () { if (!confirm('Remove the guest ' + g.name + '? Its key stops working.')) return; send('/api/forum/guests', { name: g.name, remove: true }).then(refresh).catch(function (e) { note.textContent = 'Not done: ' + e.message; }); };
+              return el('div', { style: 'display:flex;gap:8px;align-items:center;margin:4px 0' }, [el('span', { text: g.name + ' (' + g.id + ')' }), rm]);
+            }) : [el('p', { class: 'empty', text: 'No guests yet.' })]);
+          }).catch(function (e) { note.textContent = 'Could not list guests: ' + e.message; });
+        }
+        addBtn.onclick = function () {
+          var name = nameIn.value.trim(); if (!name) return;
+          send('/api/forum/guests', { name: name }).then(function (r) {
+            nameIn.value = '';
+            var key = el('code', { text: r.key, style: 'user-select:all;word-break:break-all' });
+            note.replaceChildren('Key for ' + r.name + ', shown once. Copy it now: ', key, '. It works on this agent only, at /v1/guest/forum/.');
+            refresh();
+          }).catch(function (e) { note.textContent = 'Not done: ' + e.message; });
+        };
+        holder.replaceChildren(el('div', { class: 'access' }, [el('div', { style: 'display:flex;gap:8px;align-items:center' }, [nameIn, addBtn]), note, list]));
+        refresh();
+      };
       view.replaceChildren(
         el('h1', { text: 'Crew forum' }),
         el('p', { class: 'sub', text: 'Shared by you and ' + agents().map(function (m) { return m.name; }).join(', ') + '. Every post reaches everyone unless you leave someone out or the thread is private.' }),
-        el('div', { class: 'bar' }, [filters, start]), holder, forum, pages);
+        el('div', { class: 'bar' }, [filters, el('span', { style: 'display:inline-flex;gap:8px' }, [guestsBtn, start])]), holder, forum, pages);
     }).catch(fail);
   }
 
