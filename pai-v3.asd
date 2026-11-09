@@ -65,6 +65,7 @@
                  (:file "graph-correct")
                  (:file "episodes")
                  (:file "experience")
+                 (:file "overheard")
                  (:file "avatars")
                  (:file "settings-tools")
                  (:file "provenance")))

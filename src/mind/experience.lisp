@@ -87,7 +87,7 @@ or NIL when it is not an interaction. HANDLES is a list of (handle label)."
 (define-projection "experience"
   :kind :inline
   :version 3
-  :consumes ("turn.received" "reply.delivered" "notice.posted" "thought.step" "memory.formed"
+  :consumes ("turn.received" "reply.delivered" "notice.posted" "thought.step" "memory.formed" "dialogue.overheard"
              "fleet.peer.joined" "fleet.board.posted" "fleet.op" "image.generated" "experience.embedded")
   :tables ("CREATE VIRTUAL TABLE IF NOT EXISTS experience_fts USING fts5(text, keys, kind UNINDEXED, scope UNINDEXED, at UNINDEXED, ref UNINDEXED, event_id UNINDEXED, tokenize='porter unicode61')"
            ;; Interactions to embed, newest first; embedded once their vector is kept.
@@ -112,7 +112,19 @@ or NIL when it is not an interaction. HANDLES is a list of (handle label)."
                          ;; A peer's scope is also listed as one, for sealing its episodes.
                          (sql-exec db "INSERT OR IGNORE INTO experience_scopes(scope,kind) VALUES(?1,?2)"
                                    scope (if (and (> (length scope) 7) (string= "a:peer:" scope :end2 7)) "peer" "scope")))))
-                (cond ((string= type "experience.embedded")
+                (cond ((string= type "dialogue.overheard")
+                       ;; Found again, they read as what they were: heard, not said to me.
+                       (dolist (id (obj-get p "event_ids"))
+                         (flet ((relabel (text)
+                                  (let ((colon (search ": " text)))
+                                    (if (and colon (not (eql 0 (search +overheard-speaker+ text))))
+                                        (format nil "~a~a" +overheard-speaker+ (subseq text colon))
+                                        text))))
+                           (let ((text (sql-value db "SELECT text FROM experience_fts WHERE event_id=?1 AND kind='conversation' LIMIT 1" id))
+                                 (gist (sql-value db "SELECT gist FROM experience_items WHERE event_id=?1 LIMIT 1" id)))
+                             (when text (sql-exec db "UPDATE experience_fts SET text=?2 WHERE event_id=?1 AND kind='conversation'" id (relabel text)))
+                             (when gist (sql-exec db "UPDATE experience_items SET gist=?2 WHERE event_id=?1" id (relabel gist)))))))
+                      ((string= type "experience.embedded")
                        (let ((id (obj-get p "event_id")))
                          (sql-exec db "INSERT INTO experience_vectors(id,scope,vec) SELECT ?1,scope,?2 FROM experience_items WHERE event_id=?3 ON CONFLICT(id) DO UPDATE SET vec=excluded.vec"
                                    (princ-to-string id) (unit-vector-octets (decode-vector (base64url-decode (obj-get p "vector")))) id)

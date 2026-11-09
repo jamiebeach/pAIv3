@@ -38,7 +38,8 @@ or a forum post of theirs; else NIL."
   (let ((e (ignore-errors (event-by-id kernel event-id))))
     (when e
       (let ((p (event-payload e)) (type (event-type e)))
-        (cond ((and (string= type "turn.received") (equal "operator" (obj-get (obj-get p "origin") "principal_type")))
+        (cond ((and (string= type "turn.received") (equal "operator" (obj-get (obj-get p "origin") "principal_type"))
+                    (not (overheard-p kernel event-id)))
                (list (event-at e) (obj-get p "text")))
               ((and (string= type "forum.posted") (equal "operator" (obj-get p "author_id")))
                (list (event-at e) (obj-get p "text"))))))))

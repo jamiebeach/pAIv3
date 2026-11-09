@@ -109,6 +109,7 @@ lineage, and retract the old one. An operator maintenance step (bead v3-678)."
   (let ((e (ignore-errors (event-by-id kernel event-id))))
     (and e (equal "turn.received" (event-type e))
          (equal "operator" (obj-get (obj-get (event-payload e) "origin") "principal_type"))
+         (not (overheard-p kernel event-id))
          (let ((text (obj-get (event-payload e) "text"))) (and (stringp text) text)))))
 
 (defun %earlier-refusal (kernel event-id quote)

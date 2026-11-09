@@ -27,6 +27,13 @@
            ("canned" :boolean :optional))       ; answered without a thought (fastpath.lisp)
   :max-bytes 131072)
 
+(define-event-type "dialogue.overheard"
+  ;; Turns the microphone heard that were not said to me: a meeting the
+  ;; operator sat in while the avatar listened hands-free, two hours of it
+  ;; recorded as their words (operator, 2026-11-09). The turns stay in the
+  ;; ledger; this says what they were, and everything that reads them says so.
+  :schema (("audience" :string) ("event_ids" :array) ("from" :string) ("to" :string) ("note" :string)))
+
 (define-event-type "notice.posted"
   :schema (("channel" :string)
            ("audience" :string)
@@ -43,7 +50,28 @@
           (obj-get (event-payload event) "channel")
           speaker text))
 
+(defparameter +overheard-speaker+ "Overheard (not said to me)")
+
+(defun %reduce-overheard (db event)
+  (dolist (id (obj-get (event-payload event) "event_ids"))
+    (let ((row (sql-row db "SELECT speaker,rendered FROM working_dialogue WHERE event_id=?1 AND kind='turn' LIMIT 1" id)))
+      (sql-exec db "INSERT OR IGNORE INTO overheard_turns(event_id,at) VALUES(?1,?2)" id (event-at event))
+      (when (and row (not (equal (first row) +overheard-speaker+)))
+        (let* ((rendered (second row)) (mark (search (format nil "] ~a: " (first row)) rendered))
+               (new (if mark
+                        (format nil "~a] ~a: ~a" (subseq rendered 0 mark) +overheard-speaker+
+                                (subseq rendered (+ mark (length (first row)) 4)))
+                        rendered)))
+          (sql-exec db "UPDATE working_dialogue SET speaker=?2,rendered=?3,tokens=?4 WHERE event_id=?1"
+                    id +overheard-speaker+ new (estimate-tokens new)))))))
+
+(defun overheard-p (kernel event-id)
+  "True when turn EVENT-ID was marked as overheard, not said to me."
+  (and (sql-value (kernel-db kernel) "SELECT 1 FROM overheard_turns WHERE event_id=?1 LIMIT 1" event-id) t))
+
 (defun %reduce-dialogue (db event)
+  (when (string= (event-type event) "dialogue.overheard")
+    (return-from %reduce-dialogue (%reduce-overheard db event)))
   (let* ((p (event-payload event))
          (type (event-type event))
          (speaker (cond ((string= type "turn.received") (obj-get p "speaker"))
@@ -63,8 +91,9 @@
 (define-projection "working_dialogue"
   :kind :inline
   :version 3
-  :consumes ("turn.received" "reply.delivered" "notice.posted")
-  :tables ("CREATE TABLE IF NOT EXISTS working_dialogue (event_id INTEGER PRIMARY KEY, audience TEXT NOT NULL, channel TEXT NOT NULL, speaker TEXT NOT NULL, kind TEXT NOT NULL, rendered TEXT NOT NULL, tokens INTEGER NOT NULL, at TEXT NOT NULL, reply_to INTEGER)"
+  :consumes ("turn.received" "reply.delivered" "notice.posted" "dialogue.overheard")
+  :tables ("CREATE TABLE IF NOT EXISTS overheard_turns (event_id INTEGER PRIMARY KEY, at TEXT NOT NULL)"
+           "CREATE TABLE IF NOT EXISTS working_dialogue (event_id INTEGER PRIMARY KEY, audience TEXT NOT NULL, channel TEXT NOT NULL, speaker TEXT NOT NULL, kind TEXT NOT NULL, rendered TEXT NOT NULL, tokens INTEGER NOT NULL, at TEXT NOT NULL, reply_to INTEGER)"
            "CREATE INDEX IF NOT EXISTS working_dialogue_audience_idx ON working_dialogue(audience,event_id)")
   :entity (lambda (e) (obj-get (event-payload e) "audience"))
   :reduce #'%reduce-dialogue)
