@@ -69,9 +69,11 @@ becomes a stimulus (pai-v3.mind:coding-agent-message)."
                         (reply 200 (obj "ok" t "from" name "thought_id"
                                         (pai-v3.mind:coding-agent-message kernel name text :bead bead))))))))))
 
-(defun dev-peek (kernel what limit)
+(defun dev-peek (kernel what limit &key before match)
   "Recent state for a coding agent on a dev agent: dialogue, model calls
-(their raw responses), thoughts or concerns. Read-only and bounded."
+(their raw responses), thoughts or concerns. Read-only and bounded. For
+calls, BEFORE (an ISO time) reads back from then instead of now, and MATCH
+keeps only calls whose request contains it."
   (let ((db (kernel-db kernel)) (limit (if (equal what "request") limit (max 1 (min 50 limit)))) (o (obj "what" what)))
     (flet ((rows (sql &rest args) (apply #'sql-rows db sql args))
            (clip (s n) (if (and (stringp s) (> (length s) n)) (subseq s 0 n) s)))
@@ -82,9 +84,12 @@ becomes a stimulus (pai-v3.mind:coding-agent-message)."
                   ((equal what "calls")
                    (mapcar (lambda (r) (obj "call_event_id" (first r) "at" (second r)
                                             "response" (or (ignore-errors (json-parse (third r))) (clip (third r) 6000))))
-                           (loop for id in (latest-event-ids kernel "provider.call.completed" limit)
-                                 for r = (sql-row db "SELECT call_event_id,at,response FROM model_captures WHERE call_event_id=?1 LIMIT 1" id)
-                                 when r collect r)))
+                           (if (or before match)
+                               (rows "SELECT call_event_id,at,response FROM model_captures WHERE at<=?1 AND instr(request,?2)>0 ORDER BY call_event_id DESC LIMIT ?3"
+                                     (or before "9999") (or match "") limit)
+                               (loop for id in (latest-event-ids kernel "provider.call.completed" limit)
+                                     for r = (sql-row db "SELECT call_event_id,at,response FROM model_captures WHERE call_event_id=?1 LIMIT 1" id)
+                                     when r collect r))))
                   ((equal what "request")
                    ;; The exact messages one call was sent: limit is its call event id.
                    (let ((r (sql-row db "SELECT request FROM model_captures WHERE call_event_id=?1 LIMIT 1" limit)))
@@ -833,7 +838,9 @@ localhost), the URL to send it to; passkeys only work at the agent's origin."
                      ((not (loopback-request-p))
                       (reply 403 (obj "error" "peek is answered only from this machine")))
                      (t (reply 200 (dev-peek k (hunchentoot:get-parameter "what")
-                                             (or (ignore-errors (parse-integer (hunchentoot:get-parameter "limit"))) 6)))))
+                                             (or (ignore-errors (parse-integer (hunchentoot:get-parameter "limit"))) 6)
+                                             :before (hunchentoot:get-parameter "before")
+                                             :match (hunchentoot:get-parameter "match")))))
                t))
 
       ((and (eq method :get) (string= path "/v1/dev/health"))
