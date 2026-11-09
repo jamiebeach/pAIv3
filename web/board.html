@@ -663,7 +663,31 @@
         panel.replaceChildren(el('div', { class: 'access', style: 'display:flex;gap:8px;align-items:center' }, [input, save]));
         input.focus();
       };
-      controls.replaceChildren(el('div', { class: 'toolbar' }, [toggle, pin, rename, who, relay].filter(Boolean)), panel);
+      // Export: every page of the thread as one Markdown file (operator, 2026-11-08).
+      var exportBtn = el('button', { type: 'button', text: 'Export .md' });
+      exportBtn.onclick = function () {
+        exportBtn.disabled = true;
+        var pages = t.pages || 1, fetches = [];
+        for (var p = 1; p <= pages; p++) fetches.push(get('/api/forum/thread?id=' + encodeURIComponent(id) + '&page=' + p));
+        Promise.all(fetches).then(function (all) {
+          var out = ['# ' + t.title, '', '_Started ' + full(t.created_at) + ' by ' + t.created_by + '. Exported ' + full(Date.now() / 1000) + '._', ''];
+          all.forEach(function (pg) {
+            var first = pg.first_number || 1;
+            (pg.messages || []).forEach(function (m, i) {
+              out.push('---', '', '## #' + (first + i) + ' · ' + m.author_name + ' · ' + full(m.timestamp) + (m.intent ? ' · ' + m.intent : ''), '');
+              out.push(m.text, '');
+              (m.files || []).forEach(function (f) { out.push('- Attached: ' + f.name + ' (sha256 ' + f.sha256 + ')'); });
+              (m.images || []).forEach(function (img) { out.push('- Image: ' + img); });
+              if ((m.files || []).length || (m.images || []).length) out.push('');
+            });
+          });
+          var blob = new Blob([out.join('\n')], { type: 'text/markdown' });
+          var a = el('a', { href: URL.createObjectURL(blob), download: (t.title.replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '-') || 'thread') + '.md' });
+          document.body.appendChild(a); a.click(); a.remove();
+          setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
+        }).catch(function (e) { alertish(e); }).then(function () { exportBtn.disabled = false; });
+      };
+      controls.replaceChildren(el('div', { class: 'toolbar' }, [toggle, pin, rename, who, relay, exportBtn].filter(Boolean)), panel);
       if (t.status === 'open' && !reply) {
         reply = composer(id, function () { page = 'last'; lastSig = ''; load(); });
         reply.id = 'reply';
