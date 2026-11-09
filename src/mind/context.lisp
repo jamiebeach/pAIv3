@@ -133,7 +133,7 @@ animations it can perform.")
               (loop for note in *voice-turn-notes*
                     for line = (ignore-errors (funcall note kernel))
                     when (and (stringp line) (plusp (length line))) collect line)))
-   (list "A message with no tool call ends this thought. If there is a next step, make its tool call in the same message; if what was asked is something to write, write it now. Never end by saying what you are about to do.")))
+   (list "A message with no tool call ends this thought. If what was asked has a next step, make its tool call in the same message; if what was asked is something to write, write it now. Never end by saying what you are about to do. A greeting alone asks for no work.")))
 
 (define-slot-source :dialogue (kernel request max)
   (mapcar (lambda (row) (list (dialogue-row-text row) (dialogue-row-tokens row)))

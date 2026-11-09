@@ -843,6 +843,30 @@ localhost), the URL to send it to; passkeys only work at the agent's origin."
                                              :match (hunchentoot:get-parameter "match")))))
                t))
 
+      ((and (eq method :post) (string= path "/v1/dev/replay"))
+       ;; For the coding agent on a dev agent: send MESSAGES (a captured context,
+       ;; perhaps varied) to the model a reply turn uses, with the tools a reply
+       ;; turn starts with, and return what it answers. Nothing is recorded as a
+       ;; thought and no tool is run: a test of what a context does, offline.
+       (values (cond ((not (eq t (setting k "dev.live_reload")))
+                      (reply 404 (obj "error" "no such route")))
+                     ((not (loopback-request-p))
+                      (reply 403 (obj "error" "replay is answered only from this machine")))
+                     (t (handler-case
+                            (let* ((body (or (ignore-errors (json-parse (hunchentoot:raw-post-data :force-text t))) (obj)))
+                                   (thought (list :id 0 :origin "responding" :audience "operator"))
+                                   (profile (pai-v3.mind::profile-for k (obj-get body "purpose" "chat")))
+                                   ;; As consult offers them: every usable tool to a profile marked all_tools.
+                                   (usable (ignore-errors (pai-v3.mind::tools-for thought)))
+                                   (tools (if (pai-v3.mind::provider-profile-all-tools profile)
+                                              usable
+                                              (ignore-errors (pai-v3.mind::tools-in-hand thought usable nil)))))
+                              (reply 200 (pai-v3.mind::complete k profile (obj-get body "messages")
+                                                                :tools (and tools (pai-v3.mind::tool-specs tools))
+                                                                :lane "operator")))
+                          (error (e) (reply 500 (obj "error" (princ-to-string e)))))))
+               t))
+
       ((and (eq method :get) (string= path "/v1/dev/health"))
        ;; For the deploy step: a projection left needs-rebuild must stop it.
        (values (cond ((not (eq t (setting k "dev.live_reload")))

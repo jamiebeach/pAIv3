@@ -415,13 +415,32 @@ operator has spoken, is checked by a thought before it is sent.")
          (next (sql-rows (kernel-db kernel)
                          "SELECT text,next_at,kind FROM scheduled_items WHERE status='active' AND audience=?1 ORDER BY next_at LIMIT 10"
                          audience)))
+    ;; What is next first. What has gone off follows as history, one line,
+    ;; dated and aged, its request in the past: a fired runbook shown whole
+    ;; kept "today" in the imperative into the next day, and a greeting at
+    ;; 05:35 was met with yesterday's rebuild (Angel, 2026-11-09; the crew's
+    ;; shape). Its full text reached the thought it woke; the work it names,
+    ;; if still open, is the docket's or what is carried.
     (loop for line in (append
-                       (mapcar (lambda (r) (format nil "Went off at ~a: ~a" (local-slot (parse-iso8601 (second r)) zone) (first r)))
-                               fired)
                        (mapcar (lambda (r) (format nil "~a~:[~; (repeats)~]: ~a" (local-slot (parse-iso8601 (second r)) zone)
-                                                   (string= "cron" (third r)) (first r)))
-                               next))
+                                                   (string= "cron" (third r)) (%reminder-gist (first r) 240)))
+                               next)
+                       (mapcar (lambda (r)
+                                 (let ((days (or (ignore-errors (local-days-ago kernel (second r))) 0)))
+                                   (format nil "Earlier, not for now: a reminder went off ~a at ~a. It asked then: \"~a\""
+                                           (case days (0 "today") (1 "yesterday") (t (format nil "~d days ago" days)))
+                                           (local-time:format-timestring nil (local-time:universal-to-timestamp (parse-iso8601 (second r)))
+                                                                         :format '((:hour 2) ":" (:min 2) " (" :short-weekday " " :short-month " " :day ")")
+                                                                         :timezone zone)
+                                           (%reminder-gist (first r) 160))))
+                               fired))
           collect (list line (estimate-tokens line)))))
+
+(defun %reminder-gist (text most)
+  "TEXT on one line, single-spaced, at most MOST characters."
+  (let ((flat (format nil "~{~a~^ ~}" (remove "" (uiop:split-string (substitute #\Space #\Newline (remove #\Return text)) :separator " ")
+                                              :test #'string=))))
+    (if (> (length flat) most) (format nil "~a…" (string-right-trim " " (subseq flat 0 most))) flat)))
 
 ;;; The agent's tool
 

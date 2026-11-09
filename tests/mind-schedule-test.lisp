@@ -44,8 +44,13 @@
       (is (= 1 (run-due-schedules k)) "the daily one fires")
       (let ((lines (mapcar #'first (funcall (gethash :scheduled pai-v3.mind::*slot-sources*)
                                             k (list :audience "operator") 500))))
-        (is (search "Went off at 2026-10-13 09:00: Stretch" (first lines)) "context mode stays in mind")
-        (is (search "2026-10-14 09:00 (repeats): Stretch" (second lines)) "and repeats")))))
+        (is (search "2026-10-14 09:00 (repeats): Stretch" (first lines)) "what is next comes first")
+        (is (search "Earlier, not for now: a reminder went off today at 09:00 (Tue Oct 13). It asked then: \"Stretch\"" (second lines))
+            "context mode stays in mind, as history")))
+    (at-utc ((utc 2026 10 14 12 0))
+      (let ((lines (mapcar #'first (funcall (gethash :scheduled pai-v3.mind::*slot-sources*)
+                                            k (list :audience "operator") 500))))
+        (is (search "went off yesterday at 09:00" (second lines)) "aged by calendar day")))))
 
 (deftest audiences-see-only-their-own
   (with-temp-kernel (k)
