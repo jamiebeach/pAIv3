@@ -90,6 +90,14 @@ keeps only calls whose request contains it."
                                (loop for id in (latest-event-ids kernel "provider.call.completed" limit)
                                      for r = (sql-row db "SELECT call_event_id,at,response FROM model_captures WHERE call_event_id=?1 LIMIT 1" id)
                                      when r collect r))))
+                  ((equal what "artifact")
+                   ;; The source of an artifact's latest revision, by id (MATCH): a
+                   ;; draft the agent keeps, read whole when posts are too short for it.
+                   (let ((row (and match (pai-v3.mind::artifact-row kernel match))))
+                     (if row
+                         (list (obj "artifact_id" (first row) "revision" (second row) "title" (third row)
+                                    "source" (first (pai-v3.mind::artifact-content kernel row))))
+                         '())))
                   ((equal what "request")
                    ;; The exact messages one call was sent: limit is its call event id.
                    (let ((r (sql-row db "SELECT request FROM model_captures WHERE call_event_id=?1 LIMIT 1" limit)))
