@@ -91,12 +91,12 @@ Token budgets are maxima.
 | 12 | What comes to mind | 6000 | recollection (recall.lisp) | impressions of anchors named in or associated with the task + last 4 turns; top-5 recalled memories (culled) |
 | 13 | Images I have seen lately | 400 | seen (seeing.lisp) | recent images with captions |
 | 14 | Coming up | 500 | scheduled (schedule.lisp) | context-mode reminders that went off in the last `schedule.fired_visible_hours` (24), full text; then the next 10 scheduled |
-| 15 | The operator's day | 300 | present (attention.lisp) | next calendar events; sensed present |
+| 15 | The operator's day | 300 | present (attention.lisp) | next calendar events; sensed present; where the operator is (location.lisp): a fix younger than `location.fresh_minutes` as where they are, an older one as where they were, with its age |
 | 16 | What I noticed between thoughts | 600 | stream (attention.lisp) | the watch's last 8 passes |
 | 17 | Not for this audience | 200 | restricted (memory.lisp) | topics withheld from this audience |
 | 18 | How I am | 300 | state (affect.lisp) | modulators and drives, with meanings and trends |
 | 19 | Now | 160 | clock (schedule.lisp) | local time, zone, UTC, the next 8 days |
-| 20 | Before you answer | 200 | turn (context.lisp) | voice rule on a voice turn; "A message with no tool call ends this thought …" |
+| 20 | Before you answer | 200 | turn (context.lisp) | voice rule on a voice turn (plus "The operator is driving …" while a fix under 5 minutes old says so); "A message with no tool call ends this thought …" |
 
 private-cognition is the same with smaller budgets, plus "What I have concluded
 lately" after the summary, and without the Coming up and Not for this

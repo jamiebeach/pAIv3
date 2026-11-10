@@ -1007,6 +1007,22 @@ localhost), the URL to send it to; passkeys only work at the agent's origin."
                    (reply 401 (obj "error" "not signed in")))
                t))
 
+      ;; A fix from the operator's phone (location.lisp).
+      ((and (eq method :post) (string= path "/api/v2/location"))
+       (values
+        (cond ((not (same-origin-p agent)) (reply 403 (obj "error" (%refusal agent))))
+              ((null (%signed-in agent)) (reply 401 (obj "error" "not signed in")))
+              ((not (setting k "location.enabled")) (reply 403 (obj "error" "Location is off for this agent.")))
+              (t (let* ((b (body-json)) (lat (obj-get b "lat")) (lon (obj-get b "lon")) (speed (obj-get b "speed_mps")))
+                   (if (not (and (realp lat) (realp lon) (<= -90 lat 90) (<= -180 lon 180)))
+                       (reply 400 (obj "error" "lat and lon, in degrees"))
+                       (let ((p (record-location k (float lat 1d0) (float lon 1d0)
+                                                 :accuracy (obj-get b "accuracy_m")
+                                                 :speed-kmh (and (realp speed) (>= speed 0) (* 3.6 speed))
+                                                 :fixed-at (now-iso8601))))
+                         (reply 200 (obj "ok" t "place" (obj-get p "place") "driving" (obj-get p "driving"))))))))
+        t))
+
       ((and (eq method :post) (string= path "/api/v2/send"))
        (values
         (cond ((not (same-origin-p agent)) (reply 403 (obj "error" (%refusal agent))))

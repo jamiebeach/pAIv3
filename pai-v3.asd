@@ -111,6 +111,7 @@
                  (:file "forum-files")
                  (:file "guests")
                  (:file "perception")
+                 (:file "location")
                  (:file "reading")
                  (:file "pwa")))
    (:module "src/recall"

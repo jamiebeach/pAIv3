@@ -439,6 +439,17 @@ const noticeObserver = typeof IntersectionObserver === 'function'
     }, {root: transcriptEl, threshold: [0, 0.6, 1]})
   : null;
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') noticeRefreshBadge(); });
+// Where the operator is, when the app opens or is shown again (location.lisp).
+function sendFix() {
+  if (!navigator.geolocation || document.hidden) return;
+  navigator.geolocation.getCurrentPosition((pos) => {
+    const c = pos.coords;
+    fetch('/api/v2/location', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'X-PAI-Request': 'same-origin' },
+                                body: JSON.stringify({ lat: c.latitude, lon: c.longitude, accuracy_m: c.accuracy, speed_mps: c.speed }) }).catch(() => {});
+  }, () => {}, { maximumAge: 60000, timeout: 15000 });
+}
+sendFix();
+document.addEventListener('visibilitychange', () => { if (!document.hidden) sendFix(); });
 noticeBadgeEl.addEventListener('click', () => {
   const row = noticeUnreadRows()[0];
   if (row) updateTranscript(() => { followingLatest = false; row.scrollIntoView({block: 'center'}); });
