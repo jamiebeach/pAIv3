@@ -184,6 +184,30 @@
     save.onclick = () => { try { apply(editor.read()); } catch (error) { show(error.message, true); } };
     reset.onclick = () => apply(row.default);
     const buttons = document.createElement('div'); buttons.className = 'row'; buttons.append(save, reset);
+    // Named places: name where the phone is now, and save it in one go.
+    if (row.name === 'location.places' && navigator.geolocation) {
+      const placeName = document.createElement('input');
+      placeName.type = 'text'; placeName.placeholder = 'Name for where I am (e.g. Home)';
+      const here = document.createElement('button'); here.textContent = 'Add where I am';
+      here.onclick = () => {
+        const label = placeName.value.trim();
+        if (!label) { show('Give the place a name first.', true); return; }
+        let places;
+        try { places = editor.read(); } catch (error) { show(error.message, true); return; }
+        here.disabled = true;
+        show('Finding where you are…');
+        navigator.geolocation.getCurrentPosition((pos) => {
+          here.disabled = false;
+          const c = pos.coords, round = (x) => Math.round(x * 1e5) / 1e5;
+          const radius = Math.max(100, Math.min(500, Math.round(c.accuracy * 2)));
+          placeName.value = '';
+          apply([...(Array.isArray(places) ? places : []).filter((p) => p.name !== label),
+                 { name: label, lat: round(c.latitude), lon: round(c.longitude), radius_m: radius }]);
+        }, (error) => { here.disabled = false; show('No location: ' + error.message, true); },
+        { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 });
+      };
+      buttons.append(placeName, here);
+    }
     const edit = document.createElement('div'); edit.append(editor.el, buttons);
 
     const effective = document.createElement('div'); effective.className = 'effective';
