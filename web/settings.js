@@ -184,31 +184,38 @@
     save.onclick = () => { try { apply(editor.read()); } catch (error) { show(error.message, true); } };
     reset.onclick = () => apply(row.default);
     const buttons = document.createElement('div'); buttons.className = 'row'; buttons.append(save, reset);
+    let editNote = null;
     // Named places: name where the phone is now, and save it in one go.
     if (row.name === 'location.places' && navigator.geolocation) {
       const placeName = document.createElement('input');
       placeName.type = 'text'; placeName.placeholder = 'Name for where I am (e.g. Home)';
       const here = document.createElement('button'); here.textContent = 'Add where I am';
+      // Said beside the button: the page's status line is out of sight on a phone.
+      const note = document.createElement('div'); note.className = 'meta';
+      const say = (text, bad) => { note.textContent = text; note.style.color = bad ? '#c0392b' : ''; };
       here.onclick = () => {
         const label = placeName.value.trim();
-        if (!label) { show('Give the place a name first.', true); return; }
+        if (!label) { say('Give the place a name first.', true); return; }
         let places;
-        try { places = editor.read(); } catch (error) { show(error.message, true); return; }
+        try { places = editor.read(); } catch (error) { say(error.message, true); return; }
         here.disabled = true;
-        show('Finding where you are…');
+        say('Finding where you are…');
         navigator.geolocation.getCurrentPosition((pos) => {
           here.disabled = false;
           const c = pos.coords, round = (x) => Math.round(x * 1e5) / 1e5;
           const radius = Math.max(100, Math.min(500, Math.round(c.accuracy * 2)));
           placeName.value = '';
+          say('Saving ' + label + ' (' + radius + ' m)…');
           apply([...(Array.isArray(places) ? places : []).filter((p) => p.name !== label),
                  { name: label, lat: round(c.latitude), lon: round(c.longitude), radius_m: radius }]);
-        }, (error) => { here.disabled = false; show('No location: ' + error.message, true); },
+        }, (error) => { here.disabled = false; say('No location: ' + error.message, true); },
         { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 });
       };
       buttons.append(placeName, here);
+      editNote = note;
     }
     const edit = document.createElement('div'); edit.append(editor.el, buttons);
+    if (editNote) edit.append(editNote);
 
     const effective = document.createElement('div'); effective.className = 'effective';
     effective.textContent = row.changed ? 'Changed from the default: ' + JSON.stringify(row.default) : 'At its default';
