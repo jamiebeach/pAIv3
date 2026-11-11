@@ -154,7 +154,7 @@ day taken at its start in ZONE. NIL when unreadable."
       (when (and s e (> (length start) 10))                 ; a whole-day event clashes with nothing
         (loop for (other-id summary other-start other-end) in
               (sql-rows (kernel-db kernel) "SELECT id,summary,start_at,end_at FROM calendar_events WHERE account=?1 AND start_at>=?2 ORDER BY start_at LIMIT 60"
-                        account (subseq (%iso-now) 0 10))
+                        account (%iso-now (* -24 3600)))
               for os = (%event-time other-start zone) for oe = (%event-time other-end zone)
               when (and (not (equal other-id id)) os oe (> (length other-start) 10) (< os e) (< s oe))
                 return summary)))))
@@ -413,12 +413,31 @@ to the operator's own thinking.")
                         while (<= (incf used tokens) max)
                         collect (list line tokens)))))))
 
+(defun upcoming-calendar (kernel accounts &optional (most 5))
+  "Up to MOST (summary start location) rows from ACCOUNTS' calendars, soonest
+first: timed events starting from now on, and whole-day events from today."
+  ;; Starts are kept as Google gives them, with the calendar's own offset
+  ;; ("10:00:00-05:00"), so they are compared as times, not as text: compared
+  ;; with now in UTC, a 10:00 meeting read as past from 07:00 on, today's
+  ;; whole-day events as gone, and after 19:00 the evening's events as
+  ;; yesterday's (operator, 2026-11-11: "quiet morning" with a 10:00 on the
+  ;; calendar).
+  (let ((zone (%zone-of kernel)) (now (now)) (today (%local-day kernel)))
+    (mapcar #'cdr
+            (subseq-safe
+             (sort (loop for account in accounts
+                         append (loop for row in (sql-rows (kernel-db kernel) "SELECT summary,start_at,location FROM calendar_events WHERE account=?1 AND start_at>=?2 ORDER BY start_at LIMIT ?3"
+                                                           account (%iso-now (* -24 3600)) (+ most 40))
+                                      for at = (%event-time (second row) zone)
+                                      when (and at (if (= (length (second row)) 10)
+                                                       (string>= (second row) today)
+                                                       (>= at now)))
+                                        collect (cons at row)))
+                   #'< :key #'first)
+             most))))
+
 (defun %calendar-present (kernel)
-  (let ((rows (subseq-safe (sort (loop for (account) in (google-accounts kernel)
-                                         append (sql-rows (kernel-db kernel) "SELECT summary,start_at,location FROM calendar_events WHERE account=?1 AND start_at>=?2 ORDER BY start_at LIMIT 5"
-                                                          account (%iso-now)))
-                                   #'string< :key #'second)
-                             5)))
+  (let ((rows (upcoming-calendar kernel (mapcar #'first (google-accounts kernel)))))
     (when rows
       (let ((text (format nil "Next on the operator's calendar: ~{~a~^; ~}."
                           (mapcar (lambda (r) (format nil "~a at ~a~@[ (~a)~]" (first r) (second r) (third r))) rows))))

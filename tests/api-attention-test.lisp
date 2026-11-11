@@ -284,4 +284,26 @@
           (is (search (format nil "carried [~a]" id) reason) "the reason names what it is close to")
           (is (search "carry tool" reason) "and the thought is told it can carry or ask for a look"))))))
 
+(defun ny-time (hours-from-now)
+  "A start as Google gives it, with New York's offset, HOURS-FROM-NOW."
+  (local-time:format-timestring nil (local-time:universal-to-timestamp (+ (now) (round (* 3600 hours-from-now))))
+                                :format local-time:+iso-8601-format+
+                                :timezone (local-time:find-timezone-by-location-name "America/New_York")))
+
+(deftest the-calendar-compares-times-not-text
+  ;; 12:00 UTC is 07:00 in New York: a 10:00 meeting is still ahead, though
+  ;; "...T10:00-05:00" sorts before "...T12:00Z" as text (2026-11-11).
+  (with-watch (k)
+    (change-setting k "time.zone" "America/New_York" :origin *operator*)
+    (flet ((ev (id summary start)
+             (append! k "calendar.seen" (obj "account" "home" "event_id" id "summary" summary
+                                             "start" start "end" start "updated" (iso8601 (now))))))
+      (ev "past" "Breakfast" (ny-time -1))
+      (ev "soon" "Weekly Working Session" (ny-time 3))
+      (ev "later" "Pick up" (ny-time 9))
+      (ev "allday" "Remembrance Day" (subseq (ny-time 0) 0 10))
+      (let ((rows (pai-v3.api::upcoming-calendar k '("home"))))
+        (is (equal '("Remembrance Day" "Weekly Working Session" "Pick up") (mapcar #'first rows))
+            "today's whole-day event and the morning meeting are upcoming; the past one is not")))))
+
 (run-suite "api-attention")

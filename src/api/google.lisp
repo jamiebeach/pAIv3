@@ -398,10 +398,7 @@ day's allowance. Returns how many were taken."
                 (connected (mapcar #'first (google-accounts kernel)))
                 (accounts (if given (list given) connected))
                 (hours (setting kernel "calendar.horizon_hours"))
-                (rows (sort (loop for account in accounts
-                                  append (sql-rows (kernel-db kernel) "SELECT summary,start_at,location FROM calendar_events WHERE account=?1 AND start_at>=?2 ORDER BY start_at LIMIT 50"
-                                                   account (subseq (%iso-now) 0 10)))
-                            #'string< :key #'second)))
+                (rows (upcoming-calendar kernel accounts 50)))
            ;; The window is said, so "nothing" is never read as "nothing at all": four
            ;; days ahead lay past a 48-hour horizon and read as a broken feed (bead v3-wh8).
            (cond ((null connected) "No Google account is connected.")
