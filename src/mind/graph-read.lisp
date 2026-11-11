@@ -23,7 +23,10 @@
 
 (defun entities-named-in (kernel text)
   "Active entities whose name or alias appears in TEXT, those with most facts first."
-  (let ((grams (%name-grams (or text ""))) (ids '()))
+  ;; A name with no letter in it ("15", "2026", "3:15") is no cue: numbers are in
+  ;; every page, and one stored as a value brought a birthday cake to mind
+  ;; beside every tool result that held a 15 (operator, 2026-11-11).
+  (let ((grams (remove-if-not (lambda (g) (some #'alpha-char-p g)) (%name-grams (or text "")))) (ids '()))
     (loop while grams
           do (let ((batch (subseq grams 0 (min 100 (length grams)))))
                (setf grams (nthcdr (length batch) grams))

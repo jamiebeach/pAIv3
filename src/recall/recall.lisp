@@ -138,6 +138,10 @@ nearest VECTOR, within the association distance."
 ;;; At each tool call: what the agent's own action brings to mind
 
 (defparameter *step-anchors-most* 2 "Most things one tool call brings to mind.")
+(defparameter *step-note-chars* 2000
+  "Most characters one tool call brings to mind, all its impressions together:
+the result is what the step is for, and 10,000 characters of recollection once
+sat beside a 3,000-character search result (operator, 2026-11-11).")
 
 (define-step-note recollection-note (kernel thought-id name arguments prior result)
   (let* ((audience (getf (thought-row kernel thought-id) :audience))
@@ -148,4 +152,10 @@ nearest VECTOR, within the association distance."
     (when shown
       (%record kernel thought-id (format nil "step:~a" name) (mapcar #'first shown) cue)
       (prompt-due-intentions kernel (mapcar #'first shown) audience)
-      (format nil "~{~a~^~%~%~}" (mapcar #'second shown)))))
+      (let ((text (format nil "~{~a~^~%~%~}" (mapcar #'second shown))))
+        (if (<= (length text) *step-note-chars*)
+            text
+            (format nil "~a…~%(More is recalled about ~{~a~^ and ~}; ask recall if it matters here.)"
+                    (subseq text 0 *step-note-chars*)
+                    (mapcar (lambda (s) (let ((line (second s))) (string-trim " " (subseq line (min 15 (length line)) (max (min 15 (length line)) (or (position #\( line) (min 60 (length line))))))))
+                            shown)))))))

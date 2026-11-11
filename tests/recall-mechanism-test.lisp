@@ -51,6 +51,25 @@
       (is (equal (list (first (first (find-entities k "Nova")))) (pai-v3.recall::recalled-in k thought))
           "and the recollection is recorded"))))
 
+(deftest a-number-is-no-cue-and-a-step-note-is-capped
+  ;; A value stored as an entity ("15") came to mind beside every result that
+  ;; held a 15, and two impressions ran to 10,000 characters (2026-11-11).
+  (with-recall (k)
+    (form-entity k :kind "attribute_value" :name "15" :lineage (hop k))
+    (let ((nova (form-entity k :kind "person" :name "Nova" :lineage (hop k))))
+      (dotimes (i 40)
+        (admit-fact k :subject nova :predicate "likes"
+                      :object (form-entity k :kind "person" :name (format nil "Friend ~r" i) :lineage (hop k))
+                      :text (format nil "Nova likes Friend ~r, ~a." i (make-string 900 :initial-element #\x))
+                      :evidence (list (obj "kind" "original-utterance" "quote" "x")) :lineage (hop k))))
+    (let ((thought (request-thought k "work" "read a page" :audience "operator")))
+      (is (null (pai-v3.recall::recollection-note k thought "web_fetch" "{}" nil "Page: 15 items, 15 more."))
+          "a bare number brings nothing to mind")
+      (let ((note (pai-v3.recall::recollection-note k thought "web_fetch" "{}" nil "A page that mentions Nova.")))
+        (is (search "Recalled about Nova" note))
+        (is (<= (length note) (+ pai-v3.recall::*step-note-chars* 200)) "capped")
+        (is (search "More is recalled about Nova" note))))))
+
 (deftest a-thought-about-someone-starts-with-what-is-known
   (with-recall (k)
     (let ((sam (form-entity k :kind "person" :name "Sam" :lineage (hop k)))
