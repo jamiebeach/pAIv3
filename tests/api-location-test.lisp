@@ -56,4 +56,43 @@
       (is (= 2 (sql-value (kernel-db k) "SELECT count(*) FROM pai_events WHERE event_type='operator.location'"))
           "every fix is kept"))))
 
+(deftest find-places-searches-around-the-last-fix-nearest-first
+  (with-temp-kernel (k)
+    (let* ((urls '())
+           (pai-v3.api::*osm-last-call* 0)
+           (pai-v3.mind::*http-get*
+             (lambda (url headers)
+               (declare (ignore headers))
+               (push url urls)
+               (values (if (search "/search" url)
+                           "[{\"lat\":\"43.71\",\"lon\":\"-79.4\",\"name\":\"Far Burger\",\"display_name\":\"Far Burger, 2 Main St\"},{\"lat\":\"43.701\",\"lon\":\"-79.4\",\"name\":\"Near Burger\",\"display_name\":\"Near Burger, 1 Main St\"}]"
+                           "{\"address\":{\"road\":\"Main St\",\"city\":\"Toronto\"}}")
+                       200 "application/json" nil))))
+      (is (search "no location for the operator" (pai-v3.api::find-places k "burger")))
+      (pai-v3.api::record-location k 43.7d0 -79.4d0 :fixed-at (now-iso8601))
+      (let ((text (pai-v3.api::find-places k "burger" :radius-km 3)))
+        (is (search "\"burger\" within 3 km of Main St, Toronto" text))
+        (is (< (search "Near Burger" text) (search "Far Burger" text)) "nearest first")
+        (is (search "0.1 km: Near Burger" text)))
+      (is (search "bounded=1" (first urls)) "the search is kept to the area"))))
+
+(deftest a-pin-names-where-the-phone-is-and-gives-directions
+  (with-geocoder (calls)
+    (with-temp-kernel (k)
+      (let ((pin (pai-v3.mind::tool-run (gethash "pin_place" pai-v3.mind::*tools*)))
+            (mine (pai-v3.mind::tool-run (gethash "my_places" pai-v3.mind::*tools*))))
+        (loc-at ((loc-utc 15 0))
+          (is (search "no location" (funcall pin k nil (obj "name" "where we parked"))))
+          (pai-v3.api::record-location k 43.6d0 -79.5d0 :fixed-at (now-iso8601)))
+        (loc-at ((loc-utc 15 30))
+          (is (search "30 minutes old" (funcall pin k nil (obj "name" "where we parked"))) "a stale fix is not pinned")
+          (pai-v3.api::record-location k 43.6d0 -79.5d0 :fixed-at (now-iso8601))
+          (is (search "destination=43.600000,-79.500000" (funcall pin k nil (obj "name" "where we parked" "note" "level 2"))))
+          (let ((p (pai-v3.api::record-location k 43.6003d0 -79.5d0 :fixed-at (now-iso8601))))
+            (is (equal "where we parked" (obj-get p "place")) "a pin names a fix inside it"))
+          (is (search "where we parked (pinned" (funcall mine k nil (obj))))
+          (is (search "level 2" (funcall mine k nil (obj))))
+          (is (search "Forgot" (funcall pin k nil (obj "name" "Where We Parked" "forget" t))))
+          (is (search "No pinned" (funcall mine k nil (obj)))))))))
+
 (run-suite "api-location")
