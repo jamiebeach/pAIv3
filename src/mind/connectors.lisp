@@ -132,10 +132,16 @@ no longer configured."
           (handler-case
               (let* ((session (%mcp-session kernel c))
                      (reply (%mcp-post kernel c (obj "jsonrpc" "2.0" "id" 1 "method" "tools/list") session))
-                     (names (mapcar (lambda (spec) (%register-connector-tool c spec))
-                                    (obj-get (obj-get reply "result") "tools"))))
-                (dolist (n (set-difference (second entry) names :test #'equal)) (remhash n *tools*))
-                (setf (gethash cname *connector-tools*) (list (get-universal-time) names session)))
+                     (specs (obj-get (obj-get reply "result") "tools")))
+                ;; A server that answers with an error, or with no tools, is a failure
+                ;; to see, not an empty connector (2026-11-12: nothing appeared, nothing logged).
+                (unless specs
+                  (error "tools/list gave no tools: ~a"
+                         (let ((s (json-encode reply))) (subseq s 0 (min 400 (length s))))))
+                (let ((names (mapcar (lambda (spec) (%register-connector-tool c spec)) specs)))
+                  (dolist (n (set-difference (second entry) names :test #'equal)) (remhash n *tools*))
+                  (setf (gethash cname *connector-tools*) (list (get-universal-time) names session))
+                  (append! kernel "connector.refreshed" (obj "connector" cname "tools" names))))
             (error (e)
               ;; Try again next time; keep any tools already known.
               (setf (gethash cname *connector-tools*)
@@ -144,6 +150,8 @@ no longer configured."
 
 (define-event-type "connector.failed"
   :schema (("connector" :string) ("reason" :string)))
+(define-event-type "connector.refreshed"
+  :schema (("connector" :string) ("tools" :array)))
 
 (defun connector-tool-names ()
   (loop for entry being the hash-values of *connector-tools* append (second entry)))
