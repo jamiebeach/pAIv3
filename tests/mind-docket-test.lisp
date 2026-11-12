@@ -98,4 +98,17 @@
       (quiet-tick k)
       (is (equal "cost-cap" (obj-get (first (docket-items k)) "parked_code")) "over 0.15 USD: parked"))))
 
+(deftest a-live-item-stays-addressable-after-many-finished-ones
+  ;; Bead v3-up6: past 64 finished items, a live item that list showed could
+  ;; not be updated, because the lookup searched a capped list of every item.
+  (with-docket (k)
+    (dotimes (i 70)
+      (let ((id (open-one k (format nil "Old ~d" i))))
+        (docket-tool k "action" "complete" "work_id" id "note" "done")
+        (advance 60)))
+    (let ((id (open-one k "Live")))
+      (is (search id (docket-tool k "action" "list")))
+      (is (not (search "Give the work_id" (docket-tool k "action" "update" "work_id" id "note" "progress" "next_step" "more"))))
+      (is (equal "more" (obj-get (pai-v3.mind::%docket-item k id) "next_step"))))))
+
 (run-suite "mind-docket")

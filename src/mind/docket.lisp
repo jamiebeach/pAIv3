@@ -94,23 +94,30 @@
 (defparameter +docket-columns+
   "work_id,title,purpose,operator_benefit,next_step,priority,state,note,next_eligible_at,parked,parked_code,parked_at,steps,microusd,revision,opened_at,last_progress_at")
 
+(defun %docket-object (r)
+  (destructuring-bind (id title purpose benefit next priority state note eligible parked code parked-at steps micro revision opened last) r
+    (obj "work_id" id "title" title "purpose" purpose "operator_benefit" benefit "next_step" next
+         "priority" priority "state" state "note" note "next_eligible_at" eligible
+         "parked" (if (eql parked 1) t :false) "parked_code" code "parked_at" parked-at
+         "display_state" (if (eql parked 1) "parked" state)
+         "steps" steps "microusd" micro "revision" revision "opened_at" opened "last_progress_at" last)))
+
 (defun docket-items (kernel &key (states '("active" "waiting")))
   "Items in STATES as objects, oldest first."
-  (mapcar (lambda (r)
-            (destructuring-bind (id title purpose benefit next priority state note eligible parked code parked-at steps micro revision opened last) r
-              (obj "work_id" id "title" title "purpose" purpose "operator_benefit" benefit "next_step" next
-                   "priority" priority "state" state "note" note "next_eligible_at" eligible
-                   "parked" (if (eql parked 1) t :false) "parked_code" code "parked_at" parked-at
-                   "display_state" (if (eql parked 1) "parked" state)
-                   "steps" steps "microusd" micro "revision" revision "opened_at" opened "last_progress_at" last)))
+  (mapcar #'%docket-object
           (apply #'sql-rows (kernel-db kernel)
                  (format nil "SELECT ~a FROM docket_items WHERE state IN (~a) ORDER BY opened_at LIMIT 64"
                          +docket-columns+ (%in-list 1 (length states)))
                  states)))
 
+;; By its id, not by searching a capped list of every item ever: past 64
+;; finished items a live one listed by `list` could not be updated (bead v3-up6).
 (defun %docket-item (kernel id)
-  (first (remove-if-not (lambda (i) (equal id (obj-get i "work_id")))
-                        (docket-items kernel :states +docket-states+))))
+  (let ((row (apply #'sql-row (kernel-db kernel)
+                    (format nil "SELECT ~a FROM docket_items WHERE work_id=?1 AND state IN (~a) LIMIT 1"
+                            +docket-columns+ (%in-list 2 (length +docket-states+)))
+                    (string-trim " " id) +docket-states+)))
+    (and row (%docket-object row))))
 
 (defun %live-items (kernel)
   (remove-if (lambda (i) (eq t (obj-get i "parked"))) (docket-items kernel)))
