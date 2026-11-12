@@ -90,6 +90,12 @@ keeps only calls whose request contains it."
                                (loop for id in (latest-event-ids kernel "provider.call.completed" limit)
                                      for r = (sql-row db "SELECT call_event_id,at,response FROM model_captures WHERE call_event_id=?1 LIMIT 1" id)
                                      when r collect r))))
+                  ;; The latest events of one type (MATCH), payloads whole: for a
+                  ;; mechanism that records its failures, such as connector.failed.
+                  ((equal what "events")
+                   (loop for id in (and match (latest-event-ids kernel match limit))
+                         for e = (event-by-id kernel id)
+                         when e collect (obj "event_id" id "at" (event-at e) "payload" (event-payload e))))
                   ((equal what "artifact")
                    ;; The source of an artifact's latest revision, by id (MATCH): a
                    ;; draft the agent keeps, read whole when posts are too short for it.
