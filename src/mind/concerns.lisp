@@ -399,26 +399,30 @@ last look, from the record alone: no model call."
 (defun %start-aged-review (kernel)
   "When enough thoughts have left 'What I have been doing' since the last look,
 one thought looks them over for anything unfinished (operator, 2026-11-11: the
-window is short only because this pass is part of the mechanism)."
+window is short only because this pass is part of the mechanism). At most one
+an hour; the first ever look starts from now, not from the past it never showed
+(2026-11-12: starting a week back took thirteen looks in ten minutes)."
   (let* ((window (activity-window kernel "operator"))
          (oldest (and window (first (car (last window)))))
-         (seen (or (first (%quiet-mark kernel "aged"))
-                   ;; First run: start from a week back, not the whole history.
-                   (or (sql-value (kernel-db kernel) "SELECT max(id) FROM thoughts WHERE audience=?1 AND created_at<?2 LIMIT 1"
-                                  "operator" (iso8601 (- (now) (* 7 86400))))
-                       0))))
-    (when oldest
-      (let ((aged (sql-rows (kernel-db kernel)
-                            "SELECT id,reason,outcome,status,updated_at FROM thoughts WHERE audience=?1 AND id>?2 AND id<?3 AND status<>?4 ORDER BY id LIMIT 25"
-                            "operator" seen oldest "running")))
-        (when (>= (length aged) *aged-batch*)
-          (let ((id (request-thought kernel "introspection" (aged-review-prompt
-                                                             (mapcar (lambda (r) (destructuring-bind (id reason outcome status at) r
-                                                                                   (declare (ignore id))
-                                                                                   (%activity-line kernel reason outcome status at)))
-                                                                     aged)))))
-            (append! kernel "quiet.aged_reviewed" (obj "through_thought_id" (first (car (last aged))) "thought_id" id))
-            id))))))
+         (mark (%quiet-mark kernel "aged")))
+    (cond ((null oldest) nil)
+          ((null mark)
+           (append! kernel "quiet.aged_reviewed" (obj "through_thought_id" (1- oldest) "thought_id" 0))
+           nil)
+          ((< (%seconds-since (second mark)) 3600) nil)
+          (t
+           (let ((aged (sql-rows (kernel-db kernel)
+                                 "SELECT id,reason,outcome,status,updated_at FROM thoughts WHERE audience=?1 AND id>?2 AND id<?3 AND status<>?4 ORDER BY id LIMIT 25"
+                                 "operator" (first mark) oldest "running")))
+             (when (>= (length aged) *aged-batch*)
+               (let ((id (request-thought kernel "introspection"
+                                          (aged-review-prompt
+                                           (mapcar (lambda (r) (destructuring-bind (id reason outcome status at) r
+                                                                 (declare (ignore id))
+                                                                 (%activity-line kernel reason outcome status at)))
+                                                   aged)))))
+                 (append! kernel "quiet.aged_reviewed" (obj "through_thought_id" (first (car (last aged))) "thought_id" id))
+                 id)))))))
 
 (defun %concern-thought (kernel row)
   "Start a thought for the concern ROW."
