@@ -42,11 +42,23 @@ Replaced in tests.")
             do (setf text (concatenate 'string (subseq text 0 at) (cdr pair)
                                        (subseq text (+ at (length (car pair))))))))))
 
+(defun %tag-at (html open from)
+  "The position of OPEN (\"<tag\") in HTML at or after FROM where the tag name
+ends there, so <head is not found inside <header (bead v3-33j: a page with a
+<header> lost its whole body, dropped as if it were the head)."
+  (loop for at = (search open html :start2 from :test #'char-equal)
+        while at
+        do (let ((next (+ at (length open))))
+             (when (or (>= next (length html))
+                       (member (char html next) '(#\Space #\Tab #\Newline #\Return #\> #\/)))
+               (return at))
+             (setf from next))))
+
 (defun %drop-elements (html tag)
   "HTML without any <TAG ...>...</TAG> element."
   (let ((out (make-string-output-stream)) (start 0)
         (open (format nil "<~a" tag)) (close (format nil "</~a>" tag)))
-    (loop for at = (search open html :start2 start :test #'char-equal)
+    (loop for at = (%tag-at html open start)
           while at
           do (write-string html out :start start :end at)
              (let ((end (search close html :start2 at :test #'char-equal)))
