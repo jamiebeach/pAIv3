@@ -1,12 +1,14 @@
 #!/bin/sh
-# Staged deploys (bead v3-r2j.7): Angel is the production agent, so a change
-# reaches it only after Specter (dev) and Aria have run the same commit for a while with
-# no new model failures.
+# Staged deploys (bead v3-r2j.7; dev, test, prod by the operator, 2026-11-12):
+# Specter is dev, Aria is test, Angel is production. A change reaches each only
+# after the one before has run the same commit for a while with no new model
+# failures.
 #
-#   tools/deploy.sh                    Specter, then Aria, each checked healthy
-#   tools/deploy.sh angel              Angel, once both have run this commit for
-#                                      SOAK minutes (default 30) with no new failures
-#   tools/deploy.sh angel --now "why"  Angel at once, for an urgent fix; the
+#   tools/deploy.sh                    Specter (dev), checked healthy
+#   tools/deploy.sh aria               Aria (test), once Specter has run this commit
+#                                      for SOAK minutes (default 30) with no new failures
+#   tools/deploy.sh angel              Angel (prod), once Aria has, likewise
+#   tools/deploy.sh aria|angel --now "why"   at once, for an urgent fix; the
 #                                      reason is recorded
 #
 # Each stage records the commit and time in private/deploy-state.jsonl.
@@ -55,33 +57,39 @@ stage() { # env file, agent name
   fi
 }
 
+# soaked AGENT ENV: stop unless AGENT has run this commit SOAK minutes with no new failures.
+soaked() {
+  since=$(grep "\"agent\":\"$1\",\"commit\":\"$commit\"" "$state" 2>/dev/null | tail -1 | sed 's/.*"at":\([0-9]*\).*/\1/')
+  if [ -z "$since" ]; then echo "STOP: $1 is not on $commit yet."; exit 1; fi
+  waited=$(( ($(date +%s) - since) / 60 ))
+  if [ "$waited" -lt "$soak_minutes" ]; then
+    echo "STOP: $1 has run $commit for $waited min; the soak is $soak_minutes. Try again later, or use --now \"reason\"."
+    exit 1
+  fi
+  n=$(new_failures "private/$2.env" "$since")
+  if [ "$n" != "0" ]; then echo "STOP: $n model failure(s) on $1 since it took $commit."; exit 1; fi
+}
+
+skip_soak() {
+  reason=${1:?give the reason the soak is skipped}
+  echo "Skipping the soak: $reason"
+  record "$2-soak-skipped" "$reason"
+}
+
 case "${1:-}" in
   "")
     stage dev-agent specter
+    echo "Specter (dev) is on $commit. Aria follows with: tools/deploy.sh aria (after ${soak_minutes} min)"
+    ;;
+  aria)
+    if [ "${2:-}" = "--now" ]; then skip_soak "${3:-}" aria; else soaked specter dev-agent; fi
     stage aria-dev aria
-    echo "Specter and Aria are on $commit. Angel follows with: tools/deploy.sh angel (after ${soak_minutes} min)"
+    echo "Aria (test) is on $commit. Angel follows with: tools/deploy.sh angel (after ${soak_minutes} min)"
     ;;
   angel)
-    if [ "${2:-}" = "--now" ]; then
-      reason=${3:?give the reason the soak is skipped}
-      echo "Skipping the soak: $reason"
-      record angel-soak-skipped "$reason"
-    else
-      for a in specter aria; do
-        since=$(grep "\"agent\":\"$a\",\"commit\":\"$commit\"" "$state" 2>/dev/null | tail -1 | sed 's/.*"at":\([0-9]*\).*/\1/')
-        if [ -z "$since" ]; then echo "STOP: $a is not on $commit yet. Run tools/deploy.sh first."; exit 1; fi
-        waited=$(( ($(date +%s) - since) / 60 ))
-        if [ "$waited" -lt "$soak_minutes" ]; then
-          echo "STOP: $a has run $commit for $waited min; the soak is $soak_minutes. Try again later, or use --now \"reason\"."
-          exit 1
-        fi
-        env=$([ "$a" = specter ] && echo dev-agent || echo aria-dev)
-        n=$(new_failures "private/$env.env" "$since")
-        if [ "$n" != "0" ]; then echo "STOP: $n model failure(s) on $a since it took $commit."; exit 1; fi
-      done
-    fi
+    if [ "${2:-}" = "--now" ]; then skip_soak "${3:-}" angel; else soaked aria aria-dev; fi
     stage angel-dev angel
-    echo "Angel is on $commit."
+    echo "Angel (prod) is on $commit."
     ;;
-  *) sed -n '2,12p' "$0"; exit 2 ;;
+  *) sed -n '2,13p' "$0"; exit 2 ;;
 esac
