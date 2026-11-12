@@ -194,7 +194,9 @@ day's allowance. Returns how many were taken."
                                     (%qs (list "timeMin" (%iso-now) "timeMax" (%iso-now (* 3600 (setting kernel "calendar.horizon_hours")))
                                                "singleEvents" "true" "orderBy" "startTime" "showDeleted" "true"
                                                "maxResults" (setting kernel "calendar.per_poll"))))))
-        (changed 0))
+        (changed 0)
+        ;; The first sync after connecting is the calendar as it stands, not changes to notice.
+        (primed (sql-value (kernel-db kernel) "SELECT 1 FROM calendar_events WHERE account=?1 LIMIT 1" account)))
     (dolist (ev (subseq (or (obj-get reply "items") '()) 0 (min (setting kernel "calendar.per_poll") (length (obj-get reply "items")))))
       (let ((id (obj-get ev "id")) (updated (obj-get ev "updated" "")))
         ;; A cancelled event is asked for so its stale row can go (bead v3-ehm).
@@ -203,9 +205,13 @@ day's allowance. Returns how many were taken."
               (when row
                 (append! kernel "calendar.cancelled" (obj "account" account "event_id" id
                                                           "summary" (first row) "start" (second row)))
+                (when primed (ignore-errors (sense-calendar-change kernel "cancelled" (first row) (second row))))
                 (incf changed)))
         (unless (equal updated (sql-value (kernel-db kernel) "SELECT updated FROM calendar_events WHERE account=?1 AND id=?2 LIMIT 1" account id))
           (flet ((when-of (k) (let ((o (obj-get ev k))) (or (obj-get o "dateTime") (obj-get o "date") ""))))
+            (let ((before (sql-value (kernel-db kernel) "SELECT start_at FROM calendar_events WHERE account=?1 AND id=?2 LIMIT 1" account id)))
+              (when (and primed (or (null before) (not (equal before (when-of "start")))))
+                (ignore-errors (sense-calendar-change kernel (if before "moved" "new") (obj-get ev "summary" "(no title)") (when-of "start")))))
             (append! kernel "calendar.seen"
                      (obj "account" account "event_id" id "summary" (%clip (obj-get ev "summary" "(no title)") 300)
                           "start" (when-of "start") "end" (when-of "end")

@@ -97,6 +97,7 @@
     (when (realp accuracy) (setf (gethash "accuracy_m" payload) accuracy))
     (when (realp speed-kmh) (setf (gethash "speed_kmh" payload) speed-kmh))
     (append! kernel "operator.location" payload)
+    (ignore-errors (sense-location-fix kernel payload))   ; orienting.lisp: a change may earn a thought
     payload))
 
 (defun %location-row (kernel)

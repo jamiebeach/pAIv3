@@ -112,6 +112,7 @@
                  (:file "guests")
                  (:file "perception")
                  (:file "location")
+                 (:file "orienting")
                  (:file "reading")
                  (:file "pwa")))
    (:module "src/recall"
