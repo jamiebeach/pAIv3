@@ -5,7 +5,7 @@
 ;;; hold at adoption (adopt-trait, adopt-influence), never in the reducer, so
 ;;; an adoption past them is refused with a reason instead of lost.
 
-(defparameter *identity-order* '(:instructions :identity :voice :traits :influences :tone)
+(defparameter *identity-order* '(:instructions :identity :voice :traits :influences :rules :tone)
   "Order of facets in the rendered identity block.")
 
 (defparameter *max-traits* 7)
@@ -14,6 +14,11 @@
 (defparameter *max-influences* 7)
 (defparameter *max-influence-chars* 400 "what_it_means and behaviour_guidance together.")
 (defparameter *max-influences-total-chars* 2000)
+;; Standing rules (operator, 2026-11-11, bead v3-3uk): a few rules for my own
+;; conduct, written and retired by me, shown in every identity block, each
+;; with where it came from. Unlike traits they instruct; that is their job.
+(defparameter *max-rules* 5)
+(defparameter *max-rule-chars* 240)
 
 (define-setting "persona.adoption.profile"
   :type :string :default "affect-jev" :group "Persona"
@@ -43,6 +48,10 @@
   :schema (("influence_id" :string) ("reason" :string)))
 (define-event-type "operator.influence.reversed"
   :schema (("influence_id" :string) ("reason" :string)))
+(define-event-type "self.rule.adopted"
+  :schema (("rule_id" :string) ("text" :string) ("reason" :string) ("evidence_refs" :array)))
+(define-event-type "self.rule.retired"
+  :schema (("rule_id" :string) ("reason" :string) ("by" :string)))
 
 (defun %upsert-facet (db facet key text order source)
   (sql-exec db "INSERT INTO persona(facet,key,text,sort_key,source_event_id,active) VALUES(?1,?2,?3,?4,?5,1) ON CONFLICT(facet,key) DO UPDATE SET text=excluded.text,sort_key=excluded.sort_key,source_event_id=excluded.source_event_id,active=1"
@@ -74,21 +83,26 @@
                                   (and refs (subseq refs 0 (min 3 (length refs))))))
                         (- (round (* 1000 (f "strength")))) id))
         ((or (string= type "self.influence.released") (string= type "operator.influence.reversed"))
-         (%deactivate db "influences" (f "influence_id")))))))
+         (%deactivate db "influences" (f "influence_id")))
+        ((string= type "self.rule.adopted")
+         (%upsert-facet db "rules" (f "rule_id")
+                        (format nil "~a (from: ~a)" (f "text") (f "reason")) id id))
+        ((string= type "self.rule.retired") (%deactivate db "rules" (f "rule_id")))))))
 
 (define-projection "persona"
   :kind :inline
   :consumes ("persona.profile.set" "persona.instructions.set" "persona.tone.set"
              "self.trait.adopted" "self.trait.retired" "self.influence.adopted"
-             "self.influence.released" "operator.influence.reversed")
+             "self.influence.released" "operator.influence.reversed" "self.rule.adopted" "self.rule.retired")
   :tables ("CREATE TABLE IF NOT EXISTS persona (facet TEXT NOT NULL, key TEXT NOT NULL, text TEXT NOT NULL, sort_key INTEGER NOT NULL, source_event_id INTEGER NOT NULL, active INTEGER NOT NULL, PRIMARY KEY(facet,key))")
-  :entity (lambda (e) (or (obj-get (event-payload e) "trait_id")
-                          (obj-get (event-payload e) "influence_id") "persona"))
+  :entity (lambda (e) (or (obj-get (event-payload e) "trait_id") (obj-get (event-payload e) "influence_id")
+                          (obj-get (event-payload e) "rule_id") "persona"))
   :reduce #'%reduce-persona)
 
 (defparameter +facet-headings+
   '(:instructions nil :identity nil :voice nil
-    :traits "Traits I have adopted" :influences "What has shaped me" :tone "Tone"))
+    :traits "Traits I have adopted" :influences "What has shaped me"
+    :rules "My standing rules (mine to keep or retire; each says where it came from)" :tone "Tone"))
 
 (defun render-identity (kernel &key (operator-facing t))
   "The identity block and its fingerprint. Reads at most a few dozen rows."
@@ -206,6 +220,31 @@
                       "source_refs" refs "strength" strength))
         id))))
 
+(defun adopt-rule (kernel text reason evidence-refs)
+  "Adopt a standing rule for my own conduct; returns its id or signals PERSONA-REFUSED.
+REASON is where it came from: the failure or conversation that taught it."
+  (let ((text (%clean text)) (active (%active-facets kernel "rules")))
+    (when (zerop (length text)) (%refuse "A rule needs text."))
+    (when (> (length text) *max-rule-chars*)
+      (%refuse "A rule is at most ~d characters; this is ~d." *max-rule-chars* (length text)))
+    (when (zerop (length (%clean reason)))
+      (%refuse "Say where the rule came from: the failure or conversation that taught it."))
+    (when (>= (length active) *max-rules*)
+      (%refuse "I already hold ~d standing rules, the most I may; retire one first." *max-rules*))
+    (let ((refs (%refs evidence-refs)) (id (%new-facet-id "r" text)))
+      (append! kernel "self.rule.adopted" (obj "rule_id" id "text" text "reason" (%clean reason) "evidence_refs" refs))
+      id)))
+
+(defun retire-rule (kernel id reason &key (by "agent"))
+  (unless (find id (%active-facets kernel "rules") :key #'first :test #'equal)
+    (%refuse "There is no active rule ~a." id))
+  (append! kernel "self.rule.retired"
+           (obj "rule_id" id "by" by "reason" (let ((r (%clean reason))) (if (plusp (length r)) r "no reason given")))))
+
+(defun standing-rules (kernel)
+  "(id text-with-provenance) of each active rule."
+  (%active-facets kernel "rules"))
+
 (defun %let-go (kernel facet id event reason)
   (unless (find id (%active-facets kernel facet) :key #'first :test #'equal)
     (%refuse "I hold no active ~a ~a." (if (equal facet "traits") "trait" "influence") id))
@@ -216,13 +255,16 @@
   :description "My own traits and influences, which are part of my identity block. list shows them with their ids.
 adopt_trait (text: who I am, at most 200 characters; reason; evidence: ids it comes from) adopts a trait, at most 7.
 adopt_influence (what_it_means; guidance: how it shapes what I do; evidence; strength 0 to 1) adopts something that
-shaped me, at most 7. retire_trait or release_influence (id, reason) lets one go. Text must describe me, not instruct
-the substrate: rules, tools and procedures are governing instructions. Every adoption is checked and may be refused
-with a reason; the operator may retire or reverse any of them."
+shaped me, at most 7. retire_trait or release_influence (id, reason) lets one go. Traits and influences must
+describe me, not instruct the substrate.
+adopt_rule (text: a rule for my own conduct, at most 240 characters; reason: the failure or conversation it came from;
+evidence: ids) adds a standing rule, at most 5, shown in every identity block. When I catch a mistake of my own, a rule
+is the lasting fix, not an apology. retire_rule (id, reason) lets one go. Every change is logged; the operator sees
+them and may retire any."
   :summary "List, adopt or let go of my own traits and influences."
   :available :operator-trust
   :parameters (obj "type" "object"
-                   "properties" (obj "action" (obj "type" "string" "enum" (list "list" "adopt_trait" "adopt_influence" "retire_trait" "release_influence"))
+                   "properties" (obj "action" (obj "type" "string" "enum" (list "list" "adopt_trait" "adopt_influence" "retire_trait" "release_influence" "adopt_rule" "retire_rule"))
                                      "text" (obj "type" "string") "reason" (obj "type" "string")
                                      "what_it_means" (obj "type" "string") "guidance" (obj "type" "string")
                                      "evidence" (obj "type" "array" "items" (obj "type" "string"))
@@ -235,9 +277,10 @@ with a reason; the operator may retire or reverse any of them."
            (handler-case
                (let ((action (g "action")))
                  (cond ((equal action "list")
-                        (format nil "Traits (~d of ~d):~%~a~%Influences (~d of ~d):~%~a"
+                        (format nil "Traits (~d of ~d):~%~a~%Influences (~d of ~d):~%~a~%Standing rules (~d of ~d):~%~a"
                                 (length (%active-facets kernel "traits")) *max-traits* (listing "traits")
-                                (length (%active-facets kernel "influences")) *max-influences* (listing "influences")))
+                                (length (%active-facets kernel "influences")) *max-influences* (listing "influences")
+                                (length (%active-facets kernel "rules")) *max-rules* (listing "rules")))
                        ((equal action "adopt_trait")
                         (format nil "Adopted trait ~a." (adopt-trait kernel (g "text") (g "reason") (g "evidence"))))
                        ((equal action "adopt_influence")
@@ -247,6 +290,10 @@ with a reason; the operator may retire or reverse any of them."
                         (%let-go kernel "traits" (g "id") "self.trait.retired" (g "reason")) "Retired.")
                        ((equal action "release_influence")
                         (%let-go kernel "influences" (g "id") "self.influence.released" (g "reason")) "Released.")
-                       (t "action is list, adopt_trait, adopt_influence, retire_trait or release_influence.")))
+                       ((equal action "adopt_rule")
+                        (format nil "Adopted standing rule ~a. It is in my identity block from my next thought." (adopt-rule kernel (g "text") (g "reason") (g "evidence"))))
+                       ((equal action "retire_rule")
+                        (retire-rule kernel (g "id") (g "reason")) "Retired.")
+                       (t "action is list, adopt_trait, adopt_influence, retire_trait, release_influence, adopt_rule or retire_rule.")))
              (persona-refused (e) (format nil "Not adopted: ~a" (persona-refused-reason e)))
              (error (e) (format nil "Not done: ~a" e))))))

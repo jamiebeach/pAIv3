@@ -101,4 +101,25 @@
         (is (search "no active trait" (persona-tool k "action" "retire_trait" "id" id)))
         (is (= 0 (active-count k "traits")))))))
 
+(deftest standing-rules-are-mine-to-keep-shown-always-and-the-operator-may-retire-one
+  ;; Operator, 2026-11-11 (bead v3-3uk): a few self-written rules, in view in
+  ;; every identity block, each with where it came from; every edit logged.
+  (with-temp-kernel (k)
+    (let* ((reply (persona-tool k "action" "adopt_rule" "text" "Read the calendar before calling a morning quiet."
+                                "reason" "said 'quiet morning' with a 10:00 on the calendar" "evidence" #("c-1")))
+           (id (subseq reply (length "Adopted standing rule ") (position #\. reply))))
+      (is (search "Adopted standing rule" reply))
+      (is (search "Not adopted" (persona-tool k "action" "adopt_rule" "text" "No reason." "evidence" #("c-1")))
+          "a rule says where it came from")
+      (let ((identity (pai-v3.mind::render-identity k)))
+        (is (search "## My standing rules" identity))
+        (is (search "Read the calendar before calling a morning quiet. (from: said 'quiet morning'" identity)))
+      (dotimes (i 4) (persona-tool k "action" "adopt_rule" "text" (format nil "Rule ~d." i) "reason" "r" "evidence" #("c-1")))
+      (is (search "the most I may" (persona-tool k "action" "adopt_rule" "text" "Sixth." "reason" "r" "evidence" #("c-1"))))
+      (is (search (format nil "Retired ~a." id) (pai-v3.api::terminal-command k (format nil "/rules retire ~a outgrown" id))))
+      (is (not (search "Read the calendar" (pai-v3.mind::render-identity k))))
+      (is (equal "operator" (sql-value (kernel-db k) "SELECT json_extract(event_json,'$.payload.by') FROM pai_events WHERE event_type='self.rule.retired' LIMIT 1"))
+          "who retired it is kept")
+      (is (search "Rule 0." (pai-v3.api::terminal-command k "/rules"))))))
+
 (run-suite "mind-persona")

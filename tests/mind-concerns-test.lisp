@@ -300,4 +300,33 @@
       (is (equal "failed" (getf (thought-row k dead) :status)))
       (is (search "last step none" (getf (thought-row k dead) :outcome)) "an abandoned thought says where it stopped"))))
 
+(defun past-thought (k reason hours-ago)
+  "A finished operator thought, HOURS-AGO."
+  (let ((*clock* (lambda () (- *t* (round (* 3600 hours-ago))))))
+    (let ((id (request-thought k "introspection" reason :audience "operator")))
+      (append! k "thought.ended" (obj "thought_id" id "outcome" (format nil "did ~a" reason) "summary" ""))
+      id)))
+
+(deftest what-i-have-been-doing-keeps-a-day-a-floor-and-a-look-at-what-leaves
+  ;; Operator and agents, 2026-11-11: the last 24 hours, never fewer than the
+  ;; last 10 thoughts, at most 40; what ages out is looked over once.
+  (with-quiet (k)
+    (dotimes (i 15) (past-thought k (format nil "old task ~d" i) (- 100 i)))     ; days ago
+    (let ((window (pai-v3.mind::activity-window k "operator")))
+      (is (= 10 (length window)) "a quiet stretch still shows the floor of ten")
+      (is (search "old task 14" (second (first window))) "newest first"))
+    (dotimes (i 12) (past-thought k (format nil "today ~d" i) (- 12 i)))
+    (let ((window (pai-v3.mind::activity-window k "operator")))
+      (is (= 12 (length window)) "a busy day shows the day, above the floor")
+      (is (notany (lambda (r) (search "old task" (second r))) window)))
+    (let ((id (quiet-tick k)))
+      (is id "enough has aged out for one look")
+      (let ((reason (getf (thought-row k id) :reason)))
+        (is (search "have just left 'What I have been doing'" reason))
+        (is (search "old task 0" reason))
+        (is (search "old task 14" reason) "everything that left is in the look")))
+    (append! k "thought.ended" (obj "thought_id" (sql-value (kernel-db k) "SELECT max(id) FROM thoughts LIMIT 1") "outcome" "kept nothing" "summary" ""))
+    (is (not (search "have just left" (or (getf (thought-row k (or (quiet-tick k) 0)) :reason) "")))
+        "once looked over, they are not looked over again")))
+
 (run-suite "mind-concerns")

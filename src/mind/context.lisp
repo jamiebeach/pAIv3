@@ -139,16 +139,40 @@ animations it can perform.")
   (mapcar (lambda (row) (list (dialogue-row-text row) (dialogue-row-tokens row)))
           (reverse (recent-dialogue kernel (getf request :audience) :token-budget max))))
 
+;; Operator, 2026-11-11, with the agents: the last day of what I have been
+;; doing, but never fewer than my last few thoughts, so a quiet weekend does
+;; not empty it. What ages out is looked over once in quiet time (concerns.lisp).
+(define-setting "context.activity_hours"
+  :type :integer :min 1 :max 336 :default 24 :group "Context"
+  :description "'What I have been doing' shows thoughts from this many hours back, within the floor and ceiling.")
+(define-setting "context.activity_floor"
+  :type :integer :min 0 :max 40 :default 10 :group "Context"
+  :description "'What I have been doing' always shows at least this many of my most recent thoughts, however old.")
+
+(defparameter *activity-most* 40 "The most thoughts 'What I have been doing' shows.")
+
+(defun activity-window (kernel audience &key (exclude 0) reflecting)
+  "The thoughts 'What I have been doing' shows, newest first, as (id reason
+outcome status at): those within context.activity_hours, and never fewer than
+context.activity_floor, nor more than *activity-most*."
+  (let ((since (iso8601 (- (now) (* 3600 (setting kernel "context.activity_hours")))))
+        (floor (setting kernel "context.activity_floor")))
+    (loop for row in (if reflecting
+                         (sql-rows (kernel-db kernel)
+                                   "SELECT thought_id,reason,conclusion,status,updated_at FROM self_activity WHERE agent_id=?1 AND thought_id<>?2 ORDER BY thought_id DESC LIMIT ?3"
+                                   (kernel-agent-id kernel) exclude *activity-most*)
+                         (sql-rows (kernel-db kernel)
+                                   "SELECT id,reason,outcome,status,updated_at FROM thoughts WHERE audience=?1 AND id<>?2 ORDER BY id DESC LIMIT ?3"
+                                   audience exclude *activity-most*))
+          for i from 0
+          while (or (< i floor) (string>= (fifth row) since))
+          collect row)))
+
 (define-slot-source :activity (kernel request max)
   ;; Recent thoughts visible to this audience, newest first.
-  (loop for (reason outcome status at) in
-        (if (and (getf request :reflecting) (equal "operator" (getf request :audience)))
-            (sql-rows (kernel-db kernel)
-                      "SELECT reason,conclusion,status,updated_at FROM self_activity WHERE agent_id=?1 AND thought_id<>?2 ORDER BY thought_id DESC LIMIT 40"
-                      (kernel-agent-id kernel) (or (getf request :thought-id) 0))
-            (sql-rows (kernel-db kernel)
-                      "SELECT reason,outcome,status,updated_at FROM thoughts WHERE audience=?1 AND id<>?2 ORDER BY id DESC LIMIT 40"
-                      (getf request :audience) (or (getf request :thought-id) 0)))
+  (loop for (nil reason outcome status at) in
+        (activity-window kernel (getf request :audience) :exclude (or (getf request :thought-id) 0)
+                         :reflecting (and (getf request :reflecting) (equal "operator" (getf request :audience))))
         for text = (%activity-line kernel reason outcome status at)
         collect (list text (estimate-tokens text))))
 

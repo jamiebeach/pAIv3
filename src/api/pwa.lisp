@@ -564,6 +564,18 @@ transcript, all other cognition as toasts that name the kind of thought."
                                                                       (obj-get i "next_step")))
                                                   items))
                  "No open work items.")))
+          ;; The agent's standing rules, and the operator's retiring of one (bead v3-3uk).
+          ((string= name "rules")
+           (if (equal "retire" (second words))
+               (handler-case
+                   (progn (pai-v3.mind::retire-rule kernel (or (third words) "")
+                                                    (format nil "~{~a~^ ~}" (nthcdr 3 words)) :by "operator")
+                          (format nil "Retired ~a." (third words)))
+                 (error (e) (format nil "Not retired: ~a" e)))
+               (let ((rules (pai-v3.mind::standing-rules kernel)))
+                 (if rules
+                     (format nil "~{~{~a: ~a~}~^~%~}~%~%Retire one with /rules retire <id> <reason>." rules)
+                     "No standing rules yet."))))
           ((string= name "docket-reopen")
            (if (second words) (reopen-work kernel (second words)) "Give the work_id to reopen: /docket-reopen w-..."))
           ((string= name "pair")

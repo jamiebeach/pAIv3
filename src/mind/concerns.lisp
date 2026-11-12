@@ -69,6 +69,8 @@
 
 (define-event-type "quiet.reviewed"
   :schema (("through_event_id" :integer) ("thought_id" :integer)))
+(define-event-type "quiet.aged_reviewed"
+  :schema (("through_thought_id" :integer) ("thought_id" :integer)))
 (define-event-type "quiet.ruminated"
   :schema (("memory_ids" :array :optional) ("thought_id" :integer)
            ("free" :boolean :optional)))       ; free time, not wandering
@@ -136,6 +138,9 @@
         ((string= type "quiet.reviewed")
          (sql-exec db "INSERT INTO quiet_marks(name,value,at) VALUES('reviewed',?1,?2) ON CONFLICT(name) DO UPDATE SET value=excluded.value,at=excluded.at"
                    (f "through_event_id") (event-at e)))
+        ((string= type "quiet.aged_reviewed")
+         (sql-exec db "INSERT INTO quiet_marks(name,value,at) VALUES('aged',?1,?2) ON CONFLICT(name) DO UPDATE SET value=excluded.value,at=excluded.at"
+                   (f "through_thought_id") (event-at e)))
         ((string= type "quiet.ruminated")
          (sql-exec db "INSERT INTO quiet_marks(name,value,at) VALUES(?3,?1,?2) ON CONFLICT(name) DO UPDATE SET value=excluded.value,at=excluded.at"
                    (f "thought_id") (event-at e) (if (eq t (f "free")) "free" "ruminated"))
@@ -151,7 +156,7 @@
   :kind :inline
   :version 2
   :consumes ("concern.raised" "concern.reinforced" "concern.noted" "concern.closed"
-             "thought.requested" "thought.step" "thought.ended" "quiet.reviewed" "quiet.ruminated")
+             "thought.requested" "thought.step" "thought.ended" "quiet.reviewed" "quiet.aged_reviewed" "quiet.ruminated")
   :tables ("CREATE TABLE IF NOT EXISTS concerns (id TEXT PRIMARY KEY, kind TEXT NOT NULL, question TEXT NOT NULL, normalised TEXT NOT NULL, rationale TEXT NOT NULL, features TEXT NOT NULL, salience REAL NOT NULL, status TEXT NOT NULL, steps INTEGER NOT NULL, attended INTEGER NOT NULL, last_attended_at TEXT, note TEXT, created_at TEXT NOT NULL, created_day TEXT NOT NULL, updated_at TEXT NOT NULL, source_event_id INTEGER NOT NULL, next_look_at TEXT)"
            "CREATE INDEX IF NOT EXISTS concerns_day ON concerns(created_day)"
            ;; Concerns the runtime raised from a failed thought: looked at at once.
@@ -389,6 +394,32 @@ last look, from the record alone: no model call."
                         "thought_id" id))
           id)))))
 
+(defparameter *aged-batch* 5 "Aged-out thoughts to gather before one look over them.")
+
+(defun %start-aged-review (kernel)
+  "When enough thoughts have left 'What I have been doing' since the last look,
+one thought looks them over for anything unfinished (operator, 2026-11-11: the
+window is short only because this pass is part of the mechanism)."
+  (let* ((window (activity-window kernel "operator"))
+         (oldest (and window (first (car (last window)))))
+         (seen (or (first (%quiet-mark kernel "aged"))
+                   ;; First run: start from a week back, not the whole history.
+                   (or (sql-value (kernel-db kernel) "SELECT max(id) FROM thoughts WHERE audience=?1 AND created_at<?2 LIMIT 1"
+                                  "operator" (iso8601 (- (now) (* 7 86400))))
+                       0))))
+    (when oldest
+      (let ((aged (sql-rows (kernel-db kernel)
+                            "SELECT id,reason,outcome,status,updated_at FROM thoughts WHERE audience=?1 AND id>?2 AND id<?3 AND status<>?4 ORDER BY id LIMIT 25"
+                            "operator" seen oldest "running")))
+        (when (>= (length aged) *aged-batch*)
+          (let ((id (request-thought kernel "introspection" (aged-review-prompt
+                                                             (mapcar (lambda (r) (destructuring-bind (id reason outcome status at) r
+                                                                                   (declare (ignore id))
+                                                                                   (%activity-line kernel reason outcome status at)))
+                                                                     aged)))))
+            (append! kernel "quiet.aged_reviewed" (obj "through_thought_id" (first (car (last aged))) "thought_id" id))
+            id))))))
+
 (defun %concern-thought (kernel row)
   "Start a thought for the concern ROW."
   (destructuring-bind (id kind question rationale salience steps attended last note next) row
@@ -535,6 +566,7 @@ comes first, then, with none of those, rumination. Returns the thought id, or NI
                                   "operator" "turn")))
         (when (and last-turn (< (%seconds-since last-turn) (setting kernel "quiet.grace_seconds"))) (no "grace")))
       (or (%start-review kernel)
+          (%start-aged-review kernel)
           (%start-free-time kernel)
           (%start-concern kernel)
           (%start-work kernel)
