@@ -736,7 +736,9 @@ no tools; if even that fails, it parks."
         (answer mind reply)
         (return-from rest-here)))
     (conclude kernel thought "thought.parked"
-              (obj "reason" (format nil "reached its allowance of ~d model calls" max))
+              ;; A limit reached, not a fault: read as one, it made a normal end
+              ;; of a run sound like a failure to the agent parked (v3-lxg).
+              (obj "reason" (format nil "used its allowance of ~d model calls, a limit by design, not a fault; work on it can continue in a later thought" max))
               "(This sub-thought ran out of allowance before it reached an answer.)")))
 
 (defun recur (mind messages)
