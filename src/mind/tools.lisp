@@ -103,12 +103,21 @@ defines for itself is always operator-trust and never core.")
   :type :array :default (list "web_fetch" "brave_search" "mail" "calendar" "read_forum" "read_attachment") :group "Safety"
   :description "Tools whose results are outside content (mail, calendar, web, forum posts that guests can write). After one of them, a thought gets no code tools.")
 
+(defvar *outside-tool-sources* '()
+  "Functions of no arguments returning more tool names whose results are
+outside content, such as a connector's tools (connectors.lisp).")
+
+(defvar *tool-refreshers* '()
+  "Functions (lambda (kernel)) run as a thought gathers its tools, such as
+reading a connector's tools when due.")
+
 (defun outside-content-p (kernel thought)
   "True when THOUGHT, or the thought it belongs to, has taken in outside
 content: woken by it, or having called a tool that brings it in."
   (or (equal "external" (getf thought :audience))
       (peer-audience-p (getf thought :audience))
-      (let ((tools (remove-if-not #'stringp (setting kernel "safety.outside_content_tools"))))
+      (let ((tools (append (remove-if-not #'stringp (setting kernel "safety.outside_content_tools"))
+                           (loop for source in *outside-tool-sources* append (ignore-errors (funcall source))))))
         (and tools
              (sql-value (kernel-db kernel)
                         (format nil "SELECT 1 FROM thought_steps s JOIN thoughts t ON t.id=s.thought_id WHERE t.root_id=?1 AND s.kind='tool_call' AND s.tool IN (~{'~a'~^,~}) LIMIT 1"

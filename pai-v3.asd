@@ -44,6 +44,7 @@
                  (:file "vectors")
                  (:file "memory")
                  (:file "web")
+                 (:file "connectors")
                  (:file "beads")
                  (:file "host-files")
                  (:file "imagegen")
