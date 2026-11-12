@@ -21,7 +21,8 @@
                       (let ((h (make-hash-table :test 'equal)))
                         (setf (gethash "mcp-session-id" h) "s-1")
                         (values
-                         (cond ((equal rpc "initialize") "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{}}")
+                         ;; Plain JSON that happens to contain "data:" (botblip's did).
+                         (cond ((equal rpc "initialize") "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"instructions\":\"Publish pages. Images as data: URLs.\"}}")
                                ((equal rpc "notifications/initialized") "")
                                ((equal rpc "tools/list")
                                 "event: message

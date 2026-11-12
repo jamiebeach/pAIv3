@@ -36,12 +36,13 @@
     (multiple-value-bind (body status response-headers)
         (http-request :post (obj-get connector "url") :headers headers :body (json-encode payload) :read-timeout 60)
       (let* ((text (if (stringp body) body (if body (babel:octets-to-string body :encoding :utf-8) "")))
-             ;; A streamable-HTTP server may answer as an event stream: take its last data line.
-             (json (if (search "data:" text)
-                       (let ((lines (remove-if-not (lambda (l) (eql 0 (search "data:" l)))
-                                                   (uiop:split-string text :separator '(#\Newline)))))
-                         (string-trim " " (subseq (car (last lines)) 5)))
-                       text))
+             ;; A streamable-HTTP server may answer as an event stream: take its
+             ;; last data line. Plain JSON may contain "data:" too, so only lines
+             ;; that start with it count (2026-11-12: botblip's reply did).
+             (events (remove-if-not (lambda (l) (eql 0 (search "data:" l)))
+                                    (mapcar (lambda (l) (string-right-trim '(#\Return) l))
+                                            (uiop:split-string text :separator '(#\Newline)))))
+             (json (if events (string-trim " " (subseq (car (last events)) 5)) text))
              (sid (and (hash-table-p response-headers) (gethash "mcp-session-id" response-headers))))
         (unless (<= 200 status 299)
           (error "~a answered ~d: ~a" (obj-get connector "name") status (subseq text 0 (min 300 (length text)))))
