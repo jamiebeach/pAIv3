@@ -226,7 +226,11 @@ that spends it is parked until the operator reopens it. A parked item can only b
                                                         (obj-get i "work_id") (obj-get i "display_state") (obj-get i "priority")
                                                         (obj-get i "steps") (obj-get i "title") (obj-get i "next_step")))
                                     items)))))
-             ((null item) "Give the work_id of an item on the docket.")
+             ;; Say which id and why: one bare refusal for different causes was
+             ;; read as one bug through five retries (v3-up6).
+             ((null item) (if (and (stringp id) (plusp (length id)))
+                              (format nil "No docket item has the id ~s. action list shows the ids of open items." id)
+                              "Give the work_id of the item: action list shows the ids of open items."))
              ((member (obj-get item "state") '("completed" "cancelled") :test #'equal) "That item is already closed.")
              ((and (eq t (obj-get item "parked")) (member action '("update" "wait") :test #'equal))
               "That item is parked; only the operator can reopen it. You may complete or cancel it.")

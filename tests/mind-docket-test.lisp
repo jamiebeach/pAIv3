@@ -108,7 +108,8 @@
         (advance 60)))
     (let ((id (open-one k "Live")))
       (is (search id (docket-tool k "action" "list")))
-      (is (not (search "Give the work_id" (docket-tool k "action" "update" "work_id" id "note" "progress" "next_step" "more"))))
+      (is (not (search "No docket item" (docket-tool k "action" "update" "work_id" id "note" "progress" "next_step" "more"))))
+      (is (search "No docket item has the id \"w-nope\"" (docket-tool k "action" "update" "work_id" "w-nope" "note" "x")) "a miss names the id")
       (is (equal "more" (obj-get (pai-v3.mind::%docket-item k id) "next_step"))))))
 
 (run-suite "mind-docket")
