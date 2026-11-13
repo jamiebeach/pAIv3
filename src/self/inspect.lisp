@@ -34,12 +34,31 @@
                                 degraded)))
         "Nothing is quarantined.")))
 
+(defun %failure-tally (kernel)
+  "A line counting the last 100 failed calls by profile and kind, so a pattern
+older than the five shown can be seen and checked from inside (bead v3-vpp:
+36 of one agent's last 50 were reasoning burns, none among her latest five)."
+  (let ((counts (make-hash-table :test 'equal)) (n 0))
+    (dolist (id (latest-event-ids kernel "provider.call.failed" 100))
+      (let* ((p (event-payload (event-by-id kernel id)))
+             (reason (obj-get p "reason" ""))
+             (kind (cond ((search "finish: length" reason) "out of room (reasoning)")
+                         ((search "empty response" reason) "empty")
+                         (t (obj-get p "class" "other")))))
+        (incf n)
+        (incf (gethash (format nil "~a ~a" (obj-get p "profile" "?") kind) counts 0))))
+    (when (plusp n)
+      (format nil "Last ~d failed calls, by profile and kind: ~{~a~^; ~}."
+              n (sort (loop for k being the hash-keys of counts using (hash-value v)
+                            collect (format nil "~a ×~d" k v))
+                      #'string<)))))
+
 (defun %inspect-failures (kernel)
   "Recent failed model calls: why, and what the provider actually sent."
   (let ((ids (latest-event-ids kernel "provider.call.failed" 5)))
     (if (null ids)
         "No failed model calls on record."
-        (format nil "~{~a~^~%~%~}"
+        (format nil "~@[~a~%~%~]~{~a~^~%~%~}" (%failure-tally kernel)
                 (loop for id in ids
                       for e = (event-by-id kernel id)
                       for p = (event-payload e)
