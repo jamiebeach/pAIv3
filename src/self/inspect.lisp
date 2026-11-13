@@ -34,6 +34,17 @@
                                 degraded)))
         "Nothing is quarantined.")))
 
+(defun %reasoning-burn-p (reason)
+  "True when REASON reports an empty reply whose completion tokens were nearly
+all reasoning, such as \"6148 completion tokens, 6144 reasoning\"."
+  (let ((c (search " completion tokens, " reason)) (r (search " reasoning" reason)))
+    (when (and c r (search "empty response" reason))
+      (let* ((start (1+ (or (position #\Space reason :end c :from-end t) -1)))
+             (completion (ignore-errors (parse-integer reason :start start :end c)))
+             (reasoned (ignore-errors (parse-integer reason :start (+ c (length " completion tokens, "))
+                                                    :end (search " reasoning" reason :start2 c)))))
+        (and completion reasoned (plusp completion) (>= reasoned (* 0.9 completion)))))))
+
 (defun %failure-tally (kernel)
   "A line counting the last 100 failed calls by profile and kind, so a pattern
 older than the five shown can be seen and checked from inside (bead v3-vpp:
@@ -42,7 +53,9 @@ older than the five shown can be seen and checked from inside (bead v3-vpp:
     (dolist (id (latest-event-ids kernel "provider.call.failed" 100))
       (let* ((p (event-payload (event-by-id kernel id)))
              (reason (obj-get p "reason" ""))
-             (kind (cond ((search "finish: length" reason) "out of room (reasoning)")
+             ;; A burn is told by its tokens too: some providers end one with
+             ;; finish error, not length (Angel's October deepseek-graph empties).
+             (kind (cond ((or (search "finish: length" reason) (%reasoning-burn-p reason)) "out of room (reasoning)")
                          ((search "empty response" reason) "empty")
                          (t (obj-get p "class" "other")))))
         (incf n)

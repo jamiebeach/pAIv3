@@ -48,12 +48,19 @@
       (append! k "provider.call.failed" (obj "profile" "graph" "model" "m" "class" "model" "status" 200
                                              "reason" "empty response (finish: length · 8192 completion tokens)"
                                              "milliseconds" 1)))
+    (append! k "provider.call.failed" (obj "profile" "graph" "model" "m" "class" "model" "status" 200
+                                           "reason" "empty response (finish: error · 6148 completion tokens, 6144 reasoning · 24,256 reasoning characters streamed)"
+                                           "milliseconds" 1))
+    (append! k "provider.call.failed" (obj "profile" "chat" "model" "m" "class" "model" "status" 200
+                                           "reason" "empty response (finish: stop · 59 completion tokens, 0 reasoning · 0 reasoning characters streamed)"
+                                           "milliseconds" 1))
     (dotimes (i 5)
       (append! k "provider.call.failed" (obj "profile" "chat" "model" "m" "class" "transient" "status" 0
                                              "reason" "transport: timeout" "milliseconds" 1)))
     (let ((text (inspect-tool k "what" "failures")))
-      (is (search "Last 11 failed calls" text))
-      (is (search "graph out of room (reasoning) ×6" text) "the older burns are counted though not shown")
+      (is (search "Last 13 failed calls" text))
+      (is (search "graph out of room (reasoning) ×7" text) "a burn ended with finish error is still a burn")
+      (is (search "chat empty ×1" text) "an empty reply that was not reasoning stays empty")
       (is (search "chat transient ×5" text)))))
 
 (run-suite "self-inspect")
