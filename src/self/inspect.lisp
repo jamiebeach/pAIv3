@@ -49,9 +49,10 @@ all reasoning, such as \"6148 completion tokens, 6144 reasoning\"."
   "A line counting the last 100 failed calls by profile and kind, so a pattern
 older than the five shown can be seen and checked from inside (bead v3-vpp:
 36 of one agent's last 50 were reasoning burns, none among her latest five)."
-  (let ((counts (make-hash-table :test 'equal)) (n 0))
+  (let ((counts (make-hash-table :test 'equal)) (n 0) (since nil))
     (dolist (id (latest-event-ids kernel "provider.call.failed" 100))
-      (let* ((p (event-payload (event-by-id kernel id)))
+      (let* ((e (event-by-id kernel id))
+             (p (event-payload e))
              (reason (obj-get p "reason" ""))
              ;; A burn is told by its tokens too: some providers end one with
              ;; finish error, not length (Angel's October deepseek-graph empties).
@@ -59,12 +60,18 @@ older than the five shown can be seen and checked from inside (bead v3-vpp:
                          ((search "empty response" reason) "empty")
                          (t (obj-get p "class" "other")))))
         (incf n)
+        (setf since (subseq (event-at e) 0 10))       ; ids run newest first: this ends as the oldest day
         (incf (gethash (format nil "~a ~a" (obj-get p "profile" "?") kind) counts 0))))
     (when (plusp n)
-      (format nil "Last ~d failed calls, by profile and kind: ~{~a~^; ~}."
-              n (sort (loop for k being the hash-keys of counts using (hash-value v)
+      ;; Against the calls that worked over the same days: a count that stops
+      ;; growing may be a fix or only a quiet spell; a rate tells them apart.
+      (let ((ok (sql-rows (kernel-db kernel) "SELECT profile,count(*) FROM cost_calls WHERE day>=?1 GROUP BY profile LIMIT 64" since)))
+        (format nil "Last ~d failed calls, since ~a, by profile and kind: ~{~a~^; ~}.~@[~%Calls that worked over the same days, by profile: ~{~{~a ~d~}~^; ~}.~]"
+                n since
+                (sort (loop for k being the hash-keys of counts using (hash-value v)
                             collect (format nil "~a ×~d" k v))
-                      #'string<)))))
+                      #'string<)
+                ok)))))
 
 (defun %inspect-failures (kernel)
   "Recent failed model calls: why, and what the provider actually sent."

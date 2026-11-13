@@ -57,8 +57,13 @@
     (dotimes (i 5)
       (append! k "provider.call.failed" (obj "profile" "chat" "model" "m" "class" "transient" "status" 0
                                              "reason" "transport: timeout" "milliseconds" 1)))
+    (dotimes (i 3)
+      (append! k "provider.call.completed" (obj "profile" "graph" "model" "m" "estimated_prompt_tokens" 1 "prompt_tokens" 1
+                                                "completion_tokens" 1 "prompt_chars" 1 "microusd" 1 "milliseconds" 1)))
     (let ((text (inspect-tool k "what" "failures")))
-      (is (search "Last 13 failed calls" text))
+      (is (search "graph 3" text) "worked calls are counted per profile")
+      (is (search "Last 13 failed calls, since" text))
+      (is (search "Calls that worked over the same days" text) "the rate's denominator is shown")
       (is (search "graph out of room (reasoning) ×7" text) "a burn ended with finish error is still a burn")
       (is (search "chat empty ×1" text) "an empty reply that was not reasoning stays empty")
       (is (search "chat transient ×5" text)))))
