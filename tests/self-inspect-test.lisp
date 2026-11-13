@@ -66,6 +66,9 @@
       (is (search "Calls that worked over the same days" text) "the rate's denominator is shown")
       (is (search "graph out of room (reasoning) ×7" text) "a burn ended with finish error is still a burn")
       (is (search "chat empty ×1" text) "an empty reply that was not reasoning stays empty")
-      (is (search "chat transient ×5" text)))))
+      (is (search "chat transient ×5" text)))
+    (let ((fixed (inspect-tool k "what" "failures" "since" "2099-01-01")))
+      (is (search "0 failed calls, since 2099-01-01, by profile and kind: none" fixed)
+          "a fixed span counts only from its day"))))
 
 (run-suite "self-inspect")

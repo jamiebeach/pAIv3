@@ -45,12 +45,15 @@ all reasoning, such as \"6148 completion tokens, 6144 reasoning\"."
                                                     :end (search " reasoning" reason :start2 c)))))
         (and completion reasoned (plusp completion) (>= reasoned (* 0.9 completion)))))))
 
-(defun %failure-tally (kernel)
-  "A line counting the last 100 failed calls by profile and kind, so a pattern
-older than the five shown can be seen and checked from inside (bead v3-vpp:
-36 of one agent's last 50 were reasoning burns, none among her latest five)."
-  (let ((counts (make-hash-table :test 'equal)) (n 0) (since nil))
-    (dolist (id (latest-event-ids kernel "provider.call.failed" 100))
+(defun %failure-tally (kernel &optional from)
+  "A line counting failed calls by profile and kind, so a pattern older than
+the five shown can be seen and checked from inside (bead v3-vpp: 36 of one
+agent's last 50 were reasoning burns, none among her latest five). Without
+FROM, the last 100; with FROM (a day, YYYY-MM-DD), every failure from that day
+on (up to 2000), so a before and an after can be read over fixed spans rather
+than a window that drifts back as failures grow rare."
+  (let ((counts (make-hash-table :test 'equal)) (n 0) (since from))
+    (dolist (id (latest-event-ids kernel "provider.call.failed" (if from 2000 100)))
       (let* ((e (event-by-id kernel id))
              (p (event-payload e))
              (reason (obj-get p "reason" ""))
@@ -59,26 +62,27 @@ older than the five shown can be seen and checked from inside (bead v3-vpp:
              (kind (cond ((or (search "finish: length" reason) (%reasoning-burn-p reason)) "out of room (reasoning)")
                          ((search "empty response" reason) "empty")
                          (t (obj-get p "class" "other")))))
-        (incf n)
-        (setf since (subseq (event-at e) 0 10))       ; ids run newest first: this ends as the oldest day
-        (incf (gethash (format nil "~a ~a" (obj-get p "profile" "?") kind) counts 0))))
-    (when (plusp n)
+        (when (or (null from) (string>= (event-at e) from))
+          (incf n)
+          (unless from (setf since (subseq (event-at e) 0 10)))  ; newest first: ends as the oldest day
+          (incf (gethash (format nil "~a ~a" (obj-get p "profile" "?") kind) counts 0)))))
+    (when (or (plusp n) from)
       ;; Against the calls that worked over the same days: a count that stops
       ;; growing may be a fix or only a quiet spell; a rate tells them apart.
       (let ((ok (sql-rows (kernel-db kernel) "SELECT profile,count(*) FROM cost_calls WHERE day>=?1 GROUP BY profile LIMIT 64" since)))
-        (format nil "Last ~d failed calls, since ~a, by profile and kind: ~{~a~^; ~}.~@[~%Calls that worked over the same days, by profile: ~{~{~a ~d~}~^; ~}.~]"
-                n since
+        (format nil "~:[Last ~d~;~d~] failed calls, since ~a~:[ (the oldest of the last 100; give since to fix the span)~;~], by profile and kind: ~:[none~;~:*~{~a~^; ~}~].~@[~%Calls that worked over the same days, by profile: ~{~{~a ~d~}~^; ~}.~]"
+                from n since from
                 (sort (loop for k being the hash-keys of counts using (hash-value v)
                             collect (format nil "~a ×~d" k v))
                       #'string<)
                 ok)))))
 
-(defun %inspect-failures (kernel)
+(defun %inspect-failures (kernel &optional since)
   "Recent failed model calls: why, and what the provider actually sent."
   (let ((ids (latest-event-ids kernel "provider.call.failed" 5)))
     (if (null ids)
         "No failed model calls on record."
-        (format nil "~@[~a~%~%~]~{~a~^~%~%~}" (%failure-tally kernel)
+        (format nil "~@[~a~%~%~]~{~a~^~%~%~}" (%failure-tally kernel since)
                 (loop for id in ids
                       for e = (event-by-id kernel id)
                       for p = (event-payload e)
@@ -100,14 +104,15 @@ older than the five shown can be seen and checked from inside (bead v3-vpp:
           (json-encode (projection-counts kernel name)) (projection-digest kernel name)))
 
 (define-tool "inspect"
-  :description "Look at my own derived state, read-only. what: overview (every projection's status, cursor and problems), failures (recent failed model calls and what the provider sent back), rows (a projection's rows; give name, and optionally table, column and value), quarantine (events a projection could not apply; optionally name), live_changes (code I defined or repaired in myself with lisp_eval: skills and repairs, and which were lost on restart; not recent ledger events), digest (row counts and a digest of a projection, for verification; give name)."
+  :description "Look at my own derived state, read-only. what: overview (every projection's status, cursor and problems), failures (recent failed model calls and what the provider sent back, opening with a tally by profile and kind against calls that worked; since, a day like 2026-11-13, fixes the tally's span so a before and an after compare fairly), rows (a projection's rows; give name, and optionally table, column and value), quarantine (events a projection could not apply; optionally name), live_changes (code I defined or repaired in myself with lisp_eval: skills and repairs, and which were lost on restart; not recent ledger events), digest (row counts and a digest of a projection, for verification; give name)."
   :parameters (obj "type" "object"
                    "properties" (obj "what" (obj "type" "string" "enum" (list "overview" "failures" "rows" "quarantine" "live_changes" "digest"))
                                      "name" (obj "type" "string" "description" "A projection name, from the overview.")
                                      "table" (obj "type" "string")
                                      "column" (obj "type" "string")
                                      "value" (obj "type" "string")
-                                     "limit" (obj "type" "integer"))
+                                     "limit" (obj "type" "integer")
+                                     "since" (obj "type" "string" "description" "For failures: count from this day (YYYY-MM-DD)."))
                    "required" (list "what"))
   :available :operator-trust
   :core '("introspection")
@@ -120,7 +125,9 @@ older than the five shown can be seen and checked from inside (bead v3-vpp:
                  (cond ((string= what "overview") (%inspect-overview kernel))
                        ((string= what "quarantine") (%inspect-quarantine kernel name))
                        ((string= what "live_changes") (%inspect-live-changes kernel))
-                       ((string= what "failures") (%inspect-failures kernel))
+                       ((string= what "failures")
+                        (let ((since (obj-get args "since")))
+                          (%inspect-failures kernel (and (stringp since) (= (length since) 10) since))))
                        ((null name) (format nil "~a needs a projection name; see the overview." what))
                        ((not (find-projection-p name)) (format nil "There is no projection ~a." name))
                        ((string= what "digest") (%inspect-digest kernel name))
