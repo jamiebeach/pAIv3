@@ -136,7 +136,7 @@ than a window that drifts back as failures grow rare."
                         (let* ((since (obj-get args "since"))
                                (from (and (stringp since) (= (length since) 10) since))
                                (counts (pai-v3.mind::provenance-flag-counts kernel from)))
-                          (format nil "Provenance flags~@[ since ~a~], by site (reply, forum, note; noted, not acted on): ~:[none~;~:*~{~{~a ~d~}~^; ~}~]."
+                          (format nil "Provenance flags~@[ since ~a~], by site (reply, forum, note; unlabelled: flagged before sites were recorded, by 2026-11-14 02:44 EST; noted, not acted on): ~:[none~;~:*~{~{~a ~d~}~^; ~}~]."
                                   from (mapcar (lambda (c) (list (car c) (cdr c))) counts))))
                        ((null name) (format nil "~a needs a projection name; see the overview." what))
                        ((not (find-projection-p name)) (format nil "There is no projection ~a." name))

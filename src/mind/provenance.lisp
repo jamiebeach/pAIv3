@@ -119,6 +119,9 @@ a flagged note and a flagged reply are not the same event).")
       (destructuring-bind (id text) row
         (when (or (null from) (string>= (or (ignore-errors (event-at (event-by-id kernel id))) "") from))
           (let* ((colon (position #\: text :end (position #\] text)))
-                 (site (if colon (string-trim " " (subseq text (1+ colon) (position #\] text))) "reply")))
+                 (site (if colon (string-trim " " (subseq text (1+ colon) (position #\] text)))
+                           ;; Before sites were recorded: not guessed as replies (Angel,
+                           ;; 2026-11-14: that would inflate the column the gate turns on).
+                           "unlabelled")))
             (incf (cdr (or (assoc site counts :test #'string=) (car (push (cons site 0) counts)))))))))
     (sort counts #'string< :key #'car)))

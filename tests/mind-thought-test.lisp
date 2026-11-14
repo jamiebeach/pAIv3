@@ -557,7 +557,11 @@
       (let ((pai-v3.mind::*provenance-site* "note"))
         (funcall pai-v3.mind::*provenance-hook* k (thought-row k id) "I read the SYNTHETIC-antikythera paper in full."))
       (is (equal '(("note" . 1) ("reply" . 1)) (pai-v3.mind::provenance-flag-counts k)) "a note is its own site")
-      (is (null (pai-v3.mind::provenance-flag-counts k "2999-01-01")) "nothing counted from a later day")))
+      (is (null (pai-v3.mind::provenance-flag-counts k "2999-01-01")) "nothing counted from a later day")
+      (pai-v3.mind::%record-text k id "provenance" "[Flagged, not acted on]
+SYNTHETIC from before sites")
+      (is (equal 1 (cdr (assoc "unlabelled" (pai-v3.mind::provenance-flag-counts k) :test #'string=)))
+          "a flag from before sites were recorded is unlabelled, not a reply")))
   (with-thinking (k)
     (let* ((pai-v3.mind::*decision-profile* (sources-judge))
            (*script* (list (obj "content" "It is noon where you are.")))
