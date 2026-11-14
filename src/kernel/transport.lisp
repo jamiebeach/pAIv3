@@ -88,10 +88,11 @@ goes through it.")
   (let ((p (and *egress-proxy* (ignore-errors (funcall *egress-proxy*)))))
     (and (stringp p) (plusp (length p)) p)))
 
-(defun http-request (method url &key headers body stream (connect-timeout 10) (read-timeout 60)
+(defun http-request (method url &key headers body stream binary (connect-timeout 10) (read-timeout 60)
                                      (max-redirects 5) allow-private)
   "Make an outbound request. Returns (values body status response-headers
-final-url); with STREAM, body is a stream the caller closes. Network
+final-url); with STREAM, body is a stream the caller closes; with BINARY, body is
+octets read whole (audio, images), not text. Network
 failures signal; HTTP error statuses are returned, not signalled."
   (loop repeat (1+ max-redirects)
         do (let ((host (check-outbound-url url :allow-private allow-private
@@ -101,7 +102,7 @@ failures signal; HTTP error statuses are returned, not signalled."
                (multiple-value-bind (out status response-headers)
                    (handler-case
                        (dex:request url :method method :headers sent-headers :content sent-body
-                                        :want-stream stream :force-string (not stream)
+                                        :want-stream stream :force-string (not (or stream binary)) :force-binary (and binary (not stream))
                                         :max-redirects 0 :insecure nil :keep-alive nil
                                         :connect-timeout connect-timeout :read-timeout read-timeout
                                         :proxy (and (not allow-private) (%egress-proxy)))
