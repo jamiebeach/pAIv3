@@ -44,6 +44,45 @@
       (is (search "Made image" said) "the image is kept, not reported as not made")
       (is (null (search "not made" said))))))
 
+(deftest an-image-still-being-made-is-collected-not-sent-again
+  ;; Bead v3-8cy: past the provider's 120 s sync wait, the answer is a row
+  ;; "processing" with our taskUUID; it was read as "not made" and discarded.
+  (with-temp-kernel (k)
+    (let* ((*sent* '()) (asked 0)
+           (pai-v3.mind::*image-poll-every* 0)
+           (pai-v3.mind::*image-post*
+             (lambda (url headers body)
+               (declare (ignore url headers))
+               (let ((task (first (json-parse body))))
+                 (push task *sent*)
+                 (values (json-encode
+                          (if (and (equal (obj-get task "taskType") "getResponse") (>= (incf asked) 2))
+                              (obj "data" (list (obj "taskType" "imageInference" "taskUUID" (obj-get task "taskUUID")
+                                                     "status" "success" "imageBase64Data" +png-b64+ "cost" 0.004)))
+                              (obj "data" (list (obj "taskType" "imageInference" "taskUUID" (obj-get task "taskUUID")
+                                                     "status" "processing")))))
+                         200))))
+           (said (pai-v3.mind::generate-image k nil "a slow lighthouse")))
+      (is (search "Made image" said) "collected once made")
+      (let ((kinds (mapcar (lambda (task) (obj-get task "taskType")) (reverse *sent*))))
+        (is (equal '("imageInference" "getResponse" "getResponse") kinds) "asked after, never sent again")
+        (is (= 1 (length (remove-duplicates (mapcar (lambda (task) (obj-get task "taskUUID")) *sent*) :test #'equal)))
+            "always the same task")))))
+
+(deftest an-image-never-finished-says-so-with-its-task
+  (with-temp-kernel (k)
+    (let* ((*sent* '())
+           (pai-v3.mind::*image-poll-every* 0) (pai-v3.mind::*image-poll-seconds* 0)
+           (pai-v3.mind::*image-post*
+             (lambda (url headers body)
+               (declare (ignore url headers))
+               (let ((task (first (json-parse body))))
+                 (push task *sent*)
+                 (values (json-encode (obj "data" (list (obj "taskUUID" (obj-get task "taskUUID") "status" "processing")))) 200))))
+           (said (pai-v3.mind::generate-image k nil "a lighthouse that never comes")))
+      (is (search "still being made" said) "says it is unfinished, not refused")
+      (is (null (search "Made image" said))))))
+
 (deftest image-making-stops-at-the-daily-budget
   (with-temp-kernel (k)
     (change-setting k "images.generation_daily_usd" 0.01d0 :origin *operator*)

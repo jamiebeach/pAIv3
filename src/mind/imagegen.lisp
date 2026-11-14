@@ -73,7 +73,9 @@
 
 (defvar *image-post*
   (lambda (url headers body)
-    (http-request :post url :headers headers :body body :read-timeout 120))
+    ;; Longer than the provider's own 120 s sync wait, so its "still
+    ;; processing" answer arrives rather than a timeout here (bead v3-8cy).
+    (http-request :post url :headers headers :body body :read-timeout 150))
   "(lambda (url headers body)) -> body, status. Replaced in tests.")
 
 (defun %reference-allowed-p (kernel thought-id image-id)
@@ -84,6 +86,37 @@ made for a peer."
     (or (null audience) (equal audience "operator")
         (sql-value (kernel-db kernel) "SELECT 1 FROM seen_images WHERE image_id=?1 AND audience=?2 LIMIT 1" image-id audience)
         (sql-value (kernel-db kernel) "SELECT 1 FROM seen_images WHERE image_id=?1 AND audience=?2 AND how=?3 LIMIT 1" image-id "operator" "made"))))
+
+(defparameter *image-poll-seconds* 120 "How long to collect an image the provider is still making.")
+(defparameter *image-poll-every* 5)
+
+(defun %image-still-processing-p (body task-id)
+  "Whether BODY says TASK-ID is still being made, with no image yet."
+  (let ((answer (ignore-errors (json-parse body))))
+    (and (hash-table-p answer)
+         (notany (lambda (d) (and (hash-table-p d) (stringp (obj-get d "imageBase64Data")))) (obj-get answer "data"))
+         (some (lambda (d) (and (hash-table-p d) (equal (obj-get d "taskUUID") task-id)
+                                (equal (obj-get d "status") "processing")))
+               (obj-get answer "data")))))
+
+(defun %poll-image (url task-id)
+  "Ask for TASK-ID's result until it is made, fails, or the wait runs out.
+Never sends the task again: that would make and bill a second image.
+Returns the last body and status, as the first request did."
+  (let ((deadline (+ (get-universal-time) *image-poll-seconds*)) body status)
+    (loop
+      (sleep *image-poll-every*)
+      (multiple-value-setq (body status)
+        (funcall *image-post* url
+                 (list (cons "Content-Type" "application/json")
+                       (cons "Authorization" (list :secret "runware" "Bearer ~a")))
+                 (json-encode (list (obj "taskType" "getResponse" "taskUUID" task-id)))))
+      (when (or (not (eql status 200)) (not (%image-still-processing-p body task-id))
+                (>= (get-universal-time) deadline))
+        (return (values (if (and (eql status 200) (%image-still-processing-p body task-id))
+                            (json-encode (obj "errors" (list (obj "message" (format nil "still being made after ~d s more; task ~a" *image-poll-seconds* task-id)))))
+                            body)
+                        status))))))
 
 (defun generate-image (kernel thought-id prompt &key (size "square") references depicts)
   "Make an image of PROMPT. With REFERENCES (stored image ids), the reference
@@ -106,12 +139,13 @@ sees."
           ((>= (images-spent-today kernel) limit)
            (format nil "Today's image budget (US$~,2f) is spent; image making resumes tomorrow (UTC)." limit))
           (t
+           (let ((task-id (%uuid-v4)))
            (multiple-value-bind (body status)
                (funcall *image-post* url
                         (list (cons "Content-Type" "application/json")
                               (cons "Authorization" (list :secret "runware" "Bearer ~a")))
                         (json-encode (list (let ((task (obj "taskType" "imageInference"
-                                                            "taskUUID" (%uuid-v4)
+                                                            "taskUUID" task-id
                                                             "positivePrompt" prompt "model" model
                                                             "width" (second shape) "height" (third shape)
                                                             "numberResults" 1 "outputType" "base64Data"
@@ -120,6 +154,10 @@ sees."
                                                (setf (gethash "inputs" task)
                                                      (obj "referenceImages" (mapcar (lambda (r) (image-data-url kernel r)) references))))
                                              task))))
+             ;; Still running after the provider's sync wait: collect it
+             ;; rather than discard a made and paid-for image (bead v3-8cy).
+             (when (and (eql status 200) (%image-still-processing-p body task-id))
+               (multiple-value-setq (body status) (%poll-image url task-id)))
              (let* ((answer (ignore-errors (json-parse body)))
                     ;; The entry that carries the image, not merely the first: with
                     ;; reference images the answer can hold other entries before
@@ -142,7 +180,7 @@ sees."
                                    "thought_id" thought-id))
                      (let ((shows (%note-made-depictions kernel id depicts references thought-id)))
                        (format nil "Made image ~a (US$~,4f).~@[ It shows ~{~a~^, ~}.~] To show it, put this in your reply on a line of its own:~%![~a](/api/v2/images/~a)"
-                               id cost shows (substitute #\Space #\] (subseq prompt 0 (min 80 (length prompt)))) id))))))))))
+                               id cost shows (substitute #\Space #\] (subseq prompt 0 (min 80 (length prompt)))) id)))))))))))
 
 (defun %note-made-depictions (kernel image-id depicts references thought-id)
   "Link a made image to who it shows: those named in DEPICTS, and those its
