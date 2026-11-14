@@ -705,4 +705,20 @@
         (is (= 200 (pwa-post "/api/v2/send" (obj "message" "hello" "reaction_frame" other) :token token)))
         (is (null (obj-get (last-turn) "camera_images")) "a reaction alone, without the camera on as it was sent, is not taken")))))
 
+(deftest a-lone-word-from-noise-is-left-out-when-the-judgment-fails
+  ;; Bead v3-lhw: "It's", "Answer", "BBC" recorded as the operator's words.
+  (with-pwa (k agent)
+    (let ((pai-v3.mind::*decision-profile*
+            (make-provider-profile :name "down" :base-url "http://fake" :model "m"
+                                   :transport (lambda (&rest r) (declare (ignore r)) (error "unreachable")))))
+      (is (pai-v3.api::%ambient-phrase-p agent "BBC") "a lone unknown word is left out")
+      (is (pai-v3.api::%ambient-phrase-p agent "Answer.") "with its punctuation too")
+      (is (not (pai-v3.api::%ambient-phrase-p agent "Yes")) "a known short reply is taken")
+      (is (not (pai-v3.api::%ambient-phrase-p agent "thank you!")) "two known words are taken")
+      (is (not (pai-v3.api::%ambient-phrase-p agent "Pick up the wood after school")) "a longer phrase still passes")
+      (let ((outcomes (mapcar (lambda (id) (obj-get (event-payload (event-by-id k id)) "outcome"))
+                              (latest-event-ids k "voice.heard.judged" 10))))
+        (is (= 5 (length outcomes)) "each judgment is recorded")
+        (is (= 2 (count "left out, no judgment, short" outcomes :test #'equal)))))))
+
 (run-suite "api-pwa")
