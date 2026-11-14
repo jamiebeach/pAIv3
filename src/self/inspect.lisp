@@ -52,8 +52,11 @@ agent's last 50 were reasoning burns, none among her latest five). Without
 FROM, the last 100; with FROM (a day, YYYY-MM-DD), every failure from that day
 on (up to 2000), so a before and an after can be read over fixed spans rather
 than a window that drifts back as failures grow rare."
-  (let ((counts (make-hash-table :test 'equal)) (n 0) (since from))
-    (dolist (id (latest-event-ids kernel "provider.call.failed" (if from 2000 100)))
+  (let* ((counts (make-hash-table :test 'equal)) (n 0) (since from)
+         (ids (latest-event-ids kernel "provider.call.failed" (if from 2000 100)))
+         ;; Every id read and still inside the span: the span may hold more than were counted.
+         (full nil))
+    (dolist (id ids)
       (let* ((e (event-by-id kernel id))
              (p (event-payload e))
              (reason (obj-get p "reason" ""))
@@ -63,6 +66,7 @@ than a window that drifts back as failures grow rare."
                          ((search "empty response" reason) "empty")
                          (t (obj-get p "class" "other")))))
         (when (or (null from) (string>= (event-at e) from))
+          (when (and from (= (length ids) 2000) (eql id (car (last ids)))) (setf full t))
           (incf n)
           (unless from (setf since (subseq (event-at e) 0 10)))  ; newest first: ends as the oldest day
           (incf (gethash (format nil "~a ~a" (obj-get p "profile" "?") kind) counts 0)))))
@@ -70,8 +74,8 @@ than a window that drifts back as failures grow rare."
       ;; Against the calls that worked over the same days: a count that stops
       ;; growing may be a fix or only a quiet spell; a rate tells them apart.
       (let ((ok (sql-rows (kernel-db kernel) "SELECT profile,count(*) FROM cost_calls WHERE day>=?1 GROUP BY profile LIMIT 64" since)))
-        (format nil "~:[Last ~d~;~d~] failed calls, since ~a~:[ (the oldest of the last 100; give since to fix the span)~;~], by profile and kind: ~:[none~;~:*~{~a~^; ~}~].~@[~%Calls that worked over the same days, by profile: ~{~{~a ~d~}~^; ~}.~]"
-                from n since from
+        (format nil "~:[Last ~d~;~d~]~:[~; or more (the count stopped at 2000)~] failed calls, since ~a~:[ (the oldest of the last 100; give since to fix the span)~;~], by profile and kind: ~:[none~;~:*~{~a~^; ~}~].~@[~%Calls that worked over the same days, by profile: ~{~{~a ~d~}~^; ~}.~]"
+                from n full since from
                 (sort (loop for k being the hash-keys of counts using (hash-value v)
                             collect (format nil "~a ×~d" k v))
                       #'string<)
@@ -104,15 +108,15 @@ than a window that drifts back as failures grow rare."
           (json-encode (projection-counts kernel name)) (projection-digest kernel name)))
 
 (define-tool "inspect"
-  :description "Look at my own derived state, read-only. what: overview (every projection's status, cursor and problems), failures (recent failed model calls and what the provider sent back, opening with a tally by profile and kind against calls that worked; since, a day like 2026-11-13, fixes the tally's span so a before and an after compare fairly), rows (a projection's rows; give name, and optionally table, column and value), quarantine (events a projection could not apply; optionally name), live_changes (code I defined or repaired in myself with lisp_eval: skills and repairs, and which were lost on restart; not recent ledger events), digest (row counts and a digest of a projection, for verification; give name)."
+  :description "Look at my own derived state, read-only. what: overview (every projection's status, cursor and problems), failures (recent failed model calls and what the provider sent back, opening with a tally by profile and kind against calls that worked; since, a day like 2026-11-13, fixes the tally's span so a before and an after compare fairly), flags (how often the provenance check flagged a claim of what I read, checked or saw without naming the record, by site; since as for failures), rows (a projection's rows; give name, and optionally table, column and value), quarantine (events a projection could not apply; optionally name), live_changes (code I defined or repaired in myself with lisp_eval: skills and repairs, and which were lost on restart; not recent ledger events), digest (row counts and a digest of a projection, for verification; give name)."
   :parameters (obj "type" "object"
-                   "properties" (obj "what" (obj "type" "string" "enum" (list "overview" "failures" "rows" "quarantine" "live_changes" "digest"))
+                   "properties" (obj "what" (obj "type" "string" "enum" (list "overview" "failures" "flags" "rows" "quarantine" "live_changes" "digest"))
                                      "name" (obj "type" "string" "description" "A projection name, from the overview.")
                                      "table" (obj "type" "string")
                                      "column" (obj "type" "string")
                                      "value" (obj "type" "string")
                                      "limit" (obj "type" "integer")
-                                     "since" (obj "type" "string" "description" "For failures: count from this day (YYYY-MM-DD)."))
+                                     "since" (obj "type" "string" "description" "For failures and flags: count from this day (YYYY-MM-DD)."))
                    "required" (list "what"))
   :available :operator-trust
   :core '("introspection")
@@ -128,6 +132,12 @@ than a window that drifts back as failures grow rare."
                        ((string= what "failures")
                         (let ((since (obj-get args "since")))
                           (%inspect-failures kernel (and (stringp since) (= (length since) 10) since))))
+                       ((string= what "flags")
+                        (let* ((since (obj-get args "since"))
+                               (from (and (stringp since) (= (length since) 10) since))
+                               (counts (pai-v3.mind::provenance-flag-counts kernel from)))
+                          (format nil "Provenance flags~@[ since ~a~], by site (reply, forum, note; noted, not acted on): ~:[none~;~:*~{~{~a ~d~}~^; ~}~]."
+                                  from (mapcar (lambda (c) (list (car c) (cdr c))) counts))))
                        ((null name) (format nil "~a needs a projection name; see the overview." what))
                        ((not (find-projection-p name)) (format nil "There is no projection ~a." name))
                        ((string= what "digest") (%inspect-digest kernel name))
@@ -140,5 +150,5 @@ than a window that drifts back as failures grow rare."
                           (if rows
                               (format nil "~{~a~^~%~}" (mapcar #'json-encode rows))
                               "No rows match.")))
-                       (t (format nil "I can inspect overview, rows, quarantine, live_changes or digest, not ~a." what))))
+                       (t (format nil "I can inspect overview, failures, flags, rows, quarantine, live_changes or digest, not ~a." what))))
              (not-inspectable (e) (princ-to-string e))))))

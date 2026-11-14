@@ -97,10 +97,28 @@ to restate it against my records, with them; else NIL."
 ;; question unanswered. The check still runs and records what it would have
 ;; asked, with the draft, so how often it fires can be read before the rule
 ;; moves into the drafting itself; the reply goes out as written.
+(defvar *provenance-site* "reply"
+  "Where the text being checked is going: reply, forum or note. The forum and
+remember tools bind it, so a flag can be counted by site (Angel, 2026-11-14:
+a flagged note and a flagged reply are not the same event).")
+
 (setf *provenance-hook*
       (lambda (kernel thought text)
         (let ((nudge (provenance-nudge kernel thought text)))
           (when nudge
             (%record-text kernel (getf thought :id) "provenance"
-                          (format nil "[Flagged, not acted on]~%~a~%~%[The draft, sent as written]~%~a" nudge (subseq text 0 (min 1500 (length text))))))
+                          (format nil "[Flagged, not acted on: ~a]~%~a~%~%[The draft, sent as written]~%~a"
+                                  *provenance-site* nudge (subseq text 0 (min 1500 (length text))))))
           nil)))
+
+(defun provenance-flag-counts (kernel &optional from)
+  "Flags by site, from FROM (a day, YYYY-MM-DD) on, or all: an alist of site and count."
+  (let ((counts '()))
+    (dolist (row (sql-rows (kernel-db kernel) "SELECT event_id,text FROM thought_steps WHERE kind=?1 AND text LIKE ?2 ORDER BY event_id DESC LIMIT 5000"
+                           "provenance" "[Flagged, not acted on%"))
+      (destructuring-bind (id text) row
+        (when (or (null from) (string>= (or (ignore-errors (event-at (event-by-id kernel id))) "") from))
+          (let* ((colon (position #\: text :end (position #\] text)))
+                 (site (if colon (string-trim " " (subseq text (1+ colon) (position #\] text))) "reply")))
+            (incf (cdr (or (assoc site counts :test #'string=) (car (push (cons site 0) counts)))))))))
+    (sort counts #'string< :key #'car)))

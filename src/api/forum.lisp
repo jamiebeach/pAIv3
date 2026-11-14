@@ -916,7 +916,7 @@ one dump (operator, 2026-11-06: pagination)."
                    ;; once a thought; drafting again after that goes ahead (2026-11-06).
                    (let ((sources (and pai-v3.mind::*provenance-hook*
                                        (not (pai-v3.mind::%provenance-asked-p kernel thought-id))
-                                       (ignore-errors (funcall pai-v3.mind::*provenance-hook* kernel row text)))))
+                                       (ignore-errors (let ((pai-v3.mind::*provenance-site* "forum")) (funcall pai-v3.mind::*provenance-hook* kernel row text))))))
                      (when sources
                        (%board-refuse "not drafted yet. ~a Then call draft_forum_post again with the restated text" sources)))
                    (let ((id (format nil "d-~(~36r~)-~(~36r~)" (now) (random (expt 36 3)))))

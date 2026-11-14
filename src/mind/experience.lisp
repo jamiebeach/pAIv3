@@ -326,7 +326,7 @@ or identifiers), newest first, as (kind at text ref event-id)."
              ;; What it says I read, checked or saw, set against my records once a
              ;; thought, before it is kept (2026-11-07, the memory-notes thread).
              ((let ((sources (and *provenance-hook* (not (%provenance-asked-p kernel id))
-                                  (ignore-errors (funcall *provenance-hook* kernel (thought-row kernel id) (obj-get args "content" ""))))))
+                                  (ignore-errors (let ((*provenance-site* "note")) (funcall *provenance-hook* kernel (thought-row kernel id) (obj-get args "content" "")))))))
                 (and sources (format nil "Not kept yet. ~a Then call remember again with the restated note." sources))))
              (t
                (let ((memory (form-memory kernel :kind (obj-get args "kind" "fact")
