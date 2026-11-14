@@ -18,7 +18,7 @@
 
 (define-setting "thought.provenance_check.enabled"
   :type :boolean :default t :group "Thinking"
-  :description "Before a reply or forum draft that says what I read, checked or saw, or when I started on something, put my own records on it in front of me once, to restate the claim as they support it.")
+  :description "Note, for audit, when a reply or forum draft says what I read, checked or saw, or when I started on something, without naming the record. The reply goes out as written.")
 
 (defparameter *provenance-days* 120 "How far back the check looks in my web history.")
 
@@ -91,13 +91,16 @@ to restate it against my records, with them; else NIL."
               (or (thought-web-record kernel (getf thought :id)) "it fetched no page and ran no search")
               evidence (and start (or (ignore-errors (local-stamp kernel start)) start))))))
 
+;; Flag only (2026-11-14; the crew's agreement, Cosmo's composition gate): a
+;; rewrite after the fact defended a finished draft. Angel's 04:05 reply
+;; corrected "the claim I just made", a claim Jamie never saw, and left his
+;; question unanswered. The check still runs and records what it would have
+;; asked, with the draft, so how often it fires can be read before the rule
+;; moves into the drafting itself; the reply goes out as written.
 (setf *provenance-hook*
       (lambda (kernel thought text)
         (let ((nudge (provenance-nudge kernel thought text)))
-          ;; Kept for the operator's audit: what fired, on what text.
           (when nudge
-            ;; The request, replayed with the thought; and apart, for the audit.
-            (%record-text kernel (getf thought :id) "provenance_note" nudge)
             (%record-text kernel (getf thought :id) "provenance"
-                          (format nil "~a~%~%[The text it was asked of]~%~a" nudge (subseq text 0 (min 1500 (length text))))))
-          nudge)))
+                          (format nil "[Flagged, not acted on]~%~a~%~%[The draft, sent as written]~%~a" nudge (subseq text 0 (min 1500 (length text))))))
+          nil)))

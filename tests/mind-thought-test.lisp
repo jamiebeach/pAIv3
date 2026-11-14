@@ -525,35 +525,34 @@
                   (values 200 nil (json-encode (obj "model" "typesafe/jev-test" "answers" answers
                                                     "usage" (obj "input_tokens" 10 "output_tokens" 1 "cost" 0.000001))))))))
 
-(deftest a-claim-of-what-i-read-is-set-against-my-own-records-once
+(deftest a-claim-of-what-i-read-is-flagged-against-my-own-records-and-sent-as-written
   ;; 2026-11-06: asked how they came to a paper, agents told stories their own
-  ;; records did not bear out. The crew's shape: ask once, show the records, never block.
+  ;; records did not bear out. 2026-11-14 (the crew, Cosmo's composition gate):
+  ;; a rewrite after the fact defended a draft no one had seen, so the check
+  ;; now only records what it would have asked, with the records, for audit.
   (with-thinking (k)
     (append! k "web.fetched" (obj "url" "https://arxiv.org/abs/SYNTHETIC-antikythera" "hosts" (list "arxiv.org")
                                   "status" 200 "outcome" "text" "chars" 1800))
     (append! k "web.searched" (obj "query" "SYNTHETIC-antikythera calendar ring" "status" 200))
     (let* ((calls (list 0))
            (pai-v3.mind::*decision-profile* (sources-judge :calls calls))
-           (*script* (list (obj "content" "I read the SYNTHETIC-antikythera paper in full on Thursday.")
-                           (obj "content" "My fetch log shows I fetched the SYNTHETIC-antikythera abstract today; that is all I can vouch for.")))
+           (*script* (list (obj "content" "I read the SYNTHETIC-antikythera paper in full on Thursday.")))
            (id (operator-turn k "How did you come to it?")))
       (run-until-idle k)
       (is (equal "ended" (getf (thought-row k id) :status)))
-      (let ((asked (obj-get (car (last (first *seen-messages*))) "content")))
-        (is (search "your own records show" asked) "the claim is set against the records")
-        (is (search "my fetch and search log" asked) "each named")
-        (is (search "fetched https://arxiv.org/abs/SYNTHETIC-antikythera" asked))
-        (is (search "text arrived (1,800 characters)" asked) "with what came of it")
-        (is (search "searched \"SYNTHETIC-antikythera calendar ring\"" asked))
-        (is (search "begins" asked) "and where the log begins"))
+      (is (= 1 (getf (thought-row k id) :model-calls)) "no second call: nothing is rewritten")
       (let ((said (replies k)))
-        (is (= 1 (length said)) "the first claim was never sent")
-        (is (search "My fetch log shows" (first said)) "the restated one was"))
-      (is (= 1 (car calls)) "asked once: the restatement is not judged again")
-      (is (search "[The text it was asked of]" (format nil "~{~a~}" (mapcar #'third (thought-steps k id))))
-          "kept for the operator's audit")
-      (is (find "user" (pai-v3.mind::%replay-messages k id) :key (lambda (m) (obj-get m "role")) :test #'equal)
-          "the request survives a replay")))
+        (is (= 1 (length said)))
+        (is (search "in full on Thursday" (first said)) "the draft is sent as written"))
+      (is (= 1 (car calls)) "judged once")
+      (let ((audit (format nil "~{~a~}" (mapcar #'third (thought-steps k id)))))
+        (is (search "[Flagged, not acted on]" audit) "kept for the audit")
+        (is (search "fetched https://arxiv.org/abs/SYNTHETIC-antikythera" audit) "with the records it would have shown")
+        (is (search "[The draft, sent as written]" audit)))
+      (is (not (find "user" (remove-if (lambda (m) (search "How did you come" (obj-get m "content" "")))
+                                       (pai-v3.mind::%replay-messages k id))
+                     :key (lambda (m) (obj-get m "role")) :test #'equal))
+          "nothing from the check enters a replay")))
   (with-thinking (k)
     (let* ((pai-v3.mind::*decision-profile* (sources-judge))
            (*script* (list (obj "content" "It is noon where you are.")))
