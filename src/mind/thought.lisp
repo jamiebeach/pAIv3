@@ -478,7 +478,7 @@ returns true, or returns NIL to let the thought go on (fastpath.lisp).")
   "You said what you were about to do, but made no tool call and did not do it, so it has not been done. Do it now, in this thought: call the tools it needs, or write the thing itself. If it cannot be done now, say so plainly and say when it will be.")
 
 (defparameter +grounding-nudge+
-  "Your reply states something about the operator's present state, plans or doings (that they are tired, going to bed, busy, or did something) as if you knew it, but nothing they said tells you so. Write the reply again: ask, say it plainly as a guess, or leave it out. Keep the rest as it was.")
+  "Your reply states something about the operator's present state, plans or doings (that they are tired, going to bed, busy, or did something) as if you knew it, but nothing they said tells you so. That reply has not been sent: they have not seen it. Write the whole reply again: ask, say it plainly as a guess, or leave it out. Keep the rest as it was, and do not mention the change.")
 
 (defun %announce-profile (kernel)
   (or *decision-profile*
