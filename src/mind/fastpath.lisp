@@ -69,13 +69,24 @@
                  (realp confidence) (>= confidence (setting kernel "reply.fast_path.min_confidence"))
                  kind))))))
 
+(defvar *fast-last* (make-hash-table :test 'equal :synchronized t)
+  "Kind and kernel -> the index of the line last used, so the next differs.")
+
 (defun %fast-reply-text (kernel kind)
-  "One of my lines for KIND, or its emoji; one each day, in turn. NIL for none."
+  "One of my lines for KIND, or its emoji; never the one used last time, where
+there are two or more (Angel, 2026-11-14: one line a day repeated the same
+beat all day). NIL for none."
   (let* ((mine (let ((v (obj-get (setting kernel "reply.fast_lines") kind)))
                  (and (listp v) (remove-if-not (lambda (s) (and (stringp s) (plusp (length s)))) v))))
          (choices (or mine (cdr (assoc kind *fast-emojis* :test #'equal))))
-         (day (floor (now) 86400)))
-    (and choices (nth (mod day (length choices)) choices))))
+         (key (cons (sxhash kernel) kind)))
+    (when choices
+      (let* ((n (length choices))
+             (last (gethash key *fast-last*))
+             (pick (cond ((< n 2) 0) ((null last) (random n)) (t
+                       (let ((i (random (1- n)))) (if (>= i last) (1+ i) i))))))
+        (setf (gethash key *fast-last*) pick)
+        (nth pick choices)))))
 
 (setf *fast-path-hook*
       (lambda (mind)

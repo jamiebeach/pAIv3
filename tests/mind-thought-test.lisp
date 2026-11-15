@@ -738,6 +738,19 @@ the operator spoke of bed; anything else says nothing of the operator."
                   (values 200 nil (json-encode (obj "model" "typesafe/jev-test" "answers" answers
                                                     "usage" (obj "input_tokens" 10 "output_tokens" 1 "cost" 0.000001))))))))
 
+(deftest a-fast-line-is-not-the-one-used-last-time
+  ;; Angel, 2026-11-14: one line a day gave "Mm-hmm, noted." twice running.
+  (with-thinking (k)
+    (change-setting k "reply.fast_lines" (obj "ACK" (list "SYNTHETIC one" "SYNTHETIC two" "SYNTHETIC three"))
+                    :origin (obj "principal_type" "operator" "auth_method" "passkey"))
+    (let ((said (loop repeat 30 collect (pai-v3.mind::%fast-reply-text k "ACK"))))
+      (is (every (lambda (s) (member s '("SYNTHETIC one" "SYNTHETIC two" "SYNTHETIC three") :test #'equal)) said))
+      (is (loop for (a b) on said while b never (equal a b)) "never the same line twice running")
+      (is (= 3 (length (remove-duplicates said :test #'equal))) "and every line gets its turn"))
+    (change-setting k "reply.fast_lines" (obj "ACK" (list "SYNTHETIC only"))
+                    :origin (obj "principal_type" "operator" "auth_method" "passkey"))
+    (is (equal "SYNTHETIC only" (pai-v3.mind::%fast-reply-text k "ACK")) "a single line is still said")))
+
 (deftest a-trivial-turn-is-answered-without-a-model-call
   ;; The operator and an agent, 2026-11-04: "Thank you Nova" needs no thought.
   (with-thinking (k)
