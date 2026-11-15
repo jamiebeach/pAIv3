@@ -14,7 +14,7 @@ An agent decided to send a peer a picture it had posted. Before writing, it
 listed its peers. The list held a name, an id and an address. The agent
 then wrote "you're an instance I haven't met — hello". Two things made that
 wrong: the two had exchanged welcomes that morning, and the agent's own
-persona names the peer as its sister. Nothing was missing from storage.
+persona names the peer as its peer. Nothing was missing from storage.
 What failed was recall at the moment it was needed: looking the peer up
 returned a roster entry, not an acquaintance.
 
@@ -110,9 +110,9 @@ that model:
 The nearest few above a similarity threshold in each activate, with the
 anchors they touch: the entities an interaction touched, a fact's subject
 and object, a memory's subjects. This catches everything said in words:
-"sending my sister the portrait" is near "we exchanged welcomes this
-morning" (an interaction) and near "she is the production instance, and my
-sister" (a fact) without either naming the other. A person recalls both
+"sending my peer the portrait" is near "we exchanged welcomes this
+morning" (an interaction) and near "it is the production instance, and my
+peer" (a fact) without either naming the other. A person recalls both
 from one cue, what happened and what they know; this does the same. It is
 a partial cue completing a whole memory, the way human recall is
 content-addressable.
@@ -212,7 +212,7 @@ The settled part grows in stages; the shape stays the same.
 
 ## 6. Prospective memory
 
-"When I next see her, tell her X" is a memory that fires on a cue, not at
+"When I next see them, tell them X" is a memory that fires on a cue, not at
 a time. The agent can attach an **intention** to an entity: what to do, and
 optionally until when. When that entity next activates, the intention comes
 back in the "what is open" line of its impression. It stays there until the
@@ -265,7 +265,7 @@ Fact embeddings serve the graph as well as recall:
   with any merge.
 
 Episode sealing should also cover peer exchanges, as it covers
-conversation with the operator. A significant exchange with a sister then
+conversation with the operator. A significant exchange with a peer then
 becomes a long-term memory that ordinary recall can find.
 
 ## 8. Privacy

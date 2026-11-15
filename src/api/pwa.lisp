@@ -676,7 +676,7 @@ localhost), the URL to send it to; passkeys only work at the agent's origin."
 
 ;;; Said to me, or only heard? (operator, 2026-11-09: the avatar listened
 ;;; hands-free through a two-hour meeting and took every phrase in the room as
-;;; his words to me.) Before a spoken turn is recorded, a Decisions judgment
+;;; their words to me.) Before a spoken turn is recorded, a Decisions judgment
 ;;; reads it with the last few phrases heard and my last reply. A phrase
 ;;; judged spoken by or to someone else is not recorded at all; after a few in
 ;;; a row, listening pauses and I say why. A failed judgment lets the turn

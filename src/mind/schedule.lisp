@@ -80,7 +80,7 @@
       ;; Whole days only, so the line changes once a day, not with every
       ;; thought, and the prompt stays cache-stable.
       ;; Calendar days in the operator's zone, not 24-hour spans: last night at
-      ;; 10:35 pm read as "today" the next afternoon (Aria, 2026-11-07).
+      ;; 10:35 pm read as "today" the next afternoon (an agent, 2026-11-07).
       (let ((days (or (ignore-errors (max 0 (local-days-ago kernel iso))) (floor (max 0 (- (now) at)) 86400))))
         (format nil "written ~a (~a) — ~a"
                 (case days (0 "today") (1 "yesterday") (t (format nil "~d days ago" days)))
@@ -418,7 +418,7 @@ operator has spoken, is checked by a thought before it is sent.")
     ;; What is next first. What has gone off follows as history, one line,
     ;; dated and aged, its request in the past: a fired runbook shown whole
     ;; kept "today" in the imperative into the next day, and a greeting at
-    ;; 05:35 was met with yesterday's rebuild (Angel, 2026-11-09; the crew's
+    ;; 05:35 was met with yesterday's rebuild (an agent, 2026-11-09; the crew's
     ;; shape). Its full text reached the thought it woke; the work it names,
     ;; if still open, is the docket's or what is carried.
     (loop for line in (append

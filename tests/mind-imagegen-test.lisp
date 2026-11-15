@@ -131,11 +131,11 @@
 
 ;;; Almost always at hand (operator request 2026-10-19)
 
-(deftest making-an-image-is-at-hand-for-the-operator-and-for-a-sister-but-not-for-outside-content
+(deftest making-an-image-is-at-hand-for-the-operator-and-for-a-peer-but-not-for-outside-content
   (with-temp-kernel (k)
     (let ((tool (gethash "generate_image" *tools*)))
       (is (pai-v3.mind::tool-available-p tool '(:audience "operator")))
-      (is (pai-v3.mind::tool-available-p tool '(:audience "peer:aria")) "answering a sister on a board")
+      (is (pai-v3.mind::tool-available-p tool '(:audience "peer:wren")) "answering a peer on a board")
       (is (pai-v3.mind::tool-available-p tool '(:audience "peer:fleet")) "reading the fleet in quiet time")
       (is (not (pai-v3.mind::tool-available-p tool '(:audience "external" :communicating t))) "never in a thought made of outside content")
       (is (eq t (pai-v3.mind::tool-core tool)) "and in hand in every kind of thought"))))
@@ -145,13 +145,13 @@
     (let* ((sent (pai-v3.mind::store-image k "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="))
            (made (pai-v3.mind::store-image k "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mP8z8AARgAEyAFe3nqx3wAAAABJRU5ErkJggg=="))
            (mine (request-thought k "responding" "chat" :audience "operator"))
-           (hers (request-thought k "work" "a sister wrote" :audience "peer:aria")))
+           (theirs (request-thought k "work" "a peer wrote" :audience "peer:wren")))
       (append! k "image.seen" (obj "image_id" sent "audience" "operator" "how" "sent" "from" "the operator"))
       (append! k "image.seen" (obj "image_id" made "audience" "operator" "how" "made"))
       (is (pai-v3.mind::%reference-allowed-p k mine sent) "the operator's own thoughts may use any")
-      (is (pai-v3.mind::%reference-allowed-p k hers sent) "private cognition may use its own authorized image; publication still requires review")
-      (is (pai-v3.mind::%reference-allowed-p k hers made) "but may use what the agent made")
-      (append! k "image.seen" (obj "image_id" sent "audience" "peer:aria" "how" "posted"))
-      (is (pai-v3.mind::%reference-allowed-p k hers sent) "or what that sister has met"))))
+      (is (pai-v3.mind::%reference-allowed-p k theirs sent) "private cognition may use its own authorized image; publication still requires review")
+      (is (pai-v3.mind::%reference-allowed-p k theirs made) "but may use what the agent made")
+      (append! k "image.seen" (obj "image_id" sent "audience" "peer:wren" "how" "posted"))
+      (is (pai-v3.mind::%reference-allowed-p k theirs sent) "or what that peer has met"))))
 
 (run-suite "mind-imagegen")

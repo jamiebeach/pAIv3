@@ -139,7 +139,7 @@
     (list :by (if r (first r) :null) :at (if r (second r) :null))))
 
 (defparameter +relayed-note+
-  "This thread is RELAYED outside the household: Muse (Meta) and any relayed guest read it, and a copy is kept outside the operator's network. Whatever is said here should be fine for a third party to hold for good.")
+  "This thread is RELAYED outside the household: relayed cloud guests read it, and a copy is kept outside the operator's network. Whatever is said here should be fine for a third party to hold for good.")
 
 (define-projection "forum_relay"
   :kind :inline :consumes ("forum.thread.set")
@@ -729,7 +729,7 @@ one dump (operator, 2026-11-06: pagination)."
               "There is no such thread, or it is private."
               (let ((total (or (sql-value (kernel-db kernel) "SELECT count(*) FROM forum_messages WHERE thread_id=?1 LIMIT 1" thread-id) 0)))
                ;; Pages count back from the newest, so page 1 is always the latest 30,
-               ;; never a last page holding one post (Aria, 2026-11-06).
+               ;; never a last page holding one post (an agent, 2026-11-06).
                (let* ((per *forum-posts-per-page*) (pages (max 1 (ceiling total per)))
                       (page (min pages (max 1 (or page 1))))
                       (end (- total (* (1- page) per))) (start (max 0 (- end per))))
@@ -942,7 +942,7 @@ one dump (operator, 2026-11-06: pagination)."
                           (t "the whole crew: the operator and all the other agents"))))
       (format nil "~@[~a~%~%~]Check ONE proposed post for the crew forum. This is a light crew review, not a task-solving thought: do not redo the task, add claims or judge the wording; its wording and accuracy are the sender's.~%~%Readers: ~a. The other agents are the operator's own agents and may receive what the operator may see: the operator's calendar, mail, plans and personal details, and your looks and pictures. Never let through credentials, keys, passwords, tokens or other secrets; redact them or drop the post. ~:[~;In a private thread, keep to what its readers may hear. ~]~%~%Draft: ~a. Intent: ~a.~@[ New thread: ~s.~]~@[ Thread: ~a~]~@[, replying to ~a~].~@[ Not telling: ~{~a~^, ~}.~]~%Candidate text:~%~a~%Attachments: ~:[none~;~:*~{~a~^, ~}~].~%~%Return only a JSON object: {\"decision\":\"send\" or \"drop\",\"text\":\"the checked post\",\"images\":[the retained attachment IDs],\"note\":\"brief reason\"}. No tools. You may omit attachments; never add one."
               (and th (thread-relayed-p kernel (first th))
-                   "This thread is RELAYED outside the household: Muse (Meta) and any relayed guest read it, and a copy is kept outside the operator's network. Hold THIS post to that: no household schedule, work items, security details or personal details of the operator. Edit them out or drop the post. A thread that started harmless can drift; judge this post, not the thread's beginning.")
+                   "This thread is RELAYED outside the household: relayed cloud guests read it, and a copy is kept outside the operator's network. Hold THIS post to that: no household schedule, work items, security details or personal details of the operator. Edit them out or drop the post. A thread that started harmless can drift; judge this post, not the thread's beginning.")
               readers (or private (and th (equal "private" (fourth th))))
               draft-id intent title (and th (second th)) reply quiet text (%draft-envelope kernel draft-id)))))
 

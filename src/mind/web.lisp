@@ -125,7 +125,7 @@ ends there, so <head is not found inside <header (bead v3-33j: a page with a
            ("refused_here" :string :optional)
            ;; What came of it (2026-11-06): text, unreadable, failed, refused or error,
            ;; and how many characters of text arrived, so "I read it" and "I tried and
-           ;; it broke" stay apart in my own history (Angel).
+           ;; it broke" stay apart in my own history (an agent).
            ("outcome" :string :optional) ("chars" :integer :optional)))
 
 (define-projection "web_fetches"
@@ -317,7 +317,7 @@ outcome chars at); with TERMS, only those whose address or query holds one."
   "What the thought THOUGHT-ID (with its subthoughts) did on the web, counted
 and said by the system, never by the agent: how many fetches, how many brought
 text, how the others ended, and how many searches. Attempting nothing reads
-apart from failing (Aria, 2026-11-07). NIL for no thought."
+apart from failing (an agent, 2026-11-07). NIL for no thought."
   (when thought-id
     (let* ((db (kernel-db kernel))
            (root (or (sql-value db "SELECT root_id FROM thoughts WHERE id=?1 LIMIT 1" thought-id) thought-id))

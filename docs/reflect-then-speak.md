@@ -70,7 +70,7 @@ for that peer's audience (origin `work`), as a peer's own post would. Its
 context is filtered for that peer, so private material never reaches it. Its
 task is the draft, the post it answers and one instruction: *the draft was
 written privately, by a thought that knew things this peer may not hear;
-send it only if it says nothing she may not hear, edit it, or drop it.* It
+send it only if it says nothing they may not hear, edit it, or drop it.* It
 has the publishing tools and sends, edits or drops. Whatever it does is
 recorded against the draft.
 

@@ -405,13 +405,13 @@ correction}."
             (t (reply 404 (obj "error" "no such route"))))))
     (board-error (e) (reply 400 (obj "error" (board-error-reason e))))))
 
-;;; Looking: an agent may take the frame in front of a source into her own
+;;; Looking: an agent may take the frame in front of a source into its own
 ;;; context, deliberately. Eyes keeps only the last analysed frame, briefly; a
 ;;; frame looked at is kept here like any image the agent has been shown.
 
 (define-setting "perception.looks_per_hour"
   :type :integer :min 0 :max 120 :default 20 :group "Senses"
-  :description "Most frames an agent may take from her senses in an hour.")
+  :description "Most frames an agent may take from its senses in an hour.")
 
 (defun %looks-this-hour (kernel)
   (or (sql-value (kernel-db kernel) "SELECT count(*) FROM thought_steps WHERE tool=?1 AND kind=?2 AND event_id>?3 AND text LIKE ?4 LIMIT 1"

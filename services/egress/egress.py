@@ -8,7 +8,7 @@ Run it with Quad9 (9.9.9.9) as its resolver and known-malware names do not
 resolve at all.
 
 Every request is one JSON line in the log: who asked (the name in the proxy
-URL, http://specter@host:3128), method, host, port, decision and reason,
+URL, http://agent@host:3128), method, host, port, decision and reason,
 bytes each way, seconds. In dry-run mode a request the rules would deny is
 logged as would-deny and let through, so the real traffic can be learned
 before anything is enforced.

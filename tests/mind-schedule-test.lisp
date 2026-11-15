@@ -160,17 +160,17 @@
   ;; the peer's audience, went off, and never showed in the list.
   (with-temp-kernel (k)
     (let ((run (pai-v3.mind::tool-run (gethash "schedule" pai-v3.mind::*tools*)))
-          (peer-thought (request-thought k "work" "Specter posted about the brief" :audience "peer:specter"))
+          (peer-thought (request-thought k "work" "Sage posted about the brief" :audience "peer:sage"))
           (own (request-thought k "noticing" "Quiet time")))
       (at-utc ((utc 2026 10 12 12 0))
         (is (search "Scheduled" (funcall run k peer-thought (obj "action" "add" "text" "Brief lane" "cron" "0 7 * * *"))))
         (is (equal "operator" (sql-value (kernel-db k) "SELECT audience FROM scheduled_items LIMIT 1")) "kept as my own")
         ;; One kept the old way, under a peer's audience, still shows and can be cancelled.
-        (add-schedule k "Old ghost" :cron "0 8 * * *" :audience "peer:specter")
+        (add-schedule k "Old ghost" :cron "0 8 * * *" :audience "peer:sage")
         (let ((listing (funcall run k own (obj "action" "list"))))
           (is (search "Brief lane" listing))
           (is (search "Old ghost" listing))
-          (is (search "for peer:specter" listing))
+          (is (search "for peer:sage" listing))
           (let ((ghost (sql-value (kernel-db k) "SELECT id FROM scheduled_items WHERE text=?1 LIMIT 1" "Old ghost")))
             (is (search "Cancelled" (funcall run k own (obj "action" "cancel" "id" ghost))))))))))
 
@@ -198,7 +198,7 @@
       (is (equal "at 11:00 UTCX" (loc "at 11:00 UTCX")) "nor a word that only starts with UTC"))))
 
 (deftest an-age-counts-calendar-days-where-the-operator-is
-  ;; Aria, 2026-11-07: a message from 10:35 pm the night before read "written today".
+  ;; Wren, 2026-11-07: a message from 10:35 pm the night before read "written today".
   (with-clock
     (with-temp-kernel (k)
       (change-setting k "time.zone" "America/Toronto" :origin (obj "principal_type" "operator"))

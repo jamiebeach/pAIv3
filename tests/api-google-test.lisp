@@ -211,8 +211,8 @@
       (let ((cal (funcall run "calendar" (obj))))
         (is (< (search "work meeting" cal) (search "home meeting" cal)) "both calendars, in time order")
         (is (search "In the next 48 hours" cal) "the window is said (bead v3-wh8)"))
-      (is (search "No connected account is called jamie@example.com. The connected accounts are home, work"
-                  (funcall run "mail" (obj "action" "search" "query" "x" "account" "jamie@example.com")))
+      (is (search "No connected account is called sam@example.com. The connected accounts are home, work"
+                  (funcall run "mail" (obj "action" "search" "query" "x" "account" "sam@example.com")))
           "a wrong account name says which ones there are, not 'not connected'"))
     (is (search "work meeting" (first (first (funcall (gethash :present pai-v3.mind::*slot-sources*) k '(:audience "operator") 300))))
         "the day ahead covers every account")

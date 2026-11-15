@@ -722,7 +722,7 @@ function send() {
     return;
   }
   const images = pendingImages;
-  // The camera's view as this is sent, when the operator lets her see them in chat.
+  // The camera's view as this is sent, when the operator lets the agent see them in chat.
   const frame = (window.paiCamera && window.paiCamera.chatting()) ? window.paiCamera.snapshot() : null;
   const reaction = (frame && reactionFrame && Date.now() - reactionFrame.at < 300000) ? reactionFrame.url : null;
   reactionFrame = null;

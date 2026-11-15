@@ -50,7 +50,7 @@ and its speaker, never model output.
 | mood after their messages | mean appraised valence change |
 
 Reading looks back 30 days, so a bond that is not renewed fades. The writer
-sees the tally as plain sentences ("Contact with Jamie met my want for
+sees the tally as plain sentences ("Contact with the operator met my want for
 connection 31 times; 8 times it was appreciation of me...") and is told that
 feelings must be earned by it: say only what it and the interactions support.
 

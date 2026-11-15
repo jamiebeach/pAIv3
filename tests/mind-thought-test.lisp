@@ -527,7 +527,7 @@
 
 (deftest a-claim-of-what-i-read-is-flagged-against-my-own-records-and-sent-as-written
   ;; 2026-11-06: asked how they came to a paper, agents told stories their own
-  ;; records did not bear out. 2026-11-14 (the crew, Cosmo's composition gate):
+  ;; records did not bear out. 2026-11-14 (the crew, Rowan's composition gate):
   ;; a rewrite after the fact defended a draft no one had seen, so the check
   ;; now only records what it would have asked, with the records, for audit.
   (with-thinking (k)
@@ -633,7 +633,7 @@ SYNTHETIC from before sites")
       (is (null (find-if (lambda (r) (search "DONE" r)) (replies k))) "and DONE is never said"))))
 
 (deftest a-status-line-said-with-a-step-still-gets-its-answer
-  ;; Specter, 2026-11-06: "Let me check both live" was said with the tool calls,
+  ;; Sage, 2026-11-06: "Let me check both live" was said with the tool calls,
   ;; then DONE ended the thought and the question went unanswered.
   (with-thinking (k)
     (let* ((*script* (list (obj "content" "Let me check both live." "tool_calls" (list (call "c" "clock")))
@@ -739,7 +739,7 @@ the operator spoke of bed; anything else says nothing of the operator."
                                                     "usage" (obj "input_tokens" 10 "output_tokens" 1 "cost" 0.000001))))))))
 
 (deftest a-fast-line-is-not-the-one-used-last-time
-  ;; Angel, 2026-11-14: one line a day gave "Mm-hmm, noted." twice running.
+  ;; Iris, 2026-11-14: one line a day gave "Mm-hmm, noted." twice running.
   (with-thinking (k)
     (change-setting k "reply.fast_lines" (obj "ACK" (list "SYNTHETIC one" "SYNTHETIC two" "SYNTHETIC three"))
                     :origin (obj "principal_type" "operator" "auth_method" "passkey"))

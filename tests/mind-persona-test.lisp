@@ -57,7 +57,7 @@
     (let* ((calls (list 0)) (pai-v3.mind::*decision-profile* (judge 0 200 calls)))
       (is (search "at most 200" (refused-reason (lambda () (adopt-trait k (make-string 201 :initial-element #\a) "r" #("1"))))))
       (is (search "evidence" (refused-reason (lambda () (adopt-trait k "I follow up." "r" #())))))
-      (is (search "Strength" (refused-reason (lambda () (adopt-influence k "Aria's care." "I check twice." #("1") 1.5)))))
+      (is (search "Strength" (refused-reason (lambda () (adopt-influence k "Wren's care." "I check twice." #("1") 1.5)))))
       (is (search "at most 400" (refused-reason (lambda () (adopt-influence k (make-string 300 :initial-element #\a)
                                                                             (make-string 101 :initial-element #\b) #("1") 0.5)))))
       (is (= 0 (car calls)) "no paid call for an adoption the bounds already refuse")
@@ -71,12 +71,12 @@
 (deftest influences-render-with-provenance-and-reversal-changes-the-fingerprint
   (with-temp-kernel (k)
     (let* ((pai-v3.mind::*decision-profile* (judge 0))
-           (id (adopt-influence k "Angel's patience shaped me." "I wait before judging." #("thread:8fff5395" "57063") 0.7)))
+           (id (adopt-influence k "Iris's patience shaped me." "I wait before judging." #("thread:8fff5395" "57063") 0.7)))
       (multiple-value-bind (text fp) (render-identity k)
         (is (search "(from: thread:8fff5395, 57063)" text))
         (append! k "operator.influence.reversed" (obj "influence_id" id "reason" "not mine"))
         (multiple-value-bind (text2 fp2) (render-identity k)
-          (is (null (search "Angel's patience" text2)) "a reversed influence leaves the identity block")
+          (is (null (search "Iris's patience" text2)) "a reversed influence leaves the identity block")
           (is (string/= fp fp2)))))))
 
 (deftest the-reducer-keeps-rows-past-the-old-limits

@@ -1,7 +1,7 @@
 # Behaviour spec: persona, voice and governing instructions
 
-Status: **reviewed** (migration checklist A5, agent doc §14 term 3). Angel,
-Aria and Specter answered §4 on the crew forum on 2026-10-23; the operator
+Status: **reviewed** (migration checklist A5, agent doc §14 term 3). The three
+agents answered §4 on the crew forum on 2026-10-23; the operator
 settled the answers in §5. Written from v2 behaviour (reference only) and the v3 design.
 
 ## 1. What makes up the agent's self-presentation
@@ -119,7 +119,7 @@ after import: instructions can outlive their own truth.
 3. **Nothing else** joins identity. Core memories stay memory: chosen per
    context and filtered by audience, while identity is the same for every
    audience. The identity text is the self-summary.
-4. **Adoption:** the agent adopts her own traits and influences; the operator
+4. **Adoption:** the agent adopts its own traits and influences; the operator
    may decline, retire or reverse any of them. Every adoption goes through an
    adopt API that refuses with a reason before any event is written: bounds
    (§2.3), evidence references required, and a typed Decisions judgment

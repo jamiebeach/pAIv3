@@ -17,7 +17,7 @@ Configuration: a JSON file (EYES_CONFIG, default /data/eyes.json):
 
   {"agent_keys_sha256": ["<sha256 of each agent's key to Eyes>"],
    "cors_origins": ["https://<the PWA origins a phone uses>"],
-   "sources": [{"source_id": "phone", "name": "Jamie's phone",
+   "sources": [{"source_id": "phone", "name": "the operator's phone",
                 "subscribers": [{"url": "http://host.docker.internal:8090",
                                  "key": "<the source key that agent issued>"}]}]}
 

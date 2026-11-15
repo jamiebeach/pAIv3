@@ -1,7 +1,7 @@
 -- pAI relay hub (bead v3-fy1): Cloudflare D1. Apply with
 --   wrangler d1 execute pai-relay --remote --file services/relay-hub/schema.sql
 CREATE TABLE IF NOT EXISTS clients (
-  id TEXT PRIMARY KEY,                 -- 'bridge', 'muse', ...
+  id TEXT PRIMARY KEY,                 -- 'bridge', or a guest's name, ...
   token_hash TEXT NOT NULL,            -- SHA-256 (hex) of the client's bearer token
   role TEXT NOT NULL CHECK (role IN ('bridge', 'agent')),
   revoked INTEGER NOT NULL DEFAULT 0

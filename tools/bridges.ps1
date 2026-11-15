@@ -3,7 +3,7 @@
 #   powershell -File tools\bridges.ps1 status   say which are up
 #   powershell -File tools\bridges.ps1 stop     stop them
 # Each runs hidden, with its output in private\<name>.out.log and .err.log.
-# A bridge whose port already answers is left alone. The relay to Muse has
+# A bridge whose port already answers is left alone. The relay to cloud guests has
 # no port; it is found by its command line.
 param([string]$Action = 'start')
 $ErrorActionPreference = 'Stop'
@@ -11,13 +11,13 @@ $repo = Split-Path -Parent $PSScriptRoot
 Set-Location $repo
 
 $bridges = @(
-  @{ name = 'beads-specter'; script = 'tools/beads-bridge.py'; config = 'private/beads-bridge.json';           port = 8765 },
-  @{ name = 'beads-angel';   script = 'tools/beads-bridge.py'; config = 'private/beads-bridge-angel.json';     port = 8766 },
-  @{ name = 'beads-aria';    script = 'tools/beads-bridge.py'; config = 'private/beads-bridge-aria.json';      port = 8767 },
-  # Specter and Aria read files through one bridge; Angel has her own.
-  @{ name = 'files-specter-aria'; script = 'tools/files-bridge.py'; config = 'private/files-bidge-specter-test.json'; port = 8773 },
-  @{ name = 'files-angel';   script = 'tools/files-bridge.py'; config = 'private/files-bridge-angel.json';     port = 8774 },
-  @{ name = 'muse-relay';    script = 'tools/guest-relay.py';  config = 'private/relay.json';                  port = $null }
+  @{ name = 'beads-dev';    script = 'tools/beads-bridge.py'; config = 'private/beads-bridge.json';           port = 8765 },
+  @{ name = 'beads-prod';   script = 'tools/beads-bridge.py'; config = 'private/beads-bridge-prod.json';     port = 8766 },
+  @{ name = 'beads-test';    script = 'tools/beads-bridge.py'; config = 'private/beads-bridge-test.json';      port = 8767 },
+  # The dev and test agents read files through one bridge; prod has its own.
+  @{ name = 'files-dev-test'; script = 'tools/files-bridge.py'; config = 'private/files-bridge-dev-test.json'; port = 8773 },
+  @{ name = 'files-prod';    script = 'tools/files-bridge.py'; config = 'private/files-bridge-prod.json';     port = 8774 },
+  @{ name = 'guest-relay';   script = 'tools/guest-relay.py';  config = 'private/relay.json';                  port = $null }
 )
 
 function Get-BridgeProcess($b) {

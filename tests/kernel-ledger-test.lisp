@@ -68,7 +68,7 @@
 
 (deftest a-timer-firing-mid-query-never-leaves-the-database-locked
   ;; sb-ext:with-timeout interrupts wherever the thread is; inside SQLite that
-  ;; left the connection's mutex held and every other thread waiting (Angel, 2026-10-22).
+  ;; left the connection's mutex held and every other thread waiting (Iris, 2026-10-22).
   (with-temp-kernel (k)
     (let ((db (kernel-db k)))
       (dotimes (i 300)

@@ -523,7 +523,7 @@ or NIL. The fleet digest is one.")
 (defun %close-orphans (kernel)
   "Fail thoughts that say queued or running but that nothing will ever run
 again: no thought in their tree has queued work or has moved for a while.
-Left alone, one blocks quiet thinking for good (Angel, 2026-10-21: two
+Left alone, one blocks quiet thinking for good (an agent, 2026-10-21: two
 replies stranded mid-stream kept it from quiet time for a day)."
   (let ((db (kernel-db kernel)))
     (dolist (row (sql-rows db "SELECT id,root_id,updated_at FROM thoughts WHERE status IN (?1,?2) ORDER BY updated_at LIMIT 20"

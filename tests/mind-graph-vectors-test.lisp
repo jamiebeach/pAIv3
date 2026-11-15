@@ -26,15 +26,15 @@
       (let* ((sam (form-entity k :kind "person" :name "Sam" :lineage (formed k)))
              (lee (form-entity k :kind "person" :name "Lee" :lineage (formed k)))
              (lake (form-entity k :kind "place" :name "the lake" :lineage (formed k)))
-             (sister (admit-fact k :subject lee :predicate "sibling_of" :object sam :text "Lee is Sam's sister."
-                                   :evidence (said "my sister Lee") :lineage (formed k)))
+             (peer (admit-fact k :subject lee :predicate "sibling_of" :object sam :text "Lee is Sam's peer."
+                                   :evidence (said "my peer Lee") :lineage (formed k)))
              (likes (admit-fact k :subject sam :predicate "likes" :object lake :text "Sam loves swimming in the lake."
                                   :evidence (said "I love the lake") :lineage (formed k))))
-        (is (search "sister" (pai-v3.mind::fact-statement k sister)) "the statement as the agent reads it")
+        (is (search "peer" (pai-v3.mind::fact-statement k peer)) "the statement as the agent reads it")
         (is (= 2 (pai-v3.mind::request-missing-embeddings k)) "both facts are queued")
         (loop repeat 200 until (eq :idle (run-scheduler-step k)))
-        (let ((near (pai-v3.mind::facts-near k (embed "writing to my sister Lee"))))
-          (is (equal sister (first (first near))) "the nearest in meaning comes first")
+        (let ((near (pai-v3.mind::facts-near k (embed "writing to my peer Lee"))))
+          (is (equal peer (first (first near))) "the nearest in meaning comes first")
           (is (search "lake" (third (second near)))))
         (append! k "graph.fact.retracted" (obj "fact_id" likes "reason" "test"))
         (is (null (find likes (pai-v3.mind::facts-near k (embed "swimming in the lake")) :key #'first :test #'equal))
@@ -52,9 +52,9 @@
              (samuel (form-entity k :kind "person" :name "Samuel" :lineage (formed k)))
              (lee (form-entity k :kind "person" :name "Lee" :lineage (formed k)))
              (lisbon (form-entity k :kind "place" :name "Lisbon" :lineage (formed k)))
-             (sister (admit-fact k :subject lee :predicate "sibling_of" :object sam :text "Lee is Sam's sister."
-                                   :evidence (said "my sister Lee") :lineage (formed k))))
-        (admit-fact k :subject lee :predicate "related_to" :object sam :text "Lee is Sam's older sister."
+             (peer (admit-fact k :subject lee :predicate "sibling_of" :object sam :text "Lee is Sam's peer."
+                                   :evidence (said "my peer Lee") :lineage (formed k))))
+        (admit-fact k :subject lee :predicate "related_to" :object sam :text "Lee is Sam's older peer."
                       :evidence (said "Lee and Sam") :lineage (formed k))
         (admit-fact k :subject sam :predicate "lives_at" :object lisbon :text "Sam lives in Lisbon by the river."
                       :evidence (said "I live in Lisbon") :lineage (formed k))
@@ -62,11 +62,11 @@
                       :evidence (said "he lives in Lisbon") :lineage (formed k))
         (pai-v3.mind::request-missing-embeddings k :every 0)
         (loop repeat 200 until (eq :idle (run-scheduler-step k)))
-        (is (equal sister (pai-v3.mind::near-duplicate-fact k "Lee is Sam's sister!" lee sam "assertion" "positive"))
+        (is (equal peer (pai-v3.mind::near-duplicate-fact k "Lee is Sam's peer!" lee sam "assertion" "positive"))
             "the same thing in other words supports the fact already there")
-        (is (null (pai-v3.mind::near-duplicate-fact k "Lee is Sam's sister." lee sam "assertion" "negative"))
+        (is (null (pai-v3.mind::near-duplicate-fact k "Lee is Sam's peer." lee sam "assertion" "negative"))
             "never across polarity: a denial is not support")
-        (is (null (pai-v3.mind::near-duplicate-fact k "Lee is Sam's sister." sam lee "assertion" "positive"))
+        (is (null (pai-v3.mind::near-duplicate-fact k "Lee is Sam's peer." sam lee "assertion" "positive"))
             "nor between other ends")
         (let ((text (format nil "~{~a~%~}" (pai-v3.mind::graph-suggestions k))))
           (is (search "perhaps predicate sibling_of" text) "a vague relation that reads like a precise one")

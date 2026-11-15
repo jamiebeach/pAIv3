@@ -3,9 +3,9 @@
 ;;; Noticing change (bead v3-wsd; operator and crew, 2026-11-11/12). The model
 ;;; is the orienting response: a sense registers a change, its size and its
 ;;; surprise decide whether it earns attention, a significant change starts a
-;;; thought the agent thinks herself, and repetition habituates. Nothing here
-;;; maps a change to an action. What she is watching for (watch_for) raises a
-;;; matching change's salience and is put in front of her; it triggers nothing.
+;;; thought the agent thinks itself, and repetition habituates. Nothing here
+;;; maps a change to an action. What it is watching for (watch_for) raises a
+;;; matching change's salience and is put in front of it; it triggers nothing.
 ;;; Senses are opt-in per agent (senses.attend): the first are location and
 ;;; calendar. Mail and the camera keep their own paths for now.
 
@@ -57,7 +57,7 @@
   (member sense (setting kernel "senses.attend") :test #'equal))
 
 ;;; Surprise: the same change seen often lately surprises less (habituation).
-;;; The baseline is this agent's own record, so each agent's is her own.
+;;; The baseline is this agent's own record, so each agent's is its own.
 
 (defun %seen-before (kernel transition)
   (or (sql-value (kernel-db kernel) "SELECT count(*) FROM sense_changes WHERE transition=?1 AND at>=?2 LIMIT 1"
@@ -66,14 +66,14 @@
 
 (defun %surprise (seen) (/ 1d0 (1+ (* 0.5d0 seen))))
 
-;;; What she is watching for
+;;; What it is watching for
 
 (defun open-watches (kernel)
   "(watch_id what why until) of each open, unexpired watch."
   (sql-rows (kernel-db kernel) "SELECT watch_id,what,why,until FROM watches WHERE open=1 AND until>=?1 LIMIT 20" (now-iso8601)))
 
 (defparameter +watch-stopwords+
-  '("the" "and" "for" "has" "his" "her" "from" "with" "was" "are" "that" "this" "into" "operator" "jamie"
+  '("the" "and" "for" "has" "his" "her" "from" "with" "was" "are" "that" "this" "into" "operator"
     "arriving" "arrives" "arrived" "when" "gets" "get" "home" "there")
   "Words a watch and a change share without meaning the same thing. Home is
 named as a place when it is one.")
@@ -186,7 +186,7 @@ few streets is not a change."
 ;;; watch_for
 
 (define-tool "watch_for"
-  :description "Note something I expect, so that when a change I notice matches it I am reminded of it: \"Jamie arriving at his mom's: pin it\". It does not make anything happen; it makes a matching change stand out and puts what I meant in front of me then. what: the change, in words the change will share (a place, an event); why: what I mean to do; hours: how long to watch (default 24). action clear (id, reason) stops watching; list shows what I am watching for."
+  :description "Note something I expect, so that when a change I notice matches it I am reminded of it: \"the operator arriving at a parent's place: pin it\". It does not make anything happen; it makes a matching change stand out and puts what I meant in front of me then. what: the change, in words the change will share (a place, an event); why: what I mean to do; hours: how long to watch (default 24). action clear (id, reason) stops watching; list shows what I am watching for."
   :summary "Note an expected change and what I mean to do when it comes."
   :available '("operator")
   :parameters (obj "type" "object"

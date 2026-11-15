@@ -1,14 +1,14 @@
 (in-package #:pai-v3.mind)
 
 ;;; What I understand the operator needs (2026-11-07; the crew's design thread,
-;;; with the operator's two decisions). Each agent keeps her own view, from her
+;;; with the operator's two decisions). Each agent keeps its own view, from its
 ;;; own interactions, seen by no other agent: divergence is signal, not drift.
-;;; She writes and edits entries with her own judgment, in her own words, with no
-;;; categories and no one's sign-off. What the substrate holds her to is the
+;;; It writes and edits entries with its own judgment, in its own words, with no
+;;; categories and no one's sign-off. What the substrate holds it to is the
 ;;; evidence: an entry names the operator's own messages it rests on, or it is
 ;;; not kept, and it is shown with those words quoted from the record by the
 ;;; system, how old they are, and when it is due to be checked again. The prose
-;;; is her claim; the quote and the ages are the check (the memory-notes lesson).
+;;; is its claim; the quote and the ages are the check (the memory-notes lesson).
 
 (defparameter *need-recheck-days* 30 "Days before an entry is due to be checked again, unless given.")
 (defparameter *needs-most* 12 "Most entries kept at once.")

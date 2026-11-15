@@ -118,7 +118,7 @@
   :type :array :default '() :group "Fleet"
   :validate (lambda (v) (unless (every (lambda (s) (and (stringp s) (< 0 (length s) 200))) v)
                           "each entry is a peer's name or id"))
-  :description "Peers that share my operator, by name or id, e.g. [\"Aria\", \"Angel\"]. They may receive what the operator may see: the operator's calendar, mail and private details, and my own looks and pictures. Never credentials or secrets.")
+  :description "Peers that share my operator, by name or id, e.g. [\"Iris\", \"Wren\"]. They may receive what the operator may see: the operator's calendar, mail and private details, and my own looks and pictures. Never credentials or secrets.")
 
 (defun same-operator-peer-p (kernel peer-id)
   "True when the operator has marked PEER-ID (or its name) as sharing my operator."

@@ -1,7 +1,7 @@
 (in-package #:pai-v3.api)
 
 ;;; Where the operator is (beads v3-mre, v3-8d8; operator, 2026-11-10: on a
-;;; drive he asked for the brief twice and was asked follow-ups he could not
+;;; drive they asked for the brief twice and were asked follow-ups they could not
 ;;; answer at 100 km/h). The phone sends a fix when the app opens or is shown
 ;;; again, and every minute or so while it stays open. Each fix is kept whole
 ;;; in the ledger (the operator chose full history); the newest is what the

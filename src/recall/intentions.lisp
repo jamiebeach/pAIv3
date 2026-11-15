@@ -1,7 +1,7 @@
 (in-package #:pai-v3.recall)
 
 ;;; Prospective memory (design note interaction-recall §6): "when I next
-;;; see her, tell her X" is a memory that fires on a cue, not at a time. An
+;;; see them, tell them X" is a memory that fires on a cue, not at a time. An
 ;;; intention is attached to an anchor; when that anchor next comes to mind,
 ;;; the intention comes with it, in its impression's "open" lines, until the
 ;;; agent marks it done or lets it go. Intentions are never silently dropped,

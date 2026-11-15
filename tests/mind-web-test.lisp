@@ -115,8 +115,8 @@
 (deftest a-header-element-is-not-the-head
   ;; Bead v3-33j: <head matched inside <header, and everything after it was
   ;; dropped as head, leaving only the title.
-  (let ((text (pai-v3.mind::html-text "<html><head><title>T</title><style>p{}</style></head><body><header><h1>Angel's Corner</h1></header><main><p>Currently: reading.</p></main></body></html>")))
-    (is (search "Angel's Corner" text) "the header's own text is kept")
+  (let ((text (pai-v3.mind::html-text "<html><head><title>T</title><style>p{}</style></head><body><header><h1>Iris's Corner</h1></header><main><p>Currently: reading.</p></main></body></html>")))
+    (is (search "Iris's Corner" text) "the header's own text is kept")
     (is (search "Currently: reading." text) "and the body after it")
     (is (not (search "p{}" text)) "a real style element is still dropped")))
 

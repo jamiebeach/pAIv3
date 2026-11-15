@@ -108,23 +108,23 @@
 
 (defparameter +px+ "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==")
 
-(deftest an-agent-chooses-her-own-avatar-and-the-operator-theirs
+(deftest an-agent-chooses-its-own-avatar-and-the-operator-theirs
   (with-carrying (k)
     (let ((run (lambda (args) (funcall (pai-v3.mind::tool-run (gethash "set_avatar" *tools*)) k 1 args)))
           (image (pai-v3.mind::store-image k +px+)))
       (is (null (pai-v3.mind:avatar-image-id k :self)) "none to begin with")
-      ;; She can find her own pictures without remembering their ids.
+      ;; It can find its own pictures without remembering their ids.
       (is (search "no pictures" (funcall run (obj))) "none made yet")
       (append! k "image.seen" (obj "image_id" image "audience" "operator" "how" "made"))
       (append! k "image.seen" (obj "image_id" (pai-v3.mind::store-image k "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mP8z8AARgAEyAFe3nqx3wAAAABJRU5ErkJggg==")
                        "audience" "operator" "how" "posted"))
       (let ((listed (funcall run (obj))))
-        (is (search image listed) "the picture she made is listed")
+        (is (search image listed) "the picture it made is listed")
         (is (null (search "posted" listed)) "a picture someone else posted is not offered"))
       (is (search image (funcall (pai-v3.mind::tool-run (gethash "set_avatar" *tools*)) k
-                                 (request-thought k "work" "a sister wrote" :audience "peer:aria") (obj)))
-          "and when answering a sister")
-      (is (search "Not done" (funcall run (obj "image_id" "00000000000000000000000000000000"))) "an image she does not hold")
+                                 (request-thought k "work" "a peer wrote" :audience "peer:wren") (obj)))
+          "and when answering a peer")
+      (is (search "Not done" (funcall run (obj "image_id" "00000000000000000000000000000000"))) "an image it does not hold")
       (is (search "Not done" (funcall run (obj "image_id" "not-an-id"))))
       (is (search "my avatar now" (funcall run (obj "image_id" image))))
       (is (equal image (pai-v3.mind:avatar-image-id k :self)))
@@ -135,18 +135,18 @@
           (is (search "by me" refused) "and who chose it")
           (is (search "replace true" refused)))
         (is (equal image (pai-v3.mind:avatar-image-id k :self)) "nothing changed")
-        (is (search "my avatar now" (funcall run (obj "image_id" other "replace" t))) "unless she means to")
+        (is (search "my avatar now" (funcall run (obj "image_id" other "replace" t))) "unless it means to")
         (is (equal other (pai-v3.mind:avatar-image-id k :self)))
         (is (search "my avatar now" (funcall run (obj "image_id" image "replace" t))))
         (let ((slot (format nil "~{~a~}" (mapcar #'first (funcall (gethash :myself pai-v3.mind::*slot-sources*) k '(:audience "peer:fleet") 200)))))
-          (is (search "I have an avatar" slot) "a thought for the fleet is told she has one")
+          (is (search "I have an avatar" slot) "a thought for the fleet is told it has one")
           (is (search "written today" slot) "with how old the choice is (bead v3-5un)")
           (is (search "by me" slot))))
       (is (search image (sql-value (kernel-db k) "SELECT value_json FROM settings WHERE name=?1 LIMIT 1" "avatar.image")) "it is a setting, so it is in the ledger")
-      (is (search "first-letter" (funcall run (obj "image_id" ""))) "she can go back to the letter")
+      (is (search "first-letter" (funcall run (obj "image_id" ""))) "it can go back to the letter")
       (is (null (pai-v3.mind:avatar-image-id k :self)))
       (is (search "not chosen an avatar" (format nil "~{~a~}" (mapcar #'first (funcall (gethash :myself pai-v3.mind::*slot-sources*) k '(:audience "operator") 200))))
-          "and is told when she has none")
+          "and is told when it has none")
       ;; The operator's picture is the operator's to choose.
       (signals setting-refused (change-setting k "operator.avatar" image :origin (obj "principal_type" "self")))
       (change-setting k "operator.avatar" image :origin *operator*)
@@ -158,9 +158,9 @@
       (is (null (pai-v3.mind:avatar-image-id k :self)) "its image gone, the letter is shown again"))
     (let ((tool (gethash "set_avatar" *tools*)))
       (is (pai-v3.mind::tool-available-p tool '(:audience "operator")) "in conversation and quiet time")
-      (is (pai-v3.mind::tool-available-p tool '(:audience "peer:aria")) "and when answering a sister on a board")
+      (is (pai-v3.mind::tool-available-p tool '(:audience "peer:wren")) "and when answering a peer on a board")
       (is (not (pai-v3.mind::tool-available-p tool '(:audience "external" :communicating t))) "but not in a thought made of outside content")
-      (is (member "work" (pai-v3.mind::tool-core tool) :test #'string=) "in hand when replying, so she remembers it is there"))))
+      (is (member "work" (pai-v3.mind::tool-core tool) :test #'string=) "in hand when replying, so it remembers it is there"))))
 
 (defun carried-judge (calls)
   "A Decisions provider that finds any item saying Venture X contradicted."

@@ -39,7 +39,7 @@
       (append! k "fleet.peer.joined" (obj "peer_id" "49463f05-c184" "name" "Nova" "address" "http://x" "how" "approved"))
       (append! k "fleet.board.posted"
                (obj "msg_id" "m-1" "thread_id" "t-1" "thread_title" "Hello" "author_id" "49463f05-c184"
-                    "author_name" "Nova" "text" "Welcome to the fleet, sister." "operation_id" "op" "request_key" "rk"
+                    "author_name" "Nova" "text" "Welcome to the fleet, peer." "operation_id" "op" "request_key" "rk"
                     "timestamp" 1))
       (let ((by-entity (render-impression (impression k nova "operator"))))
         (is (search "Welcome to the fleet" by-entity) "the entity's impression includes what passed under its peer id"))

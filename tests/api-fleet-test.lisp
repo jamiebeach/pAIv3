@@ -151,27 +151,27 @@
       (is (null (pai-v3.api::fleet-board-image a b-id thread private))
           "an image not attached to that thread is never served"))))
 
-(deftest a-sisters-picture-is-fetched-once-and-remembered
+(deftest a-peers-picture-is-fetched-once-and-remembered
   (with-two-agents (a b)
     (join a b)
     (let ((b-id (pai-v3.api::fleet-agent-id b)))
       (clrhash pai-v3.api::*peer-avatars*)
-      (is (null (pai-v3.api::avatar-for a b-id)) "she has none: the page keeps the letter")
+      (is (null (pai-v3.api::avatar-for a b-id)) "it has none: the page keeps the letter")
       (clrhash pai-v3.api::*peer-avatars*)
       (change-setting b "avatar.image" (pai-v3.mind::store-image b +tiny-png+) :origin (obj "principal_type" "self"))
       (multiple-value-bind (mime octets) (pai-v3.api::avatar-for a b-id)
-        (is (equal "image/png" mime) "fetched from her over the signed route")
+        (is (equal "image/png" mime) "fetched from it over the signed route")
         (is (plusp (length octets))))
-      ;; Remembered: she can change it and a board page asks again within the minutes without reaching her.
+      ;; Remembered: it can change it and a board page asks again within the minutes without reaching it.
       (change-setting b "avatar.image" "" :origin (obj "principal_type" "self"))
       (is (equal "image/png" (pai-v3.api::avatar-for a b-id)) "the earlier answer is kept for a few minutes")
       (clrhash pai-v3.api::*peer-avatars*)
-      (is (null (pai-v3.api::avatar-for a b-id)) "and forgotten after, so her change shows")
-      ;; "She has none" is believed only briefly: a page loaded before she chose must not hide her picture.
+      (is (null (pai-v3.api::avatar-for a b-id)) "and forgotten after, so its change shows")
+      ;; "It has none" is believed only briefly: a page loaded before it chose must not hide its picture.
       (change-setting b "avatar.image" (pai-v3.mind::store-image b +tiny-png+) :origin (obj "principal_type" "self"))
       (is (null (pai-v3.api::avatar-for a b-id)) "within the moment, the miss is still believed")
       (let ((pai-v3.api::*peer-avatar-none-seconds* 0))
-        (is (equal "image/png" (pai-v3.api::avatar-for a b-id)) "after it, her new picture shows"))
+        (is (equal "image/png" (pai-v3.api::avatar-for a b-id)) "after it, its new picture shows"))
       (change-setting b "avatar.image" "" :origin (obj "principal_type" "self"))
       (clrhash pai-v3.api::*peer-avatars*)
       (is (null (pai-v3.api::avatar-for a "not-a-peer")) "a stranger has none")
@@ -180,7 +180,7 @@
       (is (equal "image/png" (pai-v3.api::avatar-for a "self")))
       (is (equal "image/png" (pai-v3.api::avatar-for a (pai-v3.api::fleet-agent-id a))) "my own id is me"))))
 
-(deftest an-agent-reads-a-sisters-board-uninvited
+(deftest an-agent-reads-a-peers-board-uninvited
   (with-two-agents (a b)
     (join a b)
     (let* ((picture (pai-v3.mind::store-image b +tiny-png+))
@@ -197,7 +197,7 @@
         (is (search "post_fleet_message" text) "and how to answer there"))
       (is (equal "image/png" (first (pai-v3.mind::image-row a picture))) "the picture is now in Beta's own store")
       (is (search picture (format nil "~{~a~}" (mapcar #'first (pai-v3.mind::recently-seen a "operator"))))
-          "and among what she has seen lately, so she can look_at it")
+          "and among what it has seen lately, so it can look_at it")
       (is (search "no peer called" (pai-v3.api::%tool-text (lambda () (pai-v3.api::read-peer-board a "Nobody" nil "operator"))))))))
 
 (deftest the-operator-posts-to-the-group
@@ -220,7 +220,7 @@
         (is (= 2 (length (pai-v3.api::board-messages b thread))) "and replies in the thread")
         (is (null (obj-get again "told")) "telling no one unless asked")))))
 
-(deftest the-operator-replies-on-a-sisters-board-through-their-agent
+(deftest the-operator-replies-on-a-peers-board-through-their-agent
   (with-two-agents (a b)
     (join a b)
     (change-setting a "operator.name" "Sam" :origin *operator*)
@@ -235,7 +235,7 @@
         (is (search "carries no operator authority" woken) "relayed, never with authority"))
       (is (search "Sam, the operator, posted on Alpha's board through me"
                   (second (first (sql-rows (kernel-db a) "SELECT id,reason FROM thoughts WHERE audience=?1 ORDER BY id DESC LIMIT 1" "operator"))))
-          "the carrier wakes too, with the operator's authority: the post is often addressed to her")
+          "the carrier wakes too, with the operator's authority: the post is often addressed to it")
       (is (= posts-before (pai-v3.api::%posts-today a)) "the operator's posts are not Beta's own allowance")
       (pai-v3.api::operator-post a "Thanks!" :owner b-id :thread-id thread :reply-to (first first-post))
       (is (= 2 (length (pai-v3.api::board-messages b thread))) "and a reply in place")
@@ -289,7 +289,7 @@
       (is (search "I finished reading Dune today." (getf (thought-row b thought) :reason)))
       (is (equal "reflection" (getf (thought-row b thought) :origin)) "thinking to itself, not speaking")
       (is (equal "operator" (getf (thought-row b thought) :audience))
-          "so it may know what the agent knows, her own recent acts included")
+          "so it may know what the agent knows, its own recent acts included")
       (is (search "draft_forum_post" (getf (thought-row b thought) :reason)) "and is told to leave a draft, not post"))
     (is (null (pai-v3.api::fleet-digest b)) "not due again yet")
     (change-setting b "fleet.digest_minutes" 0 :origin *operator*)
@@ -725,22 +725,22 @@
       (is (search "left for" (funcall tool b reflection (obj "peer_id" peer "text" "Hi." "thread_id" "3779971b-6f84-4047-b8c9-0346751dae19"
                                                              "reply_to" "4779971b-6f84-4047-b8c9-0346751dae19")))))))
 
-(deftest the-operators-fleet-view-shows-posts-restricted-to-another-sister
+(deftest the-operators-fleet-view-shows-posts-restricted-to-another-peer
   (with-two-agents (a b)
     (join a b)
     (let* ((b-id (pai-v3.api::fleet-agent-id b))
            (a-id (pai-v3.api::fleet-agent-id a)))
       (pai-v3.api::fleet-post a b-id "SYNTHETIC open post")
       (let ((thread (first (first (pai-v3.api::board-threads b)))))
-        ;; A post on B's board disclosed to some other sister only.
-        (multiple-value-bind (msg) (pai-v3.api::board-post b :thread-id thread :author-id "sister-c" :author-name "C"
+        ;; A post on B's board disclosed to some other peer only.
+        (multiple-value-bind (msg) (pai-v3.api::board-post b :thread-id thread :author-id "peer-c" :author-name "C"
                                                              :text "SYNTHETIC for B only" :scope "pairwise" :operation-id "op-r"
-                                                             :request-key "r" :visibility-peer "sister-c")
+                                                             :request-key "r" :visibility-peer "peer-c")
           (declare (ignore msg)))
         (flet ((texts () (mapcar (lambda (m) (obj-get m "text")) (obj-get (pai-v3.api::fleet-board-thread a b-id thread) "messages"))))
-          (is (not (member "SYNTHETIC for B only" (texts) :test #'equal)) "hidden from a sister not marked as the same operator's")
+          (is (not (member "SYNTHETIC for B only" (texts) :test #'equal)) "hidden from a peer not marked as the same operator's")
           (change-setting b "fleet.same_operator_peers" (list a-id) :origin *operator*)
-          (is (member "SYNTHETIC for B only" (texts) :test #'equal) "the operator sees it through any sister of theirs")
+          (is (member "SYNTHETIC for B only" (texts) :test #'equal) "the operator sees it through any peer of theirs")
           (let ((tool (pai-v3.api::read-peer-board a b-id thread "operator")))
             (is (not (search "SYNTHETIC for B only" tool)) "the agent's own reading stays restricted")))))))
 
@@ -760,12 +760,12 @@
         (is (eq t (pai-v3.api::react a b-id msg "👍" :operator t)) "and on again")
         (is (eq t (pai-v3.api::react a b-id msg "👍")) "the agent's own reaction, carried there")
         (let ((r (first (pai-v3.api::board-reactions b msg))))
-          (is (= 2 (obj-get r "count")) "the operator once, the sister once")
+          (is (= 2 (obj-get r "count")) "the operator once, the peer once")
           (is (member "operator" (obj-get r "by_ids") :test #'equal)))
         (is (null (pai-v3.api::react a b-id msg "👍" :operator t)) "the operator takes it back through either agent")
         (is (= 1 (obj-get (first (pai-v3.api::board-reactions b msg)) "count")))
         (is (search "[reactions: 👍" (pai-v3.api::%board-text b thread)) "the owner reads reactions")
-        (is (search "[reactions: 👍" (pai-v3.api::read-peer-board a b-id thread "operator")) "and so does a sister")
+        (is (search "[reactions: 👍" (pai-v3.api::read-peer-board a b-id thread "operator")) "and so does a peer")
         (is (search "Reacted" (funcall (pai-v3.mind::tool-run (gethash "react_to_board_post" *tools*)) b
                                        (request-thought b "work" "SYNTHETIC" :audience "operator")
                                        (obj "msg_id" msg "emoji" "🎉"))))

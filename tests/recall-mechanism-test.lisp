@@ -31,21 +31,21 @@
                                                    (list :audience audience :task task)))))
 
 (deftest writing-to-a-peer-brings-what-passed-between-you
-  ;; The case that prompted the design: an agent wrote to its sister as a
+  ;; The case that prompted the design: an agent wrote to its peer as a
   ;; stranger, hours after they had exchanged welcomes.
   (with-recall (k)
     (form-entity k :kind "person" :name "Nova" :lineage (hop k))
     (append! k "fleet.peer.joined" (obj "peer_id" "49463f05-c184" "name" "Nova" "address" "http://x" "how" "approved"))
     (append! k "fleet.board.posted"
              (obj "msg_id" "m-1" "thread_id" "t-1" "thread_title" "Hello" "author_id" "49463f05-c184"
-                  "author_name" "Nova" "text" "Welcome to the fleet, sister." "operation_id" "op" "request_key" "rk"
+                  "author_name" "Nova" "text" "Welcome to the fleet, peer." "operation_id" "op" "request_key" "rk"
                   "timestamp" 1))
     (let* ((thought (request-thought k "work" "share the portrait" :audience "operator"))
            (note (pai-v3.recall::recollection-note k thought "post_fleet_message"
                                                     "{\"peer_id\":\"49463f05-c184\",\"text\":\"Here is my portrait.\"}"
                                                     nil "Posted to Nova's board.")))
-      (is (search "Recalled about Nova (person):" note) "acting toward a peer by its id brings her to mind")
-      (is (search "Welcome to the fleet, sister." note) "with what passed between you, and when")
+      (is (search "Recalled about Nova (person):" note) "acting toward a peer by its id brings it to mind")
+      (is (search "Welcome to the fleet, peer." note) "with what passed between you, and when")
       (is (null (pai-v3.recall::recollection-note k thought "post_fleet_message" "{\"peer_id\":\"49463f05-c184\"}" nil "Posted."))
           "once per thought")
       (is (equal (list (first (first (find-entities k "Nova")))) (pai-v3.recall::recalled-in k thought))
@@ -88,8 +88,8 @@
     (change-setting k "recall.association_distance" 0.95d0 :origin (obj "principal_type" "operator") :reason "test")
     (let ((sam (form-entity k :kind "person" :name "Sam" :lineage (hop k)))
           (lee (form-entity k :kind "person" :name "Lee" :lineage (hop k))))
-      (admit-fact k :subject lee :predicate "sibling_of" :object sam :text "Lee is Sam's sister, the one who paints."
-                    :evidence (list (obj "kind" "original-utterance" "quote" "my sister Lee")) :lineage (hop k))
+      (admit-fact k :subject lee :predicate "sibling_of" :object sam :text "Lee is Sam's peer, the one who paints."
+                    :evidence (list (obj "kind" "original-utterance" "quote" "my peer Lee")) :lineage (hop k))
       (pai-v3.mind::request-missing-embeddings k :every 0)
       (loop repeat 200 until (eq :idle (run-scheduler-step k)))
       (let ((text (context-text k "operator" "Who paints in the family?")))

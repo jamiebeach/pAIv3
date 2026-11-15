@@ -121,7 +121,7 @@
     (let ((text (format nil "~{~a~^~%~%~}" (nreverse sections))))
       (values text (pai-v3.kernel::sha256-hex text)))))
 
-;;; Adoption (persona.md §5.4): the agent adopts her own traits and influences;
+;;; Adoption (persona.md §5.4): the agent adopts its own traits and influences;
 ;;; the operator may retire or reverse any. Every adoption is checked here,
 ;;; before an event exists, and refused with a reason the agent sees.
 

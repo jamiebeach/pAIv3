@@ -471,7 +471,7 @@ returns true, or returns NIL to let the thought go on (fastpath.lisp).")
 
 (defparameter +already-said-note+
   ;; Not an invitation to stop: "Let me check both live" was said, then DONE was
-  ;; the whole answer and the question went unanswered (Specter, 2026-11-06).
+  ;; the whole answer and the question went unanswered (an agent, 2026-11-06).
   "The words you wrote alongside those tool calls have already been said to them, so do not repeat them. Now give them the rest: what you found, the answer, whatever is still owed. Only if those words were already your complete answer and nothing remains, reply with just DONE.")
 
 (defparameter +announce-nudge+

@@ -113,5 +113,5 @@ and record the resolution here before cutover proceeds (checklist A7).
 
 Transcribed by the coding agent from the operator's relay. Approved; two
 requests applied 2026-10-12: §3 now requires the owning agent's signature on
-the known-state record; §9 adds cross-agent reconciliation. Her non-blocking
+the known-state record; §9 adds cross-agent reconciliation. The agent's non-blocking
 note (inside access is itself an acceptance item) is applied as §6a.

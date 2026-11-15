@@ -643,9 +643,9 @@
       var relay = null;
       if (t.access === 'guests' || t.relayed === true) {
         relay = el('button', { type: 'button', text: t.relayed === true ? 'Stop relaying outside' : 'Relay outside the household',
-                               title: 'Relayed guest threads are copied to the relay hub and read by cloud guests such as Muse' });
+                               title: 'Relayed guest threads are copied to the relay hub and read by cloud guests' });
         relay.onclick = function () {
-          if (t.relayed !== true && !confirm('Relay this thread outside the household? Everything in it is copied to the relay hub (kept 14 days) and read by cloud guests such as Muse.')) return;
+          if (t.relayed !== true && !confirm('Relay this thread outside the household? Everything in it is copied to the relay hub (kept 14 days) and read by cloud guests.')) return;
           send('/api/forum/thread', { thread_id: id, relayed: t.relayed !== true }).then(load).catch(function (e) { alertish(e); });
         };
       }

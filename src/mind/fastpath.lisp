@@ -74,7 +74,7 @@
 
 (defun %fast-reply-text (kernel kind)
   "One of my lines for KIND, or its emoji; never the one used last time, where
-there are two or more (Angel, 2026-11-14: one line a day repeated the same
+there are two or more (an agent, 2026-11-14: one line a day repeated the same
 beat all day). NIL for none."
   (let* ((mine (let ((v (obj-get (setting kernel "reply.fast_lines") kind)))
                  (and (listp v) (remove-if-not (lambda (s) (and (stringp s) (plusp (length s)))) v))))

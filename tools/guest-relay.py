@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The relay bridge (bead v3-fy1): a cloud guest such as Muse in the crew forum,
+"""The relay bridge (bead v3-fy1): a cloud guest in the crew forum,
 with nothing inbound to the operator's network.
 
 Runs on the LAN and only ever calls out:

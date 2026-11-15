@@ -9,7 +9,7 @@ the real host (the other agents, the bridges, LM Studio, the voice and eyes
 services, and the egress proxy, which is the only way to the internet).
 
     python gateway.py config.json
-    config: {"routes": {"8090": "pai-specter:8090", "8765": "host-gateway:8765", ...}}
+    config: {"routes": {"8090": "pai-agent:8090", "8765": "host-gateway:8765", ...}}
 """
 import asyncio
 import json

@@ -27,7 +27,7 @@ def ok(cond, what):
     checks += 1
 
 
-# A fake forum: two guest threads, one relayed; posts as "Muse".
+# A fake forum: two guest threads, one relayed; posts as "Lyra".
 FORUM = {"threads": {"t-relayed": {"title": "SYNTHETIC relayed", "messages": [], "relayed": True},
                      "t-other": {"title": "SYNTHETIC not relayed", "messages": [], "relayed": False}}, "refuse_next": None}
 
@@ -49,7 +49,7 @@ class Forum(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
     def do_GET(self):
-        if self.headers.get("Authorization") != "Bearer muse-guest-key":
+        if self.headers.get("Authorization") != "Bearer lyra-guest-key":
             return self.reply(401, {"error": "a guest key is needed"})
         if self.path == "/v1/guest/forum/threads":
             return self.reply(200, {"threads": [{"thread_id": k, "title": t["title"], "posts": len(t["messages"]),
@@ -70,7 +70,7 @@ class Forum(BaseHTTPRequestHandler):
         if not tid:
             tid = "t-new-" + str(uuid.uuid4())[:8]
             FORUM["threads"][tid] = {"title": body["title"], "messages": [], "relayed": True}  # forum.relay_guests
-        add_post(tid, "Muse", body["text"], int(time.time()))
+        add_post(tid, "Lyra", body["text"], int(time.time()))
         self.reply(200, {"thread_id": tid, "msg_id": FORUM["threads"][tid]["messages"][-1]["msg_id"]})
 
 
@@ -78,54 +78,54 @@ forum = ThreadingHTTPServer(("127.0.0.1", 0), Forum)
 threading.Thread(target=forum.serve_forever, daemon=True).start()
 hub_port = 18787 + os.getpid() % 1000
 hub = subprocess.Popen(["node", os.path.join(ROOT, "services", "relay-hub", "local.mjs"), "serve", str(hub_port),
-                        "bridge:bridge:bridge-token", "muse:agent:muse-token"], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+                        "bridge:bridge:bridge-token", "lyra:agent:lyra-token"], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
 hub.stdout.readline()
 HUB = "http://127.0.0.1:%d" % hub_port
 tmp = tempfile.mkdtemp()
 open(os.path.join(tmp, "bridge.token"), "w").write("bridge-token")
-open(os.path.join(tmp, "muse.key"), "w").write("muse-guest-key")
-config = {"hub_url": HUB, "bridge_token_file": os.path.join(tmp, "bridge.token"), "guest_key_file": os.path.join(tmp, "muse.key"),
+open(os.path.join(tmp, "lyra.key"), "w").write("lyra-guest-key")
+config = {"hub_url": HUB, "bridge_token_file": os.path.join(tmp, "bridge.token"), "guest_key_file": os.path.join(tmp, "lyra.key"),
           "forum_url": "http://127.0.0.1:%d" % forum.server_address[1],
           "state_file": os.path.join(tmp, "state.json")}
 
 
-def muse(path, body=None):
-    return relay_mod.call(HUB, path, "muse-token", body)
+def lyra(path, body=None):
+    return relay_mod.call(HUB, path, "lyra-token", body)
 
 
 def say(**over):
-    m = {"id": str(uuid.uuid4()), "from": "muse", "body": "SYNTHETIC from Muse", "nonce": str(uuid.uuid4()),
+    m = {"id": str(uuid.uuid4()), "from": "lyra", "body": "SYNTHETIC from Lyra", "nonce": str(uuid.uuid4()),
          "ts": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
     m.update(over)
-    return muse("/messages", m)
+    return lyra("/messages", m)
 
 
 try:
-    add_post("t-relayed", "Angel", "SYNTHETIC hello Muse", 1000)
-    add_post("t-other", "Aria", "SYNTHETIC private to the crew and guests here", 1001)
+    add_post("t-relayed", "Iris", "SYNTHETIC hello Lyra", 1000)
+    add_post("t-other", "Wren", "SYNTHETIC private to the crew and guests here", 1001)
     relay = relay_mod.Relay(config)
     relay.cycle()
-    events = muse("/events?since=0")[1]["events"]
-    ok([e["body"] for e in events] == ["SYNTHETIC hello Muse"], "only the relayed thread reaches the hub")
+    events = lyra("/events?since=0")[1]["events"]
+    ok([e["body"] for e in events] == ["SYNTHETIC hello Lyra"], "only the relayed thread reaches the hub")
     relay.cycle()
-    ok(len(muse("/events?since=0")[1]["events"]) == 1, "nothing is pushed twice")
+    ok(len(lyra("/events?since=0")[1]["events"]) == 1, "nothing is pushed twice")
 
-    # Muse replies; the bridge posts it in the forum as the guest.
+    # Lyra replies; the bridge posts it in the forum as the guest.
     say(thread_id="t-relayed")
     relay.cycle()
     posted = FORUM["threads"]["t-relayed"]["messages"]
-    ok(posted[-1]["author_name"] == "Muse" and posted[-1]["text"] == "SYNTHETIC from Muse", "Muse's message is in the thread, as Muse")
+    ok(posted[-1]["author_name"] == "Lyra" and posted[-1]["text"] == "SYNTHETIC from Lyra", "Lyra's message is in the thread, as Lyra")
     relay.cycle()
     ok(len(FORUM["threads"]["t-relayed"]["messages"]) == 2, "and only once")
 
-    # A thread that is not relayed is refused; a new thread Muse starts is relayed from then on.
+    # A thread that is not relayed is refused; a new thread Lyra starts is relayed from then on.
     say(thread_id="t-other")
-    say(title="SYNTHETIC Muse's own thread")
+    say(title="SYNTHETIC Lyra's own thread")
     relay.cycle()
     ok(len(FORUM["threads"]["t-other"]["messages"]) == 1, "a message for a thread that is not relayed is not posted")
     new = [k for k in FORUM["threads"] if k.startswith("t-new-")]
     relay.cycle()
-    ok(len(new) == 1 and new[0] in relay.state["relayed"], "a thread Muse starts is created and relayed")
+    ok(len(new) == 1 and new[0] in relay.state["relayed"], "a thread Lyra starts is created and relayed")
     FORUM["threads"]["t-relayed"]["relayed"] = False
     relay.cycle()
     ok("t-relayed" not in relay.state["relayed"], "clearing the mark stops the relay")
@@ -147,10 +147,10 @@ try:
     relay.cycle()
     ok(all("sk-FAKE" not in m["text"] for m in FORUM["threads"]["t-relayed"]["messages"]), "a refused post is dropped, not retried")
 
-    # Muse's own posts come back to it as events too, so it can see the thread as it stands.
+    # Lyra's own posts come back to it as events too, so it can see the thread as it stands.
     relay.cycle()
-    authors = [e["author"] for e in muse("/events?since=0")[1]["events"]]
-    ok(authors.count("Muse") >= 1 and authors[0] == "Angel", "the thread as it stands, in order")
+    authors = [e["author"] for e in lyra("/events?since=0")[1]["events"]]
+    ok(authors.count("Lyra") >= 1 and authors[0] == "Iris", "the thread as it stands, in order")
     print("guest-relay: %d checks, 0 failures" % checks)
 finally:
     hub.terminate()

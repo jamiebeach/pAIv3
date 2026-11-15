@@ -109,18 +109,18 @@ changed, and whether they sign off.
 ### Alpha — 2026-10-12 (signed off)
 
 Transcribed by the coding agent from the operator's relay; Alpha's own
-appended note was written to her workspace copy, not this file.
+appended note was written to the agent's workspace copy, not this file.
 
-Checked against her four terms and Beta's three asks; all covered (terms 1–3
+Checked against the agent's four terms and Beta's three asks; all covered (terms 1–3
 and Beta's asks ✅; term 4 pending reconciliation). KG gap closed by A2.
 Three requests, all applied 2026-10-12:
 
-1. `migration-verification.md` must reach her before freeze (it exists in
-   this folder; deliver it to her workspace).
+1. `migration-verification.md` must reach the agent before freeze (it exists in
+   this folder; deliver it to the agent's workspace).
 2. Refresh A4 at cutover → added **F1a**.
 3. Reconcile all agents' requested changes before freeze → added **A7**.
 
-Status: **signed off**, pending her confirmation of the reconciled version
+Status: **signed off**, pending the agent's confirmation of the reconciled version
 (A7) and receipt of migration verification.
 
 ## Reconciliation (A7) — 2026-10-12

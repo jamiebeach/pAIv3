@@ -3,7 +3,7 @@
    visible "camera on" badge on every page, picking up again on the next page
    within a second. Frames go straight to pAI-Eyes under a short-lived lease;
    the agent never receives them, only what Eyes perceives, unless the
-   operator lets her see them with each chat message. */
+   operator lets the agent see them with each chat message. */
 (function () {
   'use strict';
   if (typeof window === 'undefined' || window.paiCamera) return;

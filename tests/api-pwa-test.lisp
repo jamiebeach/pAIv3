@@ -551,11 +551,11 @@
             "the pages learn which picture, to refresh when it changes")
         (is (= 304 (image-status "/api/avatar?who=operator" :token token :if-none-match (format nil "\"~a\"" id)))
             "unchanged: nothing is sent again"))
-      ;; Choosing among pictures already held (one she generated, one she was shown).
+      ;; Choosing among pictures already held (one it generated, one it was shown).
       (let ((held (pai-v3.mind::store-image k px)))
         (append! k "image.seen" (obj "image_id" held "audience" "operator" "how" "generated"))
         (let ((choices (obj-get (json-parse (nth-value 1 (raw-get "/api/avatar/choices" :token token))) "images")))
-          (is (find held choices :key (lambda (c) (obj-get c "id")) :test #'equal) "the pictures she holds are offered"))
+          (is (find held choices :key (lambda (c) (obj-get c "id")) :test #'equal) "the pictures it holds are offered"))
         (is (= 200 (image-status (format nil "/api/avatar?image=~a" held) :token token)) "each can be shown")
         (is (= 404 (image-status "/api/avatar?image=00000000000000000000000000000000" :token token)))
         (is (= 401 (image-status (format nil "/api/avatar?image=~a" held))))

@@ -56,16 +56,16 @@
   (with-temp-kernel (k)
     (let* ((sam (form-entity k :kind "person" :name "Sam" :lineage (own k)))
            (lee (form-entity k :kind "person" :name "Lee" :lineage (own k)))
-           (fact (admit-fact k :subject sam :predicate "related_to" :object lee :text "Lee is Sam's sister."
-                               :evidence (quote-of "my sister Lee") :lineage (own k)))
-           (thought (answering k "Lee is my sister, not just related.")))
+           (fact (admit-fact k :subject sam :predicate "related_to" :object lee :text "Lee is Sam's peer."
+                               :evidence (quote-of "my peer Lee") :lineage (own k)))
+           (thought (answering k "Lee is my peer, not just related.")))
       (is (search "Not corrected" (correct k thought "action" "predicate" "fact_id" fact "predicate" "no_such" "reason" "x")))
-      (is (search "now says sibling_of" (correct k thought "action" "predicate" "fact_id" fact "predicate" "sibling_of" "reason" "she is my sister")))
+      (is (search "now says sibling_of" (correct k thought "action" "predicate" "fact_id" fact "predicate" "sibling_of" "reason" "she is my peer")))
       (is (equal "retracted" (fact-status k fact)))
       (let ((new (first (first (entity-facts k sam)))))
         (is (equal "sibling_of" (third (first (entity-facts k sam)))))
-        (is (equal "my sister Lee" (second (first (fact-evidence k new)))) "the quote comes along")
-        (is (equal "Lee is Sam's sister." (tenth (first (entity-facts k sam)))) "and the statement")))))
+        (is (equal "my peer Lee" (second (first (fact-evidence k new)))) "the quote comes along")
+        (is (equal "Lee is Sam's peer." (tenth (first (entity-facts k sam)))) "and the statement")))))
 
 (deftest fiction-taken-as-real-moves-into-its-work
   (with-temp-kernel (k)

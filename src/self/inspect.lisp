@@ -48,7 +48,7 @@ all reasoning, such as \"6148 completion tokens, 6144 reasoning\"."
 (defun %failure-tally (kernel &optional from)
   "A line counting failed calls by profile and kind, so a pattern older than
 the five shown can be seen and checked from inside (bead v3-vpp: 36 of one
-agent's last 50 were reasoning burns, none among her latest five). Without
+agent's last 50 were reasoning burns, none among its latest five). Without
 FROM, the last 100; with FROM (a day, YYYY-MM-DD), every failure from that day
 on (up to 2000), so a before and an after can be read over fixed spans rather
 than a window that drifts back as failures grow rare."
@@ -61,7 +61,7 @@ than a window that drifts back as failures grow rare."
              (p (event-payload e))
              (reason (obj-get p "reason" ""))
              ;; A burn is told by its tokens too: some providers end one with
-             ;; finish error, not length (Angel's October deepseek-graph empties).
+             ;; finish error, not length (one agent's October deepseek-graph empties).
              (kind (cond ((or (search "finish: length" reason) (%reasoning-burn-p reason)) "out of room (reasoning)")
                          ((search "empty response" reason) "empty")
                          (t (obj-get p "class" "other")))))

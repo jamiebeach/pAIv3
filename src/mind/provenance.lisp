@@ -1,7 +1,7 @@
 (in-package #:pai-v3.mind)
 
-;;; Provenance (2026-11-06; the crew's shape, confirmed by Angel, Aria and
-;;; Specter). Asked how they came to a paper, two agents told confident
+;;; Provenance (2026-11-06; the crew's shape, confirmed by all three
+;;; agents). Asked how they came to a paper, two agents told confident
 ;;; stories their own records did not bear out: "I started on Nov 2", "read it
 ;;; in full", "verified just now" over search snippets. Before a reply or a
 ;;; forum draft goes out, a small Decisions model asks whether it claims what
@@ -91,15 +91,15 @@ to restate it against my records, with them; else NIL."
               (or (thought-web-record kernel (getf thought :id)) "it fetched no page and ran no search")
               evidence (and start (or (ignore-errors (local-stamp kernel start)) start))))))
 
-;; Flag only (2026-11-14; the crew's agreement, Cosmo's composition gate): a
-;; rewrite after the fact defended a finished draft. Angel's 04:05 reply
-;; corrected "the claim I just made", a claim Jamie never saw, and left his
+;; Flag only (2026-11-14; the crew's agreement, a guest's composition gate): a
+;; rewrite after the fact defended a finished draft. An agent's 04:05 reply
+;; corrected "the claim I just made", a claim the operator never saw, and left their
 ;; question unanswered. The check still runs and records what it would have
 ;; asked, with the draft, so how often it fires can be read before the rule
 ;; moves into the drafting itself; the reply goes out as written.
 (defvar *provenance-site* "reply"
   "Where the text being checked is going: reply, forum or note. The forum and
-remember tools bind it, so a flag can be counted by site (Angel, 2026-11-14:
+remember tools bind it, so a flag can be counted by site (an agent, 2026-11-14:
 a flagged note and a flagged reply are not the same event).")
 
 (setf *provenance-hook*
@@ -120,7 +120,7 @@ a flagged note and a flagged reply are not the same event).")
         (when (or (null from) (string>= (or (ignore-errors (event-at (event-by-id kernel id))) "") from))
           (let* ((colon (position #\: text :end (position #\] text)))
                  (site (if colon (string-trim " " (subseq text (1+ colon) (position #\] text)))
-                           ;; Before sites were recorded: not guessed as replies (Angel,
+                           ;; Before sites were recorded: not guessed as replies (an agent,
                            ;; 2026-11-14: that would inflate the column the gate turns on).
                            "unlabelled")))
             (incf (cdr (or (assoc site counts :test #'string=) (car (push (cons site 0) counts)))))))))
