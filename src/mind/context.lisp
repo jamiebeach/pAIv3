@@ -65,7 +65,7 @@ render audited content safe for every audience. Unreviewed sources default to op
           (:activity  :max 24000 :source :activity  :title "What I have been doing")
           (:dialogue  :max 4000  :source :dialogue  :title "Conversation" :order :oldest-first)
           (:forum     :max 900   :source :forum     :title "From the crew forum, where the operator took part")
-          (:recollection :max 6000 :source :recollection :title "What comes to mind")
+          (:recollection :max 3000 :source :recollection :title "What comes to mind")
           (:seen      :max 400   :source :seen      :title "Images I have seen lately")
           (:scheduled :max 500   :source :scheduled :title "Coming up")
           (:present   :max 300   :source :present   :title "The operator's day")
@@ -88,7 +88,7 @@ render audited content safe for every audience. Unreviewed sources default to op
           (:activity  :max 8000  :source :activity  :title "What I have been doing")
           (:dialogue  :max 2000  :source :dialogue  :title "Recent conversation" :order :oldest-first)
           (:forum     :max 600   :source :forum     :title "From the crew forum, where the operator took part")
-          (:recollection :max 4000 :source :recollection :title "What comes to mind")
+          (:recollection :max 2500 :source :recollection :title "What comes to mind")
           (:seen      :max 300   :source :seen      :title "Images I have seen lately")
           (:present   :max 300   :source :present   :title "The operator's day")
           (:stream    :max 600   :source :stream    :title "What I noticed between thoughts")
@@ -135,9 +135,17 @@ animations it can perform.")
                     when (and (stringp line) (plusp (length line))) collect line)))
    (list "A message with no tool call ends this thought. If what was asked has a next step, make its tool call in the same message; if what was asked is something to write, write it now. Never end by saying what you are about to do. A greeting alone asks for no work.")))
 
+(defvar *dialogue-floor* nil
+  "While a context is assembled, the oldest event id its Conversation section
+shows, so sections assembled after it can leave out what it already holds
+(bead v3-bam: an impression's Lately repeated the last minutes of the
+conversation, and the operator's message sat under both copies).")
+
 (define-slot-source :dialogue (kernel request max)
-  (mapcar (lambda (row) (list (dialogue-row-text row) (dialogue-row-tokens row)))
-          (reverse (recent-dialogue kernel (getf request :audience) :token-budget max))))
+  (let ((rows (recent-dialogue kernel (getf request :audience) :token-budget max)))
+    (when rows (setf *dialogue-floor* (reduce #'min rows :key #'dialogue-row-event-id)))
+    (mapcar (lambda (row) (list (dialogue-row-text row) (dialogue-row-tokens row)))
+            (reverse rows))))
 
 ;; Operator, 2026-11-11, with the agents: the last day of what I have been
 ;; doing, but never fewer than my last few thoughts, so a quiet weekend does
@@ -198,8 +206,10 @@ The full prompt of each thought used to be quoted here: a third of every context
     ;; In the operator's time, the zone named: a UTC hour was read as local, an
     ;; 11-12 UTC stretch as 11 pm to midnight (operator, 2026-11-07).
     (format nil "[~a] ~a -> ~a~@[: ~a~]" (or (ignore-errors (local-stamp kernel at)) (format nil "~a UTC" (subseq at 0 16)))
-            (or kind (%first-part reason 240)) status
-            (and outcome (plusp (length outcome)) (localize-utc-times kernel (%first-part outcome 400) at)))))
+            ;; Short, a line a reader can take in, not quoted text to keep talking
+            ;; about (operator, 2026-11-13, bead v3-bam).
+            (or kind (%first-part reason 120)) status
+            (and outcome (plusp (length outcome)) (localize-utc-times kernel (%first-part outcome 160) at)))))
 
 ;;; Assembly
 
@@ -232,6 +242,7 @@ rows judged unrelated to the thought (cull.lisp).")
   "Build messages for REQUEST, a plist with :audience, :task, and optionally
 :thought-id and :tools-text (the tool index, kept in the stable prefix). Returns the list of message objects."
   (let* ((start (get-internal-real-time))
+         (*dialogue-floor* nil)
          (profile (or (gethash profile-name *context-profiles*)
                       (error "No context profile ~s" profile-name)))
          (operator-facing (equal "operator" (getf request :audience))))

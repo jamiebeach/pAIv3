@@ -86,10 +86,10 @@ Token budgets are maxima.
 | 6 | What I understand the operator needs | 400 | needs (needs.lisp) | my own view, each with the operator's words |
 | 7 | Work I am keeping | 600 | docket (docket.lisp) | docket items, parked flag, next step |
 | 8 | What I am looking into | 600 | concerns (concerns.lisp) | open concerns, steps, next look |
-| 9 | What I have been doing | 24000 | activity (context.lisp) | thoughts from the last `context.activity_hours` (24), never fewer than `context.activity_floor` (10) nor more than 40, reasons and outcomes (culled); what ages out is looked over once in quiet time (`%start-aged-review`) |
+| 9 | What I have been doing | 24000 | activity (context.lisp) | thoughts from the last `context.activity_hours` (24), never fewer than `context.activity_floor` (10) nor more than 40, one line each: reason to 120 characters, outcome to 160 (culled); what ages out is looked over once in quiet time (`%start-aged-review`) |
 | 10 | Conversation | 4000 | dialogue (context.lisp) | recent transcript, oldest first |
 | 11 | From the crew forum, where the operator took part | 900 | forum (forum.lisp) | last 5 posts of up to 3 threads the operator posted in, 48 h |
-| 12 | What comes to mind | 6000 | recollection (recall.lisp) | impressions of anchors named in or associated with the task + last 4 turns; top-5 recalled memories (culled) |
+| 12 | What comes to mind | 3000 | recollection (recall.lisp) | impressions of anchors named in or associated with the task + last 4 turns, their Lately leaving out what Conversation already shows (`*dialogue-floor*`); top-5 recalled memories (culled) |
 | 13 | Images I have seen lately | 400 | seen (seeing.lisp) | recent images with captions |
 | 14 | Coming up | 500 | scheduled (schedule.lisp) | context-mode reminders that went off in the last `schedule.fired_visible_hours` (24), full text; then the next 10 scheduled |
 | 15 | The operator's day | 300 | present (attention.lisp) | next calendar events; sensed present; where the operator is (location.lisp): a fix younger than `location.fresh_minutes` as where they are, an older one as where they were, with its age |

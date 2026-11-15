@@ -70,6 +70,20 @@
         (is (<= (length note) (+ pai-v3.recall::*step-note-chars* 200)) "capped")
         (is (search "More is recalled about Nova" note))))))
 
+(deftest lately-leaves-out-what-the-conversation-already-shows
+  ;; Bead v3-bam: an impression's Lately repeated the last minutes of the
+  ;; conversation, already in Conversation, so the newest turns showed twice.
+  (with-recall (k)
+    (form-entity k :kind "person" :name "Nova" :lineage (hop k))
+    (receive-turn k :channel "web" :audience "operator" :speaker "Sam"
+                    :text "SYNTHETIC Nova finished the bridge today" :origin (obj "principal_type" "operator"))
+    (let* ((text (context-text k "operator" "How is Nova doing?"))
+           (recall (subseq text (or (search "What comes to mind" text) 0))))
+      (is (search "SYNTHETIC Nova finished the bridge today" text) "the turn is in the conversation")
+      (is (search "Recalled about Nova" recall) "Nova is still recalled")
+      (is (not (search "SYNTHETIC Nova finished the bridge today" recall))
+          "but not the turn again under Lately"))))
+
 (deftest a-thought-about-someone-starts-with-what-is-known
   (with-recall (k)
     (let ((sam (form-entity k :kind "person" :name "Sam" :lineage (hop k)))

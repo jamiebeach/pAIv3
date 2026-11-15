@@ -133,7 +133,10 @@ by default, those ANCHOR itself opens."
              (operator (equal audience "operator"))
              (found (experience-mentioning kernel terms audience :limit 30))
              (fresh (loop for (k at text nil event-id) in found
-                          when (and (member k +fresh-kinds+ :test #'string=) (> event-id through))
+                          when (and (member k +fresh-kinds+ :test #'string=) (> event-id through)
+                                    ;; Already in this context's Conversation section: not again.
+                                    (not (and pai-v3.mind::*dialogue-floor* (string= k "conversation")
+                                              (>= event-id pai-v3.mind::*dialogue-floor*))))
                             collect (format nil "~a: ~a" (%ago kernel at) (%clip text 240))))
              (memories (loop for (k nil text) in found
                              when (string= k "memory") collect (%clip text 240)))
