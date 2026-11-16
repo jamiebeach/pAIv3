@@ -207,4 +207,30 @@
         (is (eql 1 (pai-v3.mind::local-days-ago k last-night)) "fixture: fifteen hours back is yesterday here")
         (is (search "written yesterday" (pai-v3.mind::written-ago k last-night)))))))
 
+
+;; Operator, 2026-11-16 (bead v3-wx6): a backup held two agents' thinking for
+;; an hour and the queued turns then ran as if just asked. A thought starting
+;; long after it was queued is told so, and the delay is recorded once.
+(deftest a-thought-that-waited-is-told-so
+  (with-clock
+    (with-temp-kernel (k)
+      (change-setting k "time.zone" "UTC" :origin *op*)
+      (let* ((clock (gethash :clock pai-v3.mind::*slot-sources*))
+             (late (pai-v3.mind:request-thought k "work" "an old question"))
+             (also (pai-v3.mind:request-thought k "work" "another old question")))
+        (declare (ignore also))
+        (advance 120)
+        (let ((fresh (pai-v3.mind:request-thought k "work" "a new question")))
+          (is (null (search "only starting now" (first (first (funcall clock k (list :thought-id fresh) 240)))))
+              "a thought that has not waited is told nothing"))
+        (advance 3480)
+        (let* ((before (pai-v3.kernel:ledger-head k))
+               (text (first (first (funcall clock k (list :thought-id late) 240))))
+               (after (pai-v3.kernel:ledger-head k)))
+          (is (search "only starting now, 60 minutes later" text))
+          (is (search "2 other thoughts are waiting" text) "and how many others waited with it")
+          (is (= (1+ before) after) "the delay is recorded")
+          (funcall clock k (list :thought-id late) 240)
+          (is (= after (pai-v3.kernel:ledger-head k)) "once"))))))
+
 (run-suite "mind-schedule")

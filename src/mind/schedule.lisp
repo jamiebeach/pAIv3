@@ -178,6 +178,43 @@ recalled as \"around 03:38\")."
     (declare (ignore wd))
     (format nil "~4,'0d-~2,'0d-~2,'0d ~2,'0d:~2,'0d" y mo d h mi)))
 
+;;; A thought that waited (bead v3-wx6, operator 2026-11-16). A backup held two
+;;; agents' schedulers for an hour; when it cleared, a queue of turns ran at
+;;; once and each read as if it had just been asked. A thought starting its
+;;; first step long after it was queued now says so in "Now", and the delay is
+;;; recorded, so a flush after a disruption is visible from inside and after.
+
+(define-setting "thought.late_minutes"
+  :type :integer :min 1 :group "Thinking" :default 10
+  :description "A thought that starts this many minutes after it was queued is told it waited, and the wait is recorded.")
+
+(define-event-type "thought.started_late"
+  :schema (("thought_id" :integer) ("queued_at" :string) ("waited_seconds" :integer)
+           ("also_waiting" :integer)))
+
+(defvar *late-recorded* (make-hash-table) "Thoughts whose late start is already recorded.")
+
+(defun %late-start (kernel thought-id zone)
+  "When THOUGHT-ID is about to take its first step well after it was queued,
+the line telling it so (recording the delay once); else NIL."
+  (let* ((db (kernel-db kernel))
+         (row (and thought-id (sql-row db "SELECT created_at,steps FROM thoughts WHERE id=?1" thought-id))))
+    (when (and row (eql 0 (second row)))
+      (let* ((queued (parse-iso8601 (first row)))
+             (waited (- (now) queued))
+             (limit (* 60 (setting kernel "thought.late_minutes"))))
+        (when (>= waited limit)
+          (let ((others (or (sql-value db "SELECT count(*) FROM thoughts WHERE status='queued' AND id<>?1 AND created_at<=?2"
+                                       thought-id (iso8601 (- (now) limit)))
+                            0)))
+            (unless (gethash thought-id *late-recorded*)
+              (setf (gethash thought-id *late-recorded*) t)
+              (append! kernel "thought.started_late"
+                       (obj "thought_id" thought-id "queued_at" (first row)
+                            "waited_seconds" waited "also_waiting" others)))
+            (format nil "This thought was queued at ~a and is only starting now, ~d minutes later: something held up my thinking, so what it answers may have moved on.~[~:; ~:*~d other thoughts are waiting from the same delay.~]"
+                    (subseq (local-slot queued zone) 11) (round waited 60) others)))))))
+
 (define-slot-source :clock (kernel request max)
   ;; The time now, where the operator is. Without it a model guesses the
   ;; hour from UTC stamps and gets it wrong.
@@ -187,14 +224,15 @@ recalled as \"around 03:38\")."
          (text (format nil "It is ~a, ~a, in ~a (~a UTC). Times shown to you are in this zone, the zone named, unless a time says UTC."
                        (nth weekday '("Sunday" "Monday" "Tuesday" "Wednesday" "Thursday" "Friday" "Saturday"))
                        (local-slot (now) zone) name (subseq (local-slot (now) local-time:+utc-zone+) 11))))
-    (list (list (format nil "~a~%Coming days: ~{~a~^ / ~}" text
+    (let ((all (format nil "~a~@[~%~a~]~%Coming days: ~{~a~^ / ~}" text
+                        (ignore-errors (%late-start kernel (getf request :thought-id) zone))
                         (loop for d from 1 to 8
                               collect (destructuring-bind (mi h day mo y wd) (%local (+ (now) (* d 86400)) zone)
                                         (declare (ignore mi h y))
                                         (format nil "~:[~;tomorrow ~]~a ~a ~d"
                                                 (= d 1) (nth wd '("Sun" "Mon" "Tue" "Wed" "Thu" "Fri" "Sat"))
-                                                (nth (1- mo) '("Jan" "Feb" "Mar" "Apr" "May" "Jun" "Jul" "Aug" "Sep" "Oct" "Nov" "Dec")) day))))
-                (+ 40 (estimate-tokens text))))))
+                                                (nth (1- mo) '("Jan" "Feb" "Mar" "Apr" "May" "Jun" "Jul" "Aug" "Sep" "Oct" "Nov" "Dec")) day))))))
+      (list (list all (+ 10 (estimate-tokens all)))))))
 
 (defun local-to-universal (text zone)
   "Universal time of local wall time TEXT (YYYY-MM-DDTHH:MM[:SS], or with a
