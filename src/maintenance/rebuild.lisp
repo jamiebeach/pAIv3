@@ -7,8 +7,11 @@
 (define-condition model-derived-rebuild-refused (error)
   ((name :initarg :name :reader refused-name))
   (:report (lambda (c s)
-             (format s "Projection ~s is model-derived; rebuilding it would repeat paid cognition. Adopt existing rows or run an approved regeneration."
-                     (refused-name c)))))
+             (if (eq :scratch (projection-derivation (find-projection (refused-name c))))
+                 (format s "Projection ~s is working state that was never in the ledger; there is nothing to rebuild it from."
+                         (refused-name c))
+                 (format s "Projection ~s is model-derived; rebuilding it would repeat paid cognition. Adopt existing rows or run an approved regeneration."
+                         (refused-name c))))))
 
 (defun %begin-rebuild (db projection)
   (dolist (table (owned-tables projection))

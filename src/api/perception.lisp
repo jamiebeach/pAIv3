@@ -241,7 +241,7 @@ This is a perception, not a message: no one asked you anything. If it is worth s
                                                                  (t "not known")))))
                                                people))))))))))
 
-(setf *present-facets* (list #'sense-present-lines))
+(register-present-facet 'sense-present-lines)
 
 ;;; Routes: the perception service, by its source key
 

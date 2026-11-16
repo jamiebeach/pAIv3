@@ -34,7 +34,9 @@
    #:*reply-delta-hook* #:interrupt-thought
    ;; persona
    #:render-identity #:*identity-order* #:adopt-trait #:adopt-influence
-   #:affect-now #:render-affect #:modulator-drift #:drive-drift
+   #:affect-now #:render-affect #:modulator-drift #:drive-drift #:body-feeling
+   ;; percepts (percepts.lisp)
+   #:define-receptor #:emit-percept #:recent-percepts #:habituated-salience #:percept-token-p
    #:run-periodic #:*periodic-hooks* #:*quiet-starters* #:request-summaries #:working-summary #:*activity-hook* #:*activity-listeners* #:*progress-hook*
    #:add-schedule #:cancel-schedule #:run-due-schedules #:cron-next #:local-slot #:local-to-universal
    ;; context

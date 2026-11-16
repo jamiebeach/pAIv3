@@ -360,6 +360,18 @@ third of drive name -> target for drives that have one."
              (when target (setf (gethash name targets) target)))
     (values modulators drives targets)))
 
+(defun body-feeling (kernel &optional (at (now)))
+  "The agent's feeling as a body needs it (bead v3-baw.1.1): an object of
+five numbers, each to two decimal places so a view does not twitch with
+noise. arousal, boredom, curiosity and social_need run 0 to 1; valence -1 to
+1. This is the declared read for a plug-in; the modulator and drive tables
+behind it may change."
+  (multiple-value-bind (modulators drives) (affect-now kernel at)
+    (flet ((n (table name lo) (/ (round (* 100 (%clamp (or (gethash name table) 0) lo 1))) 100d0)))
+      (obj "arousal" (n modulators "arousal" 0) "valence" (n modulators "valence" -1)
+           "boredom" (n modulators "boredom" 0) "curiosity" (n drives "curiosity" 0)
+           "social_need" (n modulators "social_need" 0)))))
+
 (defun %sorted-pairs (table)
   (sort (loop for k being the hash-keys of table using (hash-value v) collect (cons k v))
         #'string< :key #'car))

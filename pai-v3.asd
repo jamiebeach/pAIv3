@@ -34,6 +34,7 @@
                  (:file "cull")
                  (:file "open-items")
                  (:file "affect")
+                 (:file "percepts")
                  (:file "appraisal")
                  (:file "relations")
                  (:file "injection")

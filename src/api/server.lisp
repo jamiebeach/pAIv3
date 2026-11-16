@@ -3,7 +3,9 @@
   (:export #:start-agent #:stop-agent #:agent-port #:*api-version* #:terminal-command #:terminal-history
            ;; plugins (plugins.lisp)
            #:define-plugin-route #:plugin-menu-entry #:plugin-reply #:plugin-static #:load-plugins #:plugins-directory #:*plugins*
-           #:agent-kernel #:reply))
+           #:agent-kernel #:reply
+           ;; the present (attention.lisp)
+           #:define-present-facet #:register-present-facet))
 (in-package #:pai-v3.api)
 
 ;;; The client API (NFR EXT-1..5). One versioned HTTP API for every client;

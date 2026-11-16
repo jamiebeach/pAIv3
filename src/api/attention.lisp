@@ -398,7 +398,23 @@ Returns how the judge went, or NIL when there was none to ask."
 (defvar *present-facets* '()
   "Functions (lambda (kernel)) returning lines for the present slot beside the
 calendar, such as what the senses perceive now (perception.lisp). Shown only
-to the operator's own thinking.")
+to the operator's own thinking. Add to it with DEFINE-PRESENT-FACET.")
+
+(defun register-present-facet (name)
+  "Put the function named NAME (a symbol) among the facets of the present,
+once; it is called by name, so redefining it takes effect."
+  (pushnew name *present-facets*)
+  name)
+
+(defmacro define-present-facet (name (kernel) &body body)
+  "Define facet NAME of the present: a function of the kernel returning a
+list of lines (or nil) about now, for the operator's own thinking. The
+declared way for a module or a plug-in to add to the present (bead
+v3-baw.1.1). Lines are composed here from known states, never passed on
+from text another program sent. Keep them few: the slot has a budget, and a
+facet past it is cut."
+  `(progn (defun ,name (,kernel) ,@body)
+          (register-present-facet ',name)))
 
 (define-slot-source :present (kernel request max)
   ;; What the operator's calendar holds next, then any other facet of now.

@@ -23,8 +23,10 @@ TABLES is a list of DDL strings for tables this projection alone owns (I2).
 REDUCE is (lambda (db event)): deterministic, no clock, network, model call
 or other projection's tables (I3). ENTITY, when given, is (lambda (event))
 returning the entity key to mark degraded if the reducer fails on EVENT.
-DERIVATION is :pure (rebuildable from the ledger) or :model (built by paid
-cognition; never rebuilt automatically). INSPECTABLE NIL keeps the rows
+DERIVATION is :pure (rebuildable from the ledger), :model (built by paid
+cognition; never rebuilt automatically) or :scratch (bounded working state
+that was never in the ledger, such as recent percepts: it consumes nothing,
+is never rebuilt, and losing its rows is not a fault). INSPECTABLE NIL keeps the rows
 out of the agent's inspection tools (credentials); its status, counts and
 digest stay visible."
   `(setf (gethash ,name *projections*)

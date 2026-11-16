@@ -131,7 +131,7 @@
                     (format nil "Where the operator was last, from their phone at ~a (~a ago; they may have moved): ~a."
                             (funcall clock fixed) (if (< age 120) (format nil "~d min" age) (format nil "~d h" (floor age 60))) where))))))))
 
-(pushnew 'location-present-lines *present-facets*)
+(register-present-facet 'location-present-lines)
 
 ;; Driving, a spoken reply has to be taken in by ear alone.
 (defun driving-voice-note (kernel)
