@@ -38,7 +38,7 @@
    ;; percepts (percepts.lisp)
    #:define-receptor #:emit-percept #:recent-percepts #:habituated-salience #:percept-token-p
    ;; body state (body.lisp)
-   #:make-body-anchor #:body-at #:body-anchor-of
+   #:make-body-anchor #:body-at #:body-anchor-of #:body-now #:note-body #:body-words
    ;; the reply check's evidence from the senses (thought.lisp)
    #:register-perceived-now #:perceived-now
    ;; who changed a setting (settings-tools.lisp)

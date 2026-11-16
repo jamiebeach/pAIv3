@@ -170,3 +170,63 @@ next changes, or null), and the anchor."
                  "since" (+ since phase-start) "for" (- elapsed phase-start)
                  "next_change" (if next (/ (round (* 10 next)) 10d0) :null)
                  "anchor" anchor)))))))
+
+;;; Keeping the anchor (bead v3-baw.3.2). One row per body, working state that
+;;; was never in the ledger (routine body changes are not experience; spec §6.2),
+;;; so the projection consumes nothing and is never rebuilt, like percepts. A new
+;;; anchor is written only when what the body is doing changes: the same
+;;; activity again (a storm of tool calls while reading) writes nothing. It
+;;; starts where the body is at that moment, with how the agent feels then.
+
+(define-projection "body"
+  :kind :inline
+  :derivation :scratch
+  :consumes ()
+  :tables ("CREATE TABLE IF NOT EXISTS body_state (body TEXT PRIMARY KEY, anchor TEXT NOT NULL, at TEXT NOT NULL)")
+  :reduce (lambda (db e) (declare (ignore db e))))
+
+(defun %stored-anchor (kernel body)
+  (let ((row (sql-row (kernel-db kernel) "SELECT anchor FROM body_state WHERE body=?1 LIMIT 1" body)))
+    (and row (ignore-errors (json-parse (first row))))))
+
+(defun body-now (kernel &key (body "avatar") (at (now)))
+  "BODY as it is at AT: BODY-AT of its stored anchor. With none stored, a body
+idle at the centre of home since AT, so a body that was never told anything
+still has a sensible state (and nothing is written for reading it)."
+  (body-at (or (%stored-anchor kernel body)
+               (make-body-anchor :since at :feeling (body-feeling kernel at)))
+           at))
+
+(defun note-body (kernel activity &key detail (body "avatar") wearing (at (now)))
+  "What BODY is now doing: ACTIVITY (one of +activities+) with DETAIL. Writes a
+new anchor only when ACTIVITY or DETAIL differs from what the body is doing
+now (talking stays talking until it lapses by its own rule). The new anchor
+starts at the spot the body is at, facing as it faces, at AT (when the change
+happened, if it is told late). Returns T when it wrote."
+  (let* ((current (body-now kernel :body body :at at))
+         (detail (or detail :null)))
+    (unless (and (equal activity (obj-get current "activity")) (equal detail (obj-get current "detail")))
+      (let* ((spot (let ((s (obj-get current "spot"))) (if (stringp s) s (obj-get (body-anchor-of current) "spot"))))
+             (anchor (make-body-anchor :activity activity :detail (and (stringp detail) detail)
+                                       :place (obj-get current "place") :spot spot
+                                       :facing (obj-get current "facing") :since at
+                                       :feeling (body-feeling kernel at)
+                                       :wearing (or wearing (obj-get (body-anchor-of current) "wearing")))))
+        (bt:with-recursive-lock-held ((pai-v3.kernel::kernel-lock kernel))
+          (sql-exec (kernel-db kernel)
+                    "INSERT INTO body_state(body,anchor,at) VALUES(?1,?2,?3) ON CONFLICT(body) DO UPDATE SET anchor=excluded.anchor,at=excluded.at"
+                    body (json-encode anchor) (iso8601 at)))
+        t))))
+
+(defun body-words (state)
+  "A few plain words for where the body is and what it is doing."
+  (let ((posture (obj-get state "posture")) (spot (obj-get state "spot"))
+        (minutes (floor (or (obj-get state "for") 0) 60)))
+    (if (equal posture "away")
+        "away from your place"
+        (format nil "~a~:[~; at the ~:*~a~]~:[~;, for ~d minute~:p~]"
+                (cond ((equal posture "walking") "walking across the room")
+                      ((member posture '("reading" "writing" "thinking") :test #'equal) posture)
+                      (t posture))
+                (and (stringp spot) (not (equal spot "centre")) spot)
+                (>= minutes 2) minutes))))

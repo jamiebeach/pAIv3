@@ -108,4 +108,46 @@
   (signals error (make-body-anchor :activity "dancing"))
   (signals error (make-body-anchor :spot "kitchen")))
 
+(defun stored (k) (sql-value (kernel-db k) "SELECT count(*) FROM body_state LIMIT 1"))
+
+(deftest a-body-never-told-anything-is-idle-at-home-and-nothing-is-written
+  (with-clock
+    (with-temp-kernel (k)
+      (let ((b (body-now k)))
+        (is (equal "idle" (obj-get b "activity")))
+        (is (equal "home" (obj-get b "place"))))
+      (is (zerop (stored k)) "reading writes nothing"))))
+
+(deftest what-she-does-moves-her-body-and-repeats-write-nothing
+  (with-clock
+    (with-temp-kernel (k)
+      (is (note-body k "working" :detail "reading"))
+      (is (not (note-body k "working" :detail "reading")) "the same again writes nothing")
+      (advance 600)
+      (let ((b (body-now k)))
+        (is (equal "reading" (obj-get b "posture")))
+        (is (= 600 (obj-get b "for"))))
+      (is (search "reading" (body-words (body-now k))))
+      (is (search "for 10 minutes" (body-words (body-now k))))
+      (is (note-body k "talking"))
+      (is (equal "visitor" (obj-get (body-now k) "gaze")))
+      (advance 700)
+      (is (equal "idle" (obj-get (body-now k) "activity")) "a conversation lapses by its own rule")
+      (is (= 1 (stored k)) "one row per body"))))
+
+(deftest a-new-anchor-starts-where-the-body-is
+  (with-clock
+    (with-temp-kernel (k)
+      (note-body k "working" :detail "reading")     ; idle on an idle body writes nothing, so stop something first
+      (note-body k "idle")
+      ;; a bored idle body walks; find a moment it stands at a spot that is not its start
+      (let ((moved (loop for s from 60 to 5400 by 30
+                         for b = (body-at (pai-v3.mind::%stored-anchor k "avatar") (+ (now) s))
+                         when (and (stringp (obj-get b "spot")) (not (equal "centre" (obj-get b "spot"))))
+                           return (cons s (obj-get b "spot")))))
+        (when moved
+          (advance (car moved))
+          (note-body k "working" :detail "writing")
+          (is (equal (cdr moved) (obj-get (body-now k) "spot")) "she starts writing where she was standing"))))))
+
 (run-suite "mind-body")
