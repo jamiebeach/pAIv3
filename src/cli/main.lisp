@@ -8,9 +8,9 @@
 ;;;
 ;;;   pai init <dir> <agent-id> [--passphrase] [--keyfile PATH] [--no-keychain]
 ;;;   pai run <dir>
-;;;   pai backup-init <dir> <backup-dir> [--passphrase]
+;;;   pai backup-init <dir> <backup-dir> [--passphrase] [--keyfile PATH] [--no-keychain]
 ;;;   pai backup <dir>
-;;;   pai restore <backup-dir> <stamp> <target-dir>
+;;;   pai restore <backup-dir> <stamp> <target-dir> [--passphrase] [--keyfile PATH] [--no-keychain]
 ;;;   pai backups <backup-dir>
 ;;;   pai secret-set <dir> <name> <host>[,<host>...]     (value read from stdin)
 ;;;   pai pair <dir>                                     (a one-use code to enrol a first device)
@@ -129,7 +129,8 @@ for when the agent stops answering. Sent with SIGUSR1; nothing stops."
     (let* ((config (agent-config dir))
            (code (init-backups backup-dir (obj-get config "agent_id")
                                :methods (%methods args)
-                               :passphrase (and (%flag args "--passphrase") (%ask "Backup passphrase"))))
+                               :passphrase (and (%flag args "--passphrase") (%ask "Backup passphrase"))
+                               :keyfile (%option args "--keyfile")))
            (handle (%open dir)))
       (unwind-protect
            (change-setting (agent-handle-kernel handle) "backup.dir" (namestring backup-dir)
@@ -148,10 +149,13 @@ for when the agent stops answering. Sent with SIGUSR1; nothing stops."
 (defun cmd-restore (args)
   (destructuring-bind (backup-dir stamp target &rest ignore) (%positional args)
     (declare (ignore ignore))
-    (let ((code (handler-case (restore-agent backup-dir stamp target :methods (%methods args))
-                  (keyring-error ()
-                    (restore-agent backup-dir stamp target :methods (%methods args)
-                                   :backup-recovery-code (%ask "Backup recovery code"))))))
+    (let* ((unlock (list :methods (%methods args)
+                         :passphrase (and (%flag args "--passphrase") (%ask "Passphrase"))
+                         :keyfile (%option args "--keyfile")))
+           (code (handler-case (apply #'restore-agent backup-dir stamp target unlock)
+                   (keyring-error ()
+                     (apply #'restore-agent backup-dir stamp target
+                            :backup-recovery-code (%ask "Backup recovery code") unlock)))))
       (%say "Restored ~a into ~a." stamp target)
       (%show-recovery "New storage" code))))
 

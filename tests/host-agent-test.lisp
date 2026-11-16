@@ -87,6 +87,30 @@
             (is (equal '("brave") (mapcar #'first (pai-v3.trust:secret-names))) "and the secrets")
             (close-agent h2)))))))
 
+;; Operator, 2026-11-16: backups for agents in containers, where there is no
+;; keychain, so they unlock with a key file. The command took --keyfile into
+;; its methods but never passed the path, for backup-init and for restore.
+(deftest backup-init-and-restore-take-a-key-file-from-the-command
+  (with-dir (dir)
+    (let* ((n (random 100000000))
+           (backups (format nil "/tmp/pai-v3-backups-~d/" n))
+           (restored (format nil "/tmp/pai-v3-restored-~d/" n))
+           (key (format nil "/tmp/pai-v3-backup-~d.key" n))
+           (new-key (format nil "/tmp/pai-v3-restored-~d.key" n)))
+      (init-agent dir "gamma")
+      (let ((*standard-output* (make-broadcast-stream)))
+        (is (= 0 (pai-v3.cli:run-command (list "backup-init" dir backups "--no-keychain" "--keyfile" key)))))
+      (is (probe-file key) "the backup key file is written")
+      (let* ((h (open-agent dir))
+             (stamp (unwind-protect
+                         (progn (is (equal backups (setting (agent-handle-kernel h) "backup.dir")))
+                                (backup-agent h backups))   ; unattended: the key file opens it
+                      (close-agent h))))
+        (let ((*standard-output* (make-broadcast-stream)))
+          (is (= 0 (pai-v3.cli:run-command (list "restore" backups stamp restored "--no-keychain" "--keyfile" new-key)))))
+        (is (probe-file new-key) "the restored agent's key file is written")
+        (close-agent (open-agent restored))))))
+
 (deftest a-damaged-backup-is-refused
   (with-dir (dir)
     (let ((backups (format nil "/tmp/pai-v3-backups-~d/" (random 100000000))))
