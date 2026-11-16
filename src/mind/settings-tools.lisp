@@ -21,14 +21,39 @@
            (if rows
                (format nil "~{~a~^~%~}"
                        (mapcar (lambda (s)
-                                 (format nil "~a = ~a~:[~; (changed)~]; ~a~a"
+                                 (format nil "~a = ~a~a; ~a~a"
                                          (obj-get s "name") (json-encode (obj-get s "value"))
-                                         (eq t (obj-get s "changed"))
+                                         (if (eq t (obj-get s "changed")) (%changed-phrase kernel (obj-get s "name")) "")
                                          (obj-get s "description")
                                          (if (equal "agent-within-bounds" (obj-get s "changed_by"))
                                              " I may change this within bounds." "")))
                                rows))
                "No setting matches that."))))
+
+(defun setting-change (kernel name)
+  "Who last changed setting NAME, and when, as (who at): WHO is \"you\", \"the
+operator\", \"a coding agent\", \"another agent\" or \"the system\"; AT is
+ISO8601. NIL when it has never been changed (bead v3-baw.1.3; Aria and Angel,
+2026-11-15: a bare \"(changed)\" could not tell \"I chose\" from \"someone
+chose for me\"). Read from the change's own event, so it is the record's
+answer, not a guess."
+  (let* ((row (sql-row (kernel-db kernel) "SELECT changed_at,event_id FROM settings WHERE name=?1 LIMIT 1" name))
+         (e (and row (ignore-errors (event-by-id kernel (second row)))))
+         (origin (and e (obj-get (event-payload e) "origin")))
+         (type (and (hash-table-p origin) (obj-get origin "principal_type"))))
+    (when (and row e (equal "setting.changed" (event-type e)))
+      (list (cond ((equal type "self") "you")
+                  ((equal type "operator") "the operator")
+                  ((equal type "coding-agent") "a coding agent")
+                  ((equal type "agent") "another agent")
+                  (t "the system"))
+            (first row)))))
+
+(defun %changed-phrase (kernel name)
+  (let ((c (setting-change kernel name)))
+    (if c
+        (format nil " (changed by ~a, ~a)" (first c) (local-stamp kernel (second c)))
+        " (changed)")))
 
 (defun %setting-value (name value)
   "VALUE for setting NAME. Many models send every value as a string, so a

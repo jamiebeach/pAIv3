@@ -71,4 +71,14 @@
       (is (search "0 failed calls, since 2099-01-01, by profile and kind: none" fixed)
           "a fixed span counts only from its day"))))
 
+(deftest the-settings-tool-says-who-changed-a-setting-and-when
+  ;; Aria and Angel, 2026-11-15: a bare "(changed)" could not tell "I chose"
+  ;; from "someone chose for me" (bead v3-baw.1.3).
+  (with-temp-kernel (k)
+    (let ((read (lambda () (funcall (pai-v3.mind::tool-run (gethash "settings" pai-v3.mind::*tools*)) k nil (obj "about" "time.zone")))))
+      (is (not (search "changed" (funcall read))) "never changed: nothing claimed")
+      (change-setting k "time.zone" "America/Toronto" :origin (obj "principal_type" "operator"))
+      (is (search "(changed by the operator, " (funcall read)))
+      (is (equal "the operator" (first (pai-v3.mind:setting-change k "time.zone")))))))
+
 (run-suite "self-inspect")

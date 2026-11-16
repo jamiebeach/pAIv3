@@ -459,7 +459,7 @@ returns true, or returns NIL to let the thought go on (fastpath.lisp).")
   :type :boolean :default t :group "Thinking"
   :description "Before a final reply to someone is sent, ask a small model whether it only announces what it is about to do (short replies), or states the operator's present state with nothing they said behind it (replies to the operator); if so, the thought is asked once to do it now, or to write the reply again.")
 (define-setting "thought.announce_check.senses"
-  :type :boolean :default nil :group "Thinking"
+  :type :boolean :default :false :group "Thinking"
   :description "Let what the senses perceive now (who a camera sees, where the phone is, within 15 minutes) count as evidence for what a reply says about the operator. Off until it has been qualified on this agent (bead v3-baw.1.5).")
 (define-setting "thought.announce_check.profile"
   :type :string :default "affect-jev" :group "Thinking"
