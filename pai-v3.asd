@@ -35,6 +35,7 @@
                  (:file "open-items")
                  (:file "affect")
                  (:file "percepts")
+                 (:file "body")
                  (:file "appraisal")
                  (:file "relations")
                  (:file "injection")
