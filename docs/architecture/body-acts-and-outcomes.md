@@ -33,10 +33,11 @@ and numbers.
 
 | Code | Speech | Performance | Wear |
 | --- | --- | --- | --- |
-| `done` | played to its end | the clip played | at least one piece is shown |
+| `done` | the last stage a view can observe was reached: the audio played to its end | the clip played | at least one piece is shown |
 | `interrupted` | the operator cut in; `played_ms` says how far it got, 0 if it never started | | |
 | `not-heard` | the browser was not letting sound play when it started | | |
-| `failed` | the audio could not be fetched or decoded | no clip matches, or it did not load | nothing in the model matches (`matched` 0) |
+| `unmatched` | | carried out; no clip by that name | carried out; nothing in the model by those names (`matched` 0) |
+| `failed` | the audio could not be fetched or decoded | the clip did not load | |
 | `not-shown` | | recorded by the agent's side when no view is open | likewise |
 
 Numbers allowed, and nothing else: `played_ms`, `total_ms`, `matched`,
@@ -47,6 +48,14 @@ whole. **No text from a view is stored, logged or shown to the agent.**
 A view gets its id when it opens (the first `GET perform`). At most eight
 views are remembered.
 
+`done` is defined by stage, not by the operator's experience (Angel,
+2026-11-15): it is the last stage the agent's side can observe. For speech
+today that is "played to its end"; when a body has rendered frames or
+delivered text to observe, the same word keeps the same meaning.
+`unmatched` and `not-shown` are different facts with different fixes: one is
+content (Specter's model with no clothes in it, v3-o2k), the other is reach
+(no view open).
+
 **What a view cannot know.** A browser does not tell a page that its tab or
 the computer is muted. `not-heard` means the browser was blocking sound (the
 case of bead v3-h4r). A muted tab reports `done`. This is a limit of the
@@ -56,7 +65,7 @@ report, stated here and in the agent's own words for it (v3-baw.1.3), so
 ## 3. Several views
 
 The best outcome reported for an act stands:
-`done` > `interrupted` > `failed` > `not-heard` > `not-shown`.
+`done` > `interrupted` > `failed` > `unmatched` > `not-heard` > `not-shown`.
 Heard anywhere is heard; it was not heard only if every view says so. The
 first report for an act, and any later report that betters it, becomes a
 percept. A later report that is the same or worse goes to the raw record
@@ -81,17 +90,27 @@ body must be checkable against something that is not that account, or a
 wrong report becomes its picture of itself.
 
 `avatar-acts.log` on the agent's volume, beside `avatar-timing.log`. One
-line for every act asked, every report received (accepted, or dropped with
-the reason as a code), and every outcome the agent's side recorded itself.
-Tokens and numbers only, by the same validation; a dropped report is logged
-with its size, not its content. Trimmed to its newer half past 200 KB.
+line for every act asked, every outcome the agent's side recorded itself,
+and for every report two lines: **the report as received**, then what the
+parse made of it.
+
+Two records rendered from one parse can agree and both be wrong (Angel,
+2026-11-15, from a brief that made and billed its images and reported
+failure). So the first line is the bytes the view sent, copied, before
+anything turns them into a code. The parse decides one thing about those
+bytes: whether they are safe to show the agent. A report holding anything
+but tokens and numbers, or written with escapes, is withheld: its size and
+the first 16 hex digits of its SHA-256 are kept, never its content, because
+the agent reads this record. Trimmed to its newer half past 200 KB.
 
 ```
-2026-11-15T23:10:02Z asked speech s8841-0 chars=42
-2026-11-15T23:10:03Z report v3fa91c20 speech s8841-0 not-heard played_ms=0 kept
-2026-11-15T23:10:09Z report v77b0e1aa speech s8841-0 done played_ms=1840 total_ms=1840 kept
-2026-11-15T23:10:09Z report v3fa91c20 speech s8841-0 done played_ms=1840 total_ms=1840 same
-2026-11-15T23:11:40Z dropped unknown-act bytes=118
+2026-11-15T23:10:02Z asked speech st8841-0 chars=42
+2026-11-15T23:10:03Z received {"view":"v3fa91c20","act":"st8841-0","kind":"speech","code":"not-heard","numbers":{"played_ms":0}}
+2026-11-15T23:10:03Z report v3fa91c20 speech st8841-0 not-heard played_ms=0 kept
+2026-11-15T23:10:09Z report v77b0e1aa speech st8841-0 done played_ms=1840 total_ms=1840 kept
+2026-11-15T23:10:09Z report v3fa91c20 speech st8841-0 done played_ms=1840 total_ms=1840 same
+2026-11-15T23:11:40Z received withheld bytes=118 sha256=9c1e04b7a2d35f60
+2026-11-15T23:11:40Z dropped unknown-act
 2026-11-15T23:12:00Z self wear p41 not-shown
 ```
 
