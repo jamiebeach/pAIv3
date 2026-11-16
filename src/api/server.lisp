@@ -359,6 +359,16 @@ for native clients that send it as a bearer token."
 
 ;;; Lifecycle
 
+(defun start-housekeeping (running fn)
+  "Run FN (idle housekeeping such as a backup) in a thread of its own and
+return that thread, or return RUNNING while it is still alive. Housekeeping
+never runs on the scheduler thread: on 2026-11-16 a daily backup copying
+several GB to a slow mount held two agents' schedulers for an hour, with the
+operator's turns queued behind it."
+  (if (and running (bt:thread-alive-p running))
+      running
+      (bt:make-thread (lambda () (ignore-errors (funcall fn))) :name "pai-v3 housekeeping")))
+
 (defun start-agent (kernel &key (port 8080) (address "127.0.0.1") rp-id origin sites (idle-sleep 0.25)
                                 on-idle (idle-every 300))
   "Serve the API and run the scheduler loop for KERNEL. ON-IDLE, if given, is
@@ -381,6 +391,7 @@ listens on localhost by default (AUTH-10)."
            (lambda ()
              (loop with last-idle-run = 0
                    with last-due-check = 0
+                   with housekeeping = nil
                    while (agent-running agent)
                    ;; Reminders fire on time even while the scheduler is busy.
                    do (when (> (get-universal-time) (+ last-due-check 15))
@@ -393,8 +404,8 @@ listens on localhost by default (AUTH-10)."
                                                        "outcome" (string-downcase (symbol-name (third outcome))))))
                         (when (eq outcome :idle)
                           (when (and on-idle (> (get-universal-time) (+ last-idle-run idle-every)))
-                            (setf last-idle-run (get-universal-time))
-                            (ignore-errors (funcall on-idle)))
+                            (setf last-idle-run (get-universal-time)
+                                  housekeeping (start-housekeeping housekeeping on-idle)))
                           (sleep idle-sleep)))))
            :name "pai-v3 scheduler"))
     (when (fboundp 'start-watchdog) (funcall 'start-watchdog agent port))

@@ -122,7 +122,12 @@
         (with-open-file (out (format nil "~a~a/ledger.db" backups stamp) :direction :io
                                                                          :element-type '(unsigned-byte 8)
                                                                          :if-exists :overwrite)
-          (file-position out 5000) (write-byte 7 out))
+          ;; Inside the file whatever its size: past the end would only grow it.
+          (let ((at (floor (file-length out) 2)))
+            (file-position out at)
+            (let ((b (read-byte out)))
+              (file-position out at)
+              (write-byte (logxor b #xff) out))))
         (signals keyring-error (restore-agent backups stamp (format nil "/tmp/pai-v3-r-~d/" (random 100000000))
                                               :backup-recovery-code code))))))
 
@@ -138,5 +143,25 @@
             (advance 86400)))
         (is (= 2 (length (list-backups backups))))
         (close-agent h)))))
+
+
+;; Operator, 2026-11-16: a daily backup ran on the scheduler thread and held
+;; two agents' thinking for an hour. Housekeeping runs in a thread of its own,
+;; one at a time.
+(deftest housekeeping-never-blocks-and-runs-one-at-a-time
+  (let* ((runs 0)
+         (gate (bt:make-semaphore))
+         (slow (lambda () (incf runs) (bt:wait-on-semaphore gate :timeout 10)))
+         (t0 (get-internal-real-time))
+         (one (pai-v3.api::start-housekeeping nil slow)))
+    (is (< (- (get-internal-real-time) t0) (* 2 internal-time-units-per-second))
+        "the caller returns at once")
+    (is (eq one (pai-v3.api::start-housekeeping one slow)) "no second run while one is going")
+    (bt:signal-semaphore gate)
+    (bt:join-thread one)
+    (is (= 1 runs))
+    (let ((two (pai-v3.api::start-housekeeping one (lambda () (incf runs)))))
+      (bt:join-thread two)
+      (is (= 2 runs) "the next run starts once the last has finished"))))
 
 (run-suite "host-agent")

@@ -88,7 +88,13 @@ backup's stamp. Records backup.completed, or backup.failed and re-signals."
                      for source = (agent-store-db handle store)
                      for path = (merge-pathnames file dir)
                      do (let ((dest (db-open path :key (store-key backup-dir root store))))
-                          (unwind-protect (db-backup source dest) (db-close dest)))
+                          ;; No WAL on the copy: a backup is written once, straight into
+                          ;; its file. Through a slow mount the WAL grew to the store's
+                          ;; full size beside it (2026-11-16). A crash leaves no
+                          ;; manifest, so a half-written copy is never used.
+                          (sql-exec dest "PRAGMA journal_mode=OFF")
+                          (sql-exec dest "PRAGMA synchronous=OFF")
+                          (unwind-protect (db-backup source dest :pages-per-step 1024) (db-close dest)))
                         (incf bytes (with-open-file (in path :element-type '(unsigned-byte 8)) (file-length in)))
                         (push (obj "store" store "file" file "sha256" (%file-sha256 path)) files))
                ;; The manifest is written last: its presence marks a complete backup.
