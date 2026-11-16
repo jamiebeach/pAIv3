@@ -43,6 +43,8 @@
    #:register-perceived-now #:perceived-now
    ;; who changed a setting (settings-tools.lisp)
    #:setting-change
+   ;; images (images.lisp)
+   #:store-image
    #:run-periodic #:*periodic-hooks* #:*quiet-starters* #:request-summaries #:working-summary #:*activity-hook* #:*activity-listeners* #:*progress-hook*
    #:add-schedule #:cancel-schedule #:run-due-schedules #:cron-next #:local-slot #:local-to-universal
    ;; context
