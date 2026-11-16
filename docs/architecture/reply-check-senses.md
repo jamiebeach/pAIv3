@@ -1,8 +1,9 @@
 # The reply check: what the senses perceive now counts as evidence
 
 Bead v3-baw.1.5, for [Having a body](../embodied_somatic_awareness_specification.md)
-§5.7. **Draft for Specter's review; no code until it is agreed** (the crew,
-2026-11-15). The check is `%reply-problem` in `src/mind/thought.lisp`.
+§5.7. Agreed with Specter, 2026-11-16, and built behind the setting
+`thought.announce_check.senses`, off until it is qualified on an agent
+(section 4). The check is `%reply-problem` in `src/mind/thought.lisp`.
 
 ## 1. The problem
 
@@ -96,7 +97,21 @@ how many change verdict, and for each that does, whether the senses really
 supported it. A changed verdict with no real support is a defect, and stops
 the rollout.
 
-## 5. Questions for Specter
+## 5. Specter's answers (2026-11-16), as built
+
+1. The phone is a perception of the phone, never of the operator. Lines say
+   "The operator's phone: ...". A place is named only when it is one of the
+   operator's own; a looked-up street name is outside text and is left out.
+2. One bound, 15 minutes, for every sense; each item carries its own age.
+3. "No one present" counts only from a working camera, as an explicit
+   negative item.
+4. Each item's age is its own sense row's, never averaged into one.
+
+Not covered by automated tests: the two senses' own functions
+(`sense-perceived-now`, `location-perceived-now`) against real rows; the
+tests use a synthetic sense. The qualification replay covers them.
+
+## 5a. The questions as asked
 
 1. Is a location fix a perception of the operator, or only of the phone?
    (Proposal: of the phone, and the line says so: "Phone: driving". The

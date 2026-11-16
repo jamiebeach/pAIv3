@@ -243,6 +243,29 @@ This is a perception, not a message: no one asked you anything. If it is worth s
 
 (register-present-facet 'sense-present-lines)
 
+;;; For the reply check (bead v3-baw.1.5): what each working camera perceives
+;;; now, with its own age; "no one present" only from a working camera, as an
+;;; explicit negative (Specter, 2026-11-16). A camera off or lost perceives nothing.
+(defun sense-perceived-now (kernel)
+  (let ((now (now)) (iso (now-iso8601)))
+    (loop for r in (setting kernel "perception.sources")
+          for id = (obj-get r "source_id")
+          for name = (or (%given (obj-get r "name")) id)
+          for row = (sense-source kernel id)
+          when (and row (not (member (second row) '("disabled" "lost") :test #'equal)))
+            append (let ((people (sql-rows (kernel-db kernel) "SELECT recognition,candidate,score,observed_at,correction FROM sense_present WHERE source_id=?1 AND expires_at>?2 ORDER BY first_at LIMIT 8" id iso)))
+                     (if people
+                         (loop for (recognition candidate score observed correction) in people
+                               collect (list :sense "sight" :minutes-ago (floor (- now (parse-iso8601 observed)) 60)
+                                             :what (format nil "~a: someone present, ~a" name
+                                                           (cond (correction (format nil "corrected to ~a" correction))
+                                                                 ((equal recognition "candidate") (format nil "possibly ~a (similarity ~,2f)" candidate (or score 0)))
+                                                                 (t "not known")))))
+                         (and (fifth row)
+                              (list (list :sense "sight" :minutes-ago (floor (- now (parse-iso8601 (fifth row))) 60)
+                                          :what (format nil "~a: watching; no one present" name)))))))))
+(register-perceived-now 'sense-perceived-now)
+
 ;;; Routes: the perception service, by its source key
 
 (defun %percept-key ()

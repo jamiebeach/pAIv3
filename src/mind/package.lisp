@@ -39,6 +39,8 @@
    #:define-receptor #:emit-percept #:recent-percepts #:habituated-salience #:percept-token-p
    ;; body state (body.lisp)
    #:make-body-anchor #:body-at #:body-anchor-of
+   ;; the reply check's evidence from the senses (thought.lisp)
+   #:register-perceived-now #:perceived-now
    #:run-periodic #:*periodic-hooks* #:*quiet-starters* #:request-summaries #:working-summary #:*activity-hook* #:*activity-listeners* #:*progress-hook*
    #:add-schedule #:cancel-schedule #:run-due-schedules #:cron-next #:local-slot #:local-to-universal
    ;; context

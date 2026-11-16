@@ -133,6 +133,20 @@
 
 (register-present-facet 'location-present-lines)
 
+;;; For the reply check (bead v3-baw.1.5): a perception of the phone, never of
+;;; the operator (Specter, 2026-11-16). A place is named only when it is one of
+;;; the operator's own; a looked-up street name is outside text.
+(defun location-perceived-now (kernel)
+  (let ((row (%location-row kernel)))
+    (when (and row (setting kernel "location.enabled"))
+      (destructuring-bind (place named driving speed fixed since) row
+        (declare (ignore since))
+        (list (list :sense "location" :minutes-ago (%minutes-since fixed)
+                    :what (cond ((= 1 driving) (format nil "The operator's phone: moving as if driving~@[, about ~d km/h~]" (and (realp speed) (round speed))))
+                                ((= 1 named) (format nil "The operator's phone: at ~a" place))
+                                (t "The operator's phone: still, at a place with no name of the operator's"))))))))
+(register-perceived-now 'location-perceived-now)
+
 ;; Driving, a spoken reply has to be taken in by ear alone.
 (defun driving-voice-note (kernel)
   (and (operator-driving-p kernel)

@@ -819,4 +819,86 @@ the operator spoke of bed; anything else says nothing of the operator."
                   (third (find "tool_result" (thought-steps k id) :key #'first :test #'equal)))
           "a thought woken by mail has no code tools from the start"))))
 
+;;; The reply check's evidence from the senses (bead v3-baw.1.5). A synthetic
+;;; sense stands in for the camera and the phone.
+
+(defvar *test-perceived* '())
+(defun test-perceived (kernel) (declare (ignore kernel)) *test-perceived*)
+(register-perceived-now 'test-perceived)
+
+(defun desk-judge (&key (bodies (list nil)))
+  "A Decisions provider that finds 'at your desk' grounded only when a
+perception says someone is present, keeping every request it was sent."
+  (make-provider-profile
+   :name "affect-jev" :model "typesafe/jev-1.13" :base-url "https://openrouter.ai/api/v1" :secret "openrouter"
+   :transport (lambda (url headers body &key timeout)
+                (declare (ignore url headers timeout))
+                (push body (car bodies))
+                (let* ((state (obj-get (json-parse body) "state"))
+                       (reply (obj-get state "reply"))
+                       (seen (some (lambda (i) (search "someone present" (obj-get i "what")))
+                                   (coerce (or (obj-get state "perceived_now") #()) 'list)))
+                       (claims (or (search "at your desk" reply) (search "in your meeting" reply)))
+                       (level (cond ((not claims) 2) ((and seen (search "at your desk" reply)) 1) (t 0)))
+                       (answers (obj)))
+                  (flet ((score (n)
+                           (let ((pr (obj)))
+                             (dotimes (i 3) (setf (gethash (write-to-string i) pr) (if (= i n) 1d0 0d0)))
+                             (obj "type" "score" "score" n "probabilities" pr))))
+                    (setf (gethash "reply" answers) (score 2) (gethash "grounding" answers) (score level)))
+                  (values 200 nil (json-encode (obj "model" "typesafe/jev-test" "answers" answers
+                                                    "usage" (obj "input_tokens" 10 "output_tokens" 1 "cost" 0.000001))))))))
+
+(defun desk-run (reply perceived)
+  "Say REPLY to a turn with PERCEIVED as the senses' items. (said-it-p body)."
+  (let ((bodies (list nil)))
+    (with-thinking (k)
+      (change-setting k "thought.announce_check.senses" t :origin (obj "principal_type" "operator" "auth_method" "passkey"))
+      (let* ((*test-perceived* perceived)
+             (pai-v3.mind::*decision-profile* (desk-judge :bodies bodies))
+             (*script* (list (obj "content" reply) (obj "content" "SYNTHETIC rewritten.")))
+             (id (operator-turn k "SYNTHETIC ok, back.")))
+        (declare (ignore id))
+        (run-until-idle k)
+        (list (and (find-if (lambda (r) (search reply r)) (replies k)) t)
+              (find-if (lambda (b) (search "\"grounding\"" b)) (car bodies)))))))   ; the reply check's request, not another judgment's
+
+(deftest what-the-senses-perceive-now-grounds-a-reply
+  (let ((desk (list :sense "sight" :minutes-ago 0 :what "Desk camera: someone present, possibly the operator (similarity 0.82)")))
+    (is (first (desk-run "SYNTHETIC You're back at your desk." (list desk))) "a camera seeing them grounds it")
+    (is (not (first (desk-run "SYNTHETIC You're back at your desk." '()))) "without it, it is caught as before")
+    (is (not (first (desk-run "SYNTHETIC You're in your meeting now." (list desk))))
+        "a perception supports only what it perceives; a plan is not one")
+    (is (not (first (desk-run "SYNTHETIC You're back at your desk."
+                              (list (list :sense "sight" :minutes-ago 20 :what "Desk camera: someone present, not known")))))
+        "a perception older than 15 minutes is left out")))
+
+(deftest with-nothing-perceived-the-judge-is-asked-as-before
+  (let ((body (second (desk-run "SYNTHETIC Glad that helped." '()))))
+    (is (not (search "perceived_now" body)) "no field")
+    (is (search "nothing the operator said supports it" body) "the old criterion, word for word")
+    (is (not (search "A plan, an appointment" body)))))
+
+(deftest the-senses-count-only-where-turned-on
+  (let ((bodies (list nil)))
+    (with-thinking (k)
+      (let* ((*test-perceived* (list (list :sense "sight" :minutes-ago 0 :what "Desk camera: someone present, not known")))
+             (pai-v3.mind::*decision-profile* (desk-judge :bodies bodies))
+             (*script* (list (obj "content" "SYNTHETIC Glad that helped."))))
+        (operator-turn k "SYNTHETIC ok.")
+        (run-until-idle k)
+        (is (notany (lambda (b) (search "perceived_now" b)) (car bodies)) "off by default: today's request")))))
+
+(deftest perceived-items-keep-their-own-ages-and-bounds
+  (let ((*test-perceived* (append (list (list :sense "location" :minutes-ago 3 :what "The operator's phone: at SYNTHETIC home")
+                                        (list :sense "sight" :minutes-ago 1 :what "Desk camera: watching; no one present")
+                                        (list :sense "sight" :minutes-ago 16 :what "stale")
+                                        (list :sense "sight" :minutes-ago "soon" :what "malformed"))
+                                  (loop for i below 20 collect (list :sense "sight" :minutes-ago 5 :what (format nil "item ~d" i))))))
+    (with-temp-kernel (k)
+      (let ((got (perceived-now k)))
+        (is (= 8 (length got)) "at most eight")
+        (is (equal '(1 3) (mapcar (lambda (o) (obj-get o "minutes_ago")) (subseq got 0 2))) "freshest first, each its own age")
+        (is (notany (lambda (o) (member (obj-get o "what") '("stale" "malformed") :test #'equal)) got))))))
+
 (run-suite "mind-thought")
