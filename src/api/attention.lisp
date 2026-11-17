@@ -381,8 +381,9 @@ Returns how the judge went, or NIL when there was none to ask."
 ;;; change what a thought does? On a share of thoughts, chosen by an HMAC of
 ;;; the thought id under a secret that never leaves the trust module (so it is
 ;;; recomputable afterwards and not predictable from this source), the newest
-;;; row naming nothing (escalated empty) is left out after the fetch: the
-;;; thought sees one line fewer, nothing in its place. Nothing is written.
+;;; rendered row naming nothing (escalated empty) is dropped after the token
+;;; cut: the thought sees the control's lines less one, nothing in its place.
+;;; Nothing is written.
 
 (define-setting "attention.stream_trial"
   :type :boolean :default t :group "Attention"
