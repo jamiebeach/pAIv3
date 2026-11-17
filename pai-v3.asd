@@ -40,6 +40,7 @@
                  (:file "relations")
                  (:file "injection")
                  (:file "schedule")
+                 (:file "notes")
                  (:file "summary")
                  (:file "consolidation")
                  (:file "grants")

@@ -15,7 +15,7 @@ list of (text tokens) rows, most relevant first.")
 (defparameter *slot-audience-policy*
   '((:clock . :any) (:turn . :any) (:state . :any) (:myself . :any)
     (:summary . :any) (:activity . :any) (:dialogue . :any)
-    (:recollection . :any) (:seen . :any) (:scheduled . :any) (:restricted . :any)
+    (:recollection . :any) (:seen . :any) (:scheduled . :any) (:restricted . :any) (:left-note . :any)
     (:conclusions "operator") (:concerns "operator") (:docket "operator") (:needs "operator")
     (:present "operator" "external") (:stream "operator" "external")
     (:carried "operator" "external"))
@@ -72,6 +72,7 @@ render audited content safe for every audience. Unreviewed sources default to op
           (:stream    :max 600   :source :stream    :title "What I noticed between thoughts")
           (:restricted :max 200  :source :restricted :title "Not for this audience")
           (:state     :max 300   :source :state     :title "How I am")
+          (:left      :max 200   :source :left-note :title "Left from last time")
           (:clock     :max 240   :source :clock     :title "Now")
           (:turn      :max 200   :source :turn      :title "Before you answer")))
 
@@ -93,6 +94,7 @@ render audited content safe for every audience. Unreviewed sources default to op
           (:present   :max 300   :source :present   :title "The operator's day")
           (:stream    :max 600   :source :stream    :title "What I noticed between thoughts")
           (:state     :max 300   :source :state     :title "How I am")
+          (:left      :max 200   :source :left-note :title "Left from last time")
           (:clock     :max 240   :source :clock     :title "Now")
           (:turn      :max 200   :source :turn      :title "Before you answer")))
 
