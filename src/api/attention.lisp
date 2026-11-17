@@ -407,21 +407,21 @@ secret on first use."
                             (secret-hmac +stream-trial-secret+ (princ-to-string thought-id)))))))
          (and (stringp h) (< (mod (parse-integer h :end 4 :radix 16) 100) *stream-trial-share*)))))
 
-(defun %stream-rows (kernel thought-id)
+(defun %stream-rows (kernel)
   "The watch's last eight passes, newest first, as (at noticed reason
-escalated set-aside); in the trial arm without the newest one naming nothing."
-  (let ((rows (loop for (at noticed reason escalated set-aside) in
-                    (sql-rows (kernel-db kernel) "SELECT at,noticed,reason,escalated,set_aside FROM attention_stream WHERE kind=?1 ORDER BY event_id DESC LIMIT 8" "pass")
-                    collect (list at noticed reason (ignore-errors (json-parse escalated)) (ignore-errors (json-parse set-aside))))))
-    (if (stream-trial-p kernel thought-id)
-        (let ((drop (find-if (lambda (r) (null (fourth r))) rows)))
-          (if drop (remove drop rows :test #'eq :count 1) rows))
-        rows)))
+escalated set-aside)."
+  (loop for (at noticed reason escalated set-aside) in
+        (sql-rows (kernel-db kernel) "SELECT at,noticed,reason,escalated,set_aside FROM attention_stream WHERE kind=?1 ORDER BY event_id DESC LIMIT 8" "pass")
+        collect (list at noticed reason (ignore-errors (json-parse escalated)) (ignore-errors (json-parse set-aside)))))
 
 (define-slot-source :stream (kernel request max)
   ;; The watch's recent passes, newest first: what happened between thoughts.
+  ;; In the stream measure's trial arm the newest rendered row naming nothing
+  ;; is dropped AFTER the budget cut, so the thought sees exactly the control's
+  ;; lines less one, never an older row the freed budget would let in (Angel,
+  ;; Specter and Aria, 2026-11-17: dropping before the cut substituted).
   (let ((zone (%zone-of kernel)) (rows '()) (used 0))
-    (loop for (at noticed reason up aside) in (%stream-rows kernel (getf request :thought-id))
+    (loop for (at noticed reason up aside) in (%stream-rows kernel)
           for text = (format nil "~a: noticed ~d~:[~; as the day started~]. ~@[Brought to mind: ~{~a~^; ~}. ~]~@[Set aside: ~{~a~^; ~}.~]"
                              (local-time:format-timestring nil (local-time:universal-to-timestamp (parse-iso8601 at))
                                                            :format '(:short-weekday #\Space (:hour 2) #\: (:min 2)) :timezone zone)
@@ -431,8 +431,12 @@ escalated set-aside); in the trial arm without the newest one naming nothing."
                                (and (plusp n) (list (format nil "~d routine item~:p" n)))))
           for tokens = (estimate-tokens text)
           while (<= (+ used tokens) max)
-          do (incf used tokens) (push (list text tokens) rows))
-    (nreverse rows)))
+          do (incf used tokens) (push (list text tokens (null up)) rows))
+    (setf rows (nreverse rows))
+    (when (stream-trial-p kernel (getf request :thought-id))
+      (let ((drop (find-if #'third rows)))
+        (when drop (setf rows (remove drop rows :test #'eq :count 1)))))
+    (mapcar (lambda (r) (list (first r) (second r))) rows)))
 
 (defvar *present-facets* '()
   "Functions (lambda (kernel)) returning lines for the present slot beside the
