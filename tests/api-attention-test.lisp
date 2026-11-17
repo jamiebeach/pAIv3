@@ -306,4 +306,39 @@
         (is (equal '("Remembrance Day" "Weekly Working Session" "Pick up") (mapcar #'first rows))
             "today's whole-day event and the morning meeting are upcoming; the past one is not")))))
 
+
+;; Stream measure (forum "Having a body", spec 1, 2026-11-17): in the trial
+;; arm the newest row naming nothing is left out after the fetch; rows that
+;; name an item never are; the choice is keyed by a secret and the thought id.
+(deftest the-stream-measure-leaves-out-only-a-row-naming-nothing
+  (let ((secrets (db-open (format nil "/tmp/pai-v3-stream-secrets-~d.db" (random 100000000)) :key *test-key*)))
+    (pai-v3.trust:open-secrets secrets)
+    (unwind-protect
+         (with-watch (k)
+           (seen-mail k "m1" "Shop <deals@shop.example>" "Big sale" :bulk t)
+           (attend k)
+           (advance 60)
+           (seen-mail k "m2" "Sam <sam@example.com>" "Dinner on Friday?")
+           (attend k)
+           (advance 60)
+           (seen-mail k "m3" "Shop <deals@shop.example>" "Another sale" :bulk t)
+           (attend k)
+           (flet ((stream-for (id) (mapcar #'first (funcall (gethash :stream pai-v3.mind::*slot-sources*) k
+                                                            (list :audience "operator" :thought-id id) 600))))
+             (let* ((ids (loop for i from 1 to 400 collect i))
+                    (trial (find-if (lambda (i) (pai-v3.api::stream-trial-p k i)) ids))
+                    (control (find-if-not (lambda (i) (pai-v3.api::stream-trial-p k i)) ids)))
+               (is (and trial control) "both arms occur")
+               (is (= 3 (length (stream-for control))) "a control thought sees every row")
+               (let ((seen (stream-for trial)))
+                 (is (= 2 (length seen)) "a trial thought sees one row fewer, nothing in its place")
+                 (is (some (lambda (l) (search "Dinner on Friday" l)) seen) "a row naming an item is never left out")
+                 (is (notany (lambda (l) (and (search "1 routine item" l) (not (search "Dinner" l)))) (list (first seen)))
+                     "the newest row naming nothing is the one left out"))
+               (is (eq (pai-v3.api::stream-trial-p k trial) (pai-v3.api::stream-trial-p k trial)) "the choice is stable")
+               (change-setting k "attention.stream_trial" :false :origin *operator*)
+               (is (= 3 (length (stream-for trial))) "turned off, nothing is left out"))))
+      (pai-v3.trust:close-secrets)
+      (db-close secrets))))
+
 (run-suite "api-attention")

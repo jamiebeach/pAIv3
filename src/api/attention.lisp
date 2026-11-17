@@ -376,13 +376,52 @@ Returns how the judge went, or NIL when there was none to ask."
 
 ;;; What a thought can read: the stream since it last thought, and the present
 
+;;; Stream measure (continuity work, forum thread "Having a body", spec 1,
+;;; 2026-11-17, with Angel and Aria): does the report of the watch's appraisal
+;;; change what a thought does? On a share of thoughts, chosen by an HMAC of
+;;; the thought id under a secret that never leaves the trust module (so it is
+;;; recomputable afterwards and not predictable from this source), the newest
+;;; row naming nothing (escalated empty) is left out after the fetch: the
+;;; thought sees one line fewer, nothing in its place. Nothing is written.
+
+(define-setting "attention.stream_trial"
+  :type :boolean :default t :group "Attention"
+  :description "Run the stream measure: on a share of thoughts, leave out the newest stream row that names nothing. Off stops it.")
+
+(defparameter +stream-trial-secret+ "stream_trial_salt")
+(defparameter +stream-trial-host+ "stream-trial.invalid"
+  "The secret is only ever used as an HMAC key; it may be sent nowhere real.")
+(defparameter *stream-trial-share* 30 "Percent of thoughts in the trial arm.")
+
+(defun stream-trial-p (kernel thought-id)
+  "True when THOUGHT-ID is in the stream measure's trial arm. Creates the
+secret on first use."
+  (and thought-id (eq t (ignore-errors (setting kernel "attention.stream_trial")))
+       (let ((h (ignore-errors
+                 (or (secret-hmac +stream-trial-secret+ (princ-to-string thought-id))
+                     (progn (set-secret +stream-trial-secret+
+                                        (ironclad:byte-array-to-hex-string (ironclad:random-data 32))
+                                        (list +stream-trial-host+))
+                            (append! kernel "secret.set" (obj "name" +stream-trial-secret+ "hosts" (list +stream-trial-host+)
+                                                              "origin" (obj "principal_type" "system" "via" "stream measure")))
+                            (secret-hmac +stream-trial-secret+ (princ-to-string thought-id)))))))
+         (and (stringp h) (< (mod (parse-integer h :end 4 :radix 16) 100) *stream-trial-share*)))))
+
+(defun %stream-rows (kernel thought-id)
+  "The watch's last eight passes, newest first, as (at noticed reason
+escalated set-aside); in the trial arm without the newest one naming nothing."
+  (let ((rows (loop for (at noticed reason escalated set-aside) in
+                    (sql-rows (kernel-db kernel) "SELECT at,noticed,reason,escalated,set_aside FROM attention_stream WHERE kind=?1 ORDER BY event_id DESC LIMIT 8" "pass")
+                    collect (list at noticed reason (ignore-errors (json-parse escalated)) (ignore-errors (json-parse set-aside))))))
+    (if (stream-trial-p kernel thought-id)
+        (let ((drop (find-if (lambda (r) (null (fourth r))) rows)))
+          (if drop (remove drop rows :test #'eq :count 1) rows))
+        rows)))
+
 (define-slot-source :stream (kernel request max)
   ;; The watch's recent passes, newest first: what happened between thoughts.
   (let ((zone (%zone-of kernel)) (rows '()) (used 0))
-    (loop for (at noticed reason escalated set-aside) in
-          (sql-rows (kernel-db kernel) "SELECT at,noticed,reason,escalated,set_aside FROM attention_stream WHERE kind=?1 ORDER BY event_id DESC LIMIT 8" "pass")
-          for up = (ignore-errors (json-parse escalated))
-          for aside = (ignore-errors (json-parse set-aside))
+    (loop for (at noticed reason up aside) in (%stream-rows kernel (getf request :thought-id))
           for text = (format nil "~a: noticed ~d~:[~; as the day started~]. ~@[Brought to mind: ~{~a~^; ~}. ~]~@[Set aside: ~{~a~^; ~}.~]"
                              (local-time:format-timestring nil (local-time:universal-to-timestamp (parse-iso8601 at))
                                                            :format '(:short-weekday #\Space (:hour 2) #\: (:min 2)) :timezone zone)
