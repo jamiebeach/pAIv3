@@ -141,7 +141,11 @@ sub-calls. Change budgets here, not per kind.")
            "CREATE INDEX IF NOT EXISTS thoughts_audience_time_idx ON thoughts(audience,created_at)"
            "CREATE INDEX IF NOT EXISTS thoughts_root_idx ON thoughts(root_id)"
            "CREATE TABLE IF NOT EXISTS thought_steps (event_id INTEGER PRIMARY KEY, thought_id INTEGER NOT NULL, kind TEXT NOT NULL, part INTEGER NOT NULL, text TEXT NOT NULL, tool TEXT, call_id TEXT, arguments TEXT)"
-           "CREATE INDEX IF NOT EXISTS thought_steps_thought_idx ON thought_steps(thought_id,event_id)")
+           "CREATE INDEX IF NOT EXISTS thought_steps_thought_idx ON thought_steps(thought_id,event_id)"
+           ;; Steps of one kind, newest first (provenance flag counts): without
+           ;; it that read scanned every step. Built once at the next start;
+           ;; the version is unchanged, so nothing is rebuilt.
+           "CREATE INDEX IF NOT EXISTS thought_steps_kind_idx ON thought_steps(kind,event_id)")
   :entity (lambda (e) (or (obj-get (event-payload e) "thought_id") (event-id e)))
   :reduce #'%reduce-thoughts)
 
