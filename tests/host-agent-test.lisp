@@ -144,6 +144,25 @@
         (is (= 2 (length (list-backups backups))))
         (close-agent h)))))
 
+;; Operator, 2026-11-17: a backup cut off by a restart left a folder with no
+;; manifest, which pruning (finished backups only) never removed.
+(deftest an-unfinished-backup-is-cleared-before-the-next
+  (with-dir (dir)
+    (let ((backups (format nil "/tmp/pai-v3-backups-~d/" (random 100000000))))
+      (init-agent dir "beta")
+      (init-backups backups "beta" :methods '("passphrase") :passphrase "a separate backup phrase")
+      (let ((h (open-agent dir))
+            (cut-off (format nil "~a20200101T000000Z/" backups))
+            (other (format nil "~akeep-me/" backups)))
+        (ensure-directories-exist (format nil "~ablobs.db" cut-off))
+        (with-open-file (o (format nil "~ablobs.db" cut-off) :direction :output) (write-line "half" o))
+        (ensure-directories-exist (format nil "~anote" other))
+        (let ((stamp (backup-agent h backups :passphrase "a separate backup phrase")))
+          (is (null (probe-file cut-off)) "the unfinished folder is gone")
+          (is (probe-file other) "a folder not named like a backup is left alone")
+          (is (equal (list stamp) (list-backups backups)) "the new backup is complete"))
+        (close-agent h)))))
+
 
 ;; Operator, 2026-11-16: a daily backup ran on the scheduler thread and held
 ;; two agents' thinking for an hour. Housekeeping runs in a thread of its own,

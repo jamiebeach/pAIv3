@@ -82,6 +82,7 @@ backup's stamp. Records backup.completed, or backup.failed and re-signals."
       (unwind-protect
            (progn
              (setf root (unlock backup-dir :passphrase passphrase :recovery-code recovery-code))
+             (clear-unfinished-backups backup-dir)
              (ensure-directories-exist dir)
              (let ((files '()) (bytes 0))
                (loop for (store . file) in +store-files+
@@ -116,6 +117,18 @@ backup's stamp. Records backup.completed, or backup.failed and re-signals."
   (let ((all (%backup-dirs backup-dir)))
     (loop for (nil . d) in (butlast all keep)
           do (uiop:delete-directory-tree d :validate t))))
+
+(defun clear-unfinished-backups (backup-dir)
+  "Delete backup folders that never got their manifest: a backup cut off by a
+restart (operator, 2026-11-16: a 743 MB leftover that pruning, which counts
+only finished backups, would never remove). Only stamp-named folders are
+touched. Called before a backup starts, so it never meets one in progress in
+this process; backups run one at a time."
+  (dolist (d (uiop:subdirectories (%dir backup-dir)))
+    (let ((name (car (last (pathname-directory d)))))
+      (when (and (stringp name) (= 16 (length name)) (char= #\T (char name 8)) (char= #\Z (char name 15))
+                 (not (probe-file (merge-pathnames "manifest.json" d))))
+        (uiop:delete-directory-tree d :validate t)))))
 
 (defun maybe-backup (handle)
   "Back up to the backup.dir setting when the last backup is older than
