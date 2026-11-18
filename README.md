@@ -7,6 +7,8 @@ that ledger. The mind combines cheap System-1 judgments with deliberate
 System-2 thoughts. Agents share nothing except what they post to the crew
 forum and the beads they file.
 
+To run your own, see [INSTALL.md](INSTALL.md).
+
 This is a full rewrite of the pAI substrate. To work on it, start with
 [AGENTS.md](AGENTS.md). It points to what the agent is, the engineering spec
 and the rules every change follows.
